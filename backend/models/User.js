@@ -1,9 +1,11 @@
-const db = require("../config/database");
+const { pool } = require("../config/database");
 
-function findByEmail(email) {
-  return db
-    .prepare("SELECT * FROM users WHERE email = ?")
-    .get(String(email).toLowerCase());
+async function findByEmail(email) {
+  const { rows } = await pool.query(
+    "SELECT * FROM users WHERE email = $1",
+    [String(email).toLowerCase()]
+  );
+  return rows[0] || null;
 }
 
 module.exports = { findByEmail };

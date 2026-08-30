@@ -1,46 +1,50 @@
-const path = require("path");
-const fs = require("fs");
+const { Pool } = require("pg");
 const bcrypt = require("bcryptjs");
-const { DatabaseSync } = require("node:sqlite");
 const env = require("./env");
 
-const dbPath = path.resolve(__dirname, "..", env.databaseFile);
-fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+const isLocalHost = /localhost|127\.0\.0\.1/.test(env.databaseUrl);
 
-const db = new DatabaseSync(dbPath);
+const pool = new Pool({
+  connectionString: env.databaseUrl,
+  // Supabase (and most hosted Postgres) requires SSL; local dev Postgres
+  // doesn't have it configured, so we skip it automatically for localhost.
+  ssl: isLocalHost ? false : { rejectUnauthorized: false },
+});
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    email TEXT NOT NULL UNIQUE,
-    password_hash TEXT NOT NULL,
-    role TEXT NOT NULL DEFAULT 'user',
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  );
+async function init() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id SERIAL PRIMARY KEY,
+      email TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'user',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
 
-  CREATE TABLE IF NOT EXISTS submissions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    type TEXT NOT NULL,
-    client_name TEXT,
-    email TEXT,
-    project_details TEXT,
-    flexible_payment_preference INTEGER,
-    status TEXT NOT NULL DEFAULT 'new',
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  );
-`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS submissions (
+      id SERIAL PRIMARY KEY,
+      type TEXT NOT NULL,
+      client_name TEXT,
+      email TEXT,
+      project_details JSONB,
+      flexible_payment_preference BOOLEAN,
+      status TEXT NOT NULL DEFAULT 'new',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
 
-// Seed the admin account on first run so the system is usable immediately.
-const existingAdmin = db
-  .prepare("SELECT id FROM users WHERE role = 'admin' LIMIT 1")
-  .get();
-
-if (!existingAdmin) {
-  const passwordHash = bcrypt.hashSync(env.adminPassword, 10);
-  db.prepare(
-    "INSERT INTO users (email, password_hash, role) VALUES (?, ?, 'admin')"
-  ).run(env.adminEmail, passwordHash);
-  console.log(`Seeded admin user: ${env.adminEmail}`);
+  // Seed the admin account on first run so the system is usable immediately.
+  const { rows } = await pool.query("SELECT id FROM users WHERE role = 'admin' LIMIT 1");
+  if (rows.length === 0) {
+    const passwordHash = bcrypt.hashSync(env.adminPassword, 10);
+    await pool.query(
+      "INSERT INTO users (email, password_hash, role) VALUES ($1, $2, 'admin')",
+      [env.adminEmail, passwordHash]
+    );
+    console.log(`Seeded admin user: ${env.adminEmail}`);
+  }
 }
 
-module.exports = db;
+module.exports = { pool, init };

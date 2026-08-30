@@ -4,7 +4,7 @@ const { notifyNewSubmission } = require("../services/email");
 const EMAIL_RE = /^\S+@\S+\.\S+$/;
 
 function makeIntakeHandler(type) {
-  return function handleIntake(req, res) {
+  return async function handleIntake(req, res) {
     const data = req.body || {};
     const { name, email } = data;
 
@@ -15,7 +15,7 @@ function makeIntakeHandler(type) {
       return res.status(400).json({ error: "A valid email is required." });
     }
 
-    const submission = Submission.create({
+    const submission = await Submission.create({
       type,
       clientName: name.trim(),
       email: email.trim(),

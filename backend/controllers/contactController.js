@@ -3,7 +3,7 @@ const { notifyNewSubmission } = require("../services/email");
 
 const EMAIL_RE = /^\S+@\S+\.\S+$/;
 
-function submitContact(req, res) {
+async function submitContact(req, res) {
   const data = req.body || {};
   const { name, email, message } = data;
 
@@ -17,7 +17,7 @@ function submitContact(req, res) {
     return res.status(400).json({ error: "A message is required." });
   }
 
-  const submission = Submission.create({
+  const submission = await Submission.create({
     type: "contact",
     clientName: name.trim(),
     email: email.trim(),

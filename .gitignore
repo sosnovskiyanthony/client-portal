@@ -8,6 +8,3 @@
 # visibility at the repo root)
 backend/node_modules/
 backend/.env
-backend/data/
-backend/*.db
-backend/*.db-journal

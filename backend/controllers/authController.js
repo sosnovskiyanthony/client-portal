@@ -5,14 +5,14 @@ const User = require("../models/User");
 
 const EMAIL_RE = /^\S+@\S+\.\S+$/;
 
-function login(req, res) {
+async function login(req, res) {
   const { email, password } = req.body || {};
 
   if (!email || !password || !EMAIL_RE.test(email)) {
     return res.status(400).json({ error: "A valid email and password are required." });
   }
 
-  const user = User.findByEmail(email);
+  const user = await User.findByEmail(email);
   if (!user || !bcrypt.compareSync(password, user.password_hash)) {
     return res.status(401).json({ error: "Incorrect email or password." });
   }

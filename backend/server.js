@@ -2,10 +2,7 @@ const path = require("path");
 const express = require("express");
 const cors = require("cors");
 const env = require("./config/env");
-
-// Touching config/database here ensures the DB file + tables + seeded admin
-// exist before any request handler runs.
-require("./config/database");
+const { init } = require("./config/database");
 
 const authRoutes = require("./routes/auth");
 const intakeRoutes = require("./routes/intake");
@@ -38,7 +35,17 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: "Something went wrong." });
 });
 
-app.listen(env.port, () => {
-  console.log(`Client portal running at http://localhost:${env.port}`);
-  console.log(`Admin login: ${env.adminEmail} / (password from .env)`);
+async function start() {
+  // Runs schema migrations + seeds the admin user before accepting traffic.
+  await init();
+
+  app.listen(env.port, () => {
+    console.log(`Client portal running at http://localhost:${env.port}`);
+    console.log(`Admin login: ${env.adminEmail} / (password from .env)`);
+  });
+}
+
+start().catch((err) => {
+  console.error("Failed to start server:", err);
+  process.exit(1);
 });
