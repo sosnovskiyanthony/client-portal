@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Studio — Web Design &amp; Development</title>
+<meta name="description" content="Studio — custom web design and SEO for brands that want a site that actually converts and gets found. No templates, no page builders." />
+<meta name="theme-color" content="#09090b" />
+<link rel="icon" href="favicon.svg" type="image/svg+xml" />
+
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="Studio" />
+<meta property="og:title" content="Studio — Web Design &amp; SEO" />
+<meta property="og:description" content="Custom web design and SEO for brands that want a site that actually converts and gets found. No templates, no page builders." />
+<!-- TODO: set og:url and a real 1200x630 og:image once the production domain and a designed social-preview image exist. -->
+<meta name="twitter:card" content="summary" />
+<meta name="twitter:title" content="Studio — Web Design &amp; SEO" />
+<meta name="twitter:description" content="Custom web design and SEO for brands that want a site that actually converts and gets found." />
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Inter+Tight:wght@600;700;800&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+<div class="spotlight" id="spotlight"></div>
+<div class="cursor" id="cursor">
+  <div class="cursor-inner">
+    <span class="cursor-tick tick-top"></span>
+    <span class="cursor-tick tick-right"></span>
+    <span class="cursor-tick tick-bottom"></span>
+    <span class="cursor-tick tick-left"></span>
+  </div>
+  <span class="cursor-dot"></span>
+  <span class="cursor-ring"></span>
+  <span class="cursor-caret"></span>
+</div>
+<div class="coord-readout" id="coord-readout">
+  <span id="coord-text">000, 000</span>
+</div>
+<div class="bg-grid"></div>
+
+<!-- Account menu -->
+<div class="menu-root">
+  <button class="menu-toggle" id="menu-toggle" type="button" aria-label="Open menu" aria-expanded="false">
+    <span class="menu-toggle-line"></span>
+    <span class="menu-toggle-line"></span>
+    <span class="menu-toggle-line"></span>
+  </button>
+  <div class="menu-dropdown" id="menu-dropdown" hidden></div>
+</div>
+
+<!-- Auth modal -->
+<div class="modal-overlay" id="modal-overlay" hidden>
+  <div class="modal" id="modal" role="dialog" aria-modal="true">
+    <button class="modal-close" id="modal-close" type="button" aria-label="Close">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M4 4L12 12M12 4L4 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+    </button>
+    <div class="modal-body" id="modal-body"></div>
+  </div>
+</div>
+
+<!-- Site navigation -->
+<header class="nav-pill" id="nav-pill">
+  <span class="nav-pill-dot"></span>
+  <div class="nav-tabs">
+    <a class="nav-tab active" href="index.html">Home</a>
+    <a class="nav-tab" href="web-design.html">Web Design</a>
+    <a class="nav-tab" href="seo.html">SEO</a>
+    <a class="nav-tab" href="contact.html">Contact</a>
+  </div>
+</header>
+
+<!-- Hero -->
+<section class="home-hero">
+  <span class="eyebrow">Studio — Web Design &amp; Development</span>
+  <h1 class="home-title">Websites built with the same<br />obsession you bring to <span class="text-gradient">your craft.</span></h1>
+  <p class="home-sub">I design and build fast, considered, custom digital experiences for brands that refuse to look off-the-shelf — no page builders, no bloat, just deliberate interfaces backed by clean engineering.</p>
+
+  <div class="home-highlights">
+    <div class="home-highlight">
+      <span class="home-highlight-icon">
+        <svg viewBox="0 0 16 16" fill="none"><path d="M4 8.5L6.5 11L12 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </span>
+      <span>No long-term contracts</span>
+    </div>
+    <div class="home-highlight">
+      <span class="home-highlight-icon">
+        <svg viewBox="0 0 16 16" fill="none"><path d="M2 2H7L14 9L9 14L2 7V2Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><circle cx="5" cy="5" r="1" fill="currentColor"/></svg>
+      </span>
+      <span>Fixed scope, fixed price</span>
+    </div>
+    <div class="home-highlight">
+      <span class="home-highlight-icon">
+        <svg viewBox="0 0 16 16" fill="none"><path d="M2 3.5H14V10.5H5.5L2 13.5V10.5" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+      </span>
+      <span>Direct line to the person building it</span>
+    </div>
+  </div>
+
+  <div class="home-actions">
+    <a class="btn btn-primary btn-large" href="web-design.html">
+      Explore Web Design
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3.5 8H12.5M12.5 8L8.5 4M12.5 8L8.5 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </a>
+  </div>
+
+  <div class="payment-callout">
+    <span class="payment-callout-icon">
+      <svg viewBox="0 0 16 16" fill="none"><path d="M8 1V15" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M11.5 3.5H6.5C5.4 3.5 4.5 4.4 4.5 5.5C4.5 6.6 5.4 7.5 6.5 7.5H9.5C10.6 7.5 11.5 8.4 11.5 9.5C11.5 10.6 10.6 11.5 9.5 11.5H4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </span>
+    <span>Flexible payment plans &amp; milestone billing available</span>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section class="faq-container" id="faq">
+  <div class="faq-header">
+    <span class="eyebrow">Common questions</span>
+    <h2 class="faq-heading">Before you reach out</h2>
+    <p class="faq-sub">A few things clients usually want to know upfront.</p>
+  </div>
+
+  <div class="faq-panel">
+    <div class="accordion">
+      <div class="accordion-item">
+        <h3 class="accordion-item-heading">
+          <button class="accordion-question" type="button" aria-expanded="false" aria-controls="faq-answer-1" id="faq-question-1">
+            <span>How fast is turnaround?</span>
+            <span class="accordion-icon" aria-hidden="true"></span>
+          </button>
+        </h3>
+        <div class="accordion-answer-wrap" id="faq-answer-1" role="region" aria-labelledby="faq-question-1">
+          <div class="accordion-answer-inner">
+            <p>Most sites launch in 2–6 weeks depending on scope — you'll get a firm timeline after the web design intake.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="accordion-item">
+        <h3 class="accordion-item-heading">
+          <button class="accordion-question" type="button" aria-expanded="false" aria-controls="faq-answer-2" id="faq-question-2">
+            <span>Do you use page builders, or write custom code?</span>
+            <span class="accordion-icon" aria-hidden="true"></span>
+          </button>
+        </h3>
+        <div class="accordion-answer-wrap" id="faq-answer-2" role="region" aria-labelledby="faq-question-2">
+          <div class="accordion-answer-inner">
+            <p>Everything is hand-written, custom code — no page builders, no bloated templates. That means faster load times and a site that's actually yours to maintain.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="accordion-item">
+        <h3 class="accordion-item-heading">
+          <button class="accordion-question" type="button" aria-expanded="false" aria-controls="faq-answer-3" id="faq-question-3">
+            <span>What does the approval process look like?</span>
+            <span class="accordion-icon" aria-hidden="true"></span>
+          </button>
+        </h3>
+        <div class="accordion-answer-wrap" id="faq-answer-3" role="region" aria-labelledby="faq-question-3">
+          <div class="accordion-answer-inner">
+            <p>You'll get a review point at the end of each phase — strategy, design, and build — so nothing goes live without your sign-off.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="accordion-item">
+        <h3 class="accordion-item-heading">
+          <button class="accordion-question" type="button" aria-expanded="false" aria-controls="faq-answer-4" id="faq-question-4">
+            <span>Is SEO included, or is that a separate service?</span>
+            <span class="accordion-icon" aria-hidden="true"></span>
+          </button>
+        </h3>
+        <div class="accordion-answer-wrap" id="faq-answer-4" role="region" aria-labelledby="faq-question-4">
+          <div class="accordion-answer-inner">
+            <p>Every site ships with clean technical SEO foundations by default. Need a deeper audit or an ongoing strategy? That's the SEO Consultation.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="accordion-item">
+        <h3 class="accordion-item-heading">
+          <button class="accordion-question" type="button" aria-expanded="false" aria-controls="faq-answer-5" id="faq-question-5">
+            <span>Is there a contract, or an ongoing retainer?</span>
+            <span class="accordion-icon" aria-hidden="true"></span>
+          </button>
+        </h3>
+        <div class="accordion-answer-wrap" id="faq-answer-5" role="region" aria-labelledby="faq-question-5">
+          <div class="accordion-answer-inner">
+            <p>No long-term retainer. Every project starts with a fixed-scope, fixed-price agreement — you know the cost and timeline upfront.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="accordion-item">
+        <h3 class="accordion-item-heading">
+          <button class="accordion-question" type="button" aria-expanded="false" aria-controls="faq-answer-6" id="faq-question-6">
+            <span>What are the payment options and terms?</span>
+            <span class="accordion-icon" aria-hidden="true"></span>
+          </button>
+        </h3>
+        <div class="accordion-answer-wrap" id="faq-answer-6" role="region" aria-labelledby="faq-question-6">
+          <div class="accordion-answer-inner">
+            <p>Payment terms are flexible and open to discussion based on the scale of your project. That can mean a structured milestone plan (a 50/50 split, or 33/33/34 across phases), custom monthly installments, or a schedule tailored to match your cash flow — we'll work out what makes sense during the intake.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script src="js/common.js"></script>
+<script src="js/home.js"></script>
+</body>
+</html>

@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Studio — Admin</title>
+<meta name="description" content="Studio admin dashboard." />
+<meta name="robots" content="noindex, nofollow" />
+<meta name="theme-color" content="#09090b" />
+<link rel="icon" href="favicon.svg" type="image/svg+xml" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Inter+Tight:wght@600;700;800&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+<div class="spotlight" id="spotlight"></div>
+<div class="cursor" id="cursor">
+  <div class="cursor-inner">
+    <span class="cursor-tick tick-top"></span>
+    <span class="cursor-tick tick-right"></span>
+    <span class="cursor-tick tick-bottom"></span>
+    <span class="cursor-tick tick-left"></span>
+  </div>
+  <span class="cursor-dot"></span>
+  <span class="cursor-ring"></span>
+  <span class="cursor-caret"></span>
+</div>
+<div class="coord-readout" id="coord-readout">
+  <span id="coord-text">000, 000</span>
+</div>
+<div class="bg-grid"></div>
+
+<!-- Account menu -->
+<div class="menu-root">
+  <button class="menu-toggle" id="menu-toggle" type="button" aria-label="Open menu" aria-expanded="false">
+    <span class="menu-toggle-line"></span>
+    <span class="menu-toggle-line"></span>
+    <span class="menu-toggle-line"></span>
+  </button>
+  <div class="menu-dropdown" id="menu-dropdown" hidden></div>
+</div>
+
+<!-- Auth modal -->
+<div class="modal-overlay" id="modal-overlay" hidden>
+  <div class="modal" id="modal" role="dialog" aria-modal="true">
+    <button class="modal-close" id="modal-close" type="button" aria-label="Close">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M4 4L12 12M12 4L4 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+    </button>
+    <div class="modal-body" id="modal-body"></div>
+  </div>
+</div>
+
+<!-- Site navigation -->
+<header class="nav-pill" id="nav-pill">
+  <span class="nav-pill-dot"></span>
+  <div class="nav-tabs">
+    <a class="nav-tab" href="index.html">Home</a>
+    <a class="nav-tab" href="web-design.html">Web Design</a>
+    <a class="nav-tab" href="seo.html">SEO</a>
+    <a class="nav-tab" href="contact.html">Contact</a>
+  </div>
+</header>
+
+<!-- Login gate -->
+<section class="admin-gate" id="admin-gate" hidden>
+  <div class="admin-gate-card">
+    <div class="admin-gate-icon">
+      <svg width="22" height="22" viewBox="0 0 16 16" fill="none"><rect x="3" y="7" width="10" height="7" rx="1.5" stroke="currentColor" stroke-width="1.4"/><path d="M5.5 7V4.8C5.5 3.25 6.75 2 8.3 2C9.85 2 11 3.25 11 4.8V7" stroke="currentColor" stroke-width="1.4"/></svg>
+    </div>
+    <h2 class="admin-gate-title">Admin access required</h2>
+    <p class="admin-gate-desc">Sign in with an admin account to review submitted questionnaires and SEO requests.</p>
+    <button class="btn btn-primary btn-large" id="btn-admin-login" type="button">Log In</button>
+  </div>
+</section>
+
+<!-- Dashboard -->
+<section class="admin-dashboard" id="admin-dashboard" hidden>
+  <div class="admin-header">
+    <div>
+      <h1 class="admin-title">Submissions</h1>
+      <p class="admin-sub" id="admin-sub">Loading…</p>
+    </div>
+    <button class="btn btn-ghost" id="btn-admin-logout" type="button">Log out</button>
+  </div>
+
+  <div class="admin-filters" id="admin-filters">
+    <button class="pill selected" data-filter="all" type="button">All</button>
+    <button class="pill" data-filter="web-design" type="button">Web Design</button>
+    <button class="pill" data-filter="seo" type="button">SEO</button>
+    <button class="pill" data-filter="contact" type="button">Contact</button>
+  </div>
+
+  <div class="submission-list" id="submission-list"></div>
+</section>
+
+<script src="js/common.js"></script>
+<script src="js/admin.js"></script>
+</body>
+</html>

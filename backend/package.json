@@ -1,0 +1,23 @@
+{
+  "name": "client-portal-backend",
+  "version": "1.0.0",
+  "description": "API and static server for the client portal — intake forms, SEO/contact submissions, and admin auth.",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-rate-limit": "^8.7.0",
+    "jsonwebtoken": "^9.0.2",
+    "resend": "^6.25.0"
+  }
+}

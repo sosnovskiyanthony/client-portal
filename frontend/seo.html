@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Studio — SEO Consultation</title>
+<meta name="description" content="Request a free SEO consultation from Studio — a structured review of your site's technical health, keyword strategy, and search visibility." />
+<meta name="theme-color" content="#09090b" />
+<link rel="icon" href="favicon.svg" type="image/svg+xml" />
+
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="Studio" />
+<meta property="og:title" content="SEO Consultation — Studio" />
+<meta property="og:description" content="A structured review of your site's technical health, keyword strategy, and search visibility." />
+<!-- TODO: set og:url and a real 1200x630 og:image once the production domain and a designed social-preview image exist. -->
+<meta name="twitter:card" content="summary" />
+<meta name="twitter:title" content="SEO Consultation — Studio" />
+<meta name="twitter:description" content="A structured review of your site's technical health, keyword strategy, and search visibility." />
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Inter+Tight:wght@600;700;800&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+<div class="spotlight" id="spotlight"></div>
+<div class="cursor" id="cursor">
+  <div class="cursor-inner">
+    <span class="cursor-tick tick-top"></span>
+    <span class="cursor-tick tick-right"></span>
+    <span class="cursor-tick tick-bottom"></span>
+    <span class="cursor-tick tick-left"></span>
+  </div>
+  <span class="cursor-dot"></span>
+  <span class="cursor-ring"></span>
+  <span class="cursor-caret"></span>
+</div>
+<div class="coord-readout" id="coord-readout">
+  <span id="coord-text">000, 000</span>
+</div>
+<div class="bg-grid"></div>
+
+<!-- Account menu -->
+<div class="menu-root">
+  <button class="menu-toggle" id="menu-toggle" type="button" aria-label="Open menu" aria-expanded="false">
+    <span class="menu-toggle-line"></span>
+    <span class="menu-toggle-line"></span>
+    <span class="menu-toggle-line"></span>
+  </button>
+  <div class="menu-dropdown" id="menu-dropdown" hidden></div>
+</div>
+
+<!-- Placeholder auth modal -->
+<div class="modal-overlay" id="modal-overlay" hidden>
+  <div class="modal" id="modal" role="dialog" aria-modal="true">
+    <button class="modal-close" id="modal-close" type="button" aria-label="Close">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M4 4L12 12M12 4L4 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+    </button>
+    <div class="modal-body" id="modal-body"></div>
+  </div>
+</div>
+
+<!-- Site navigation -->
+<header class="nav-pill" id="nav-pill">
+  <span class="nav-pill-dot"></span>
+  <div class="nav-tabs">
+    <a class="nav-tab" href="index.html">Home</a>
+    <a class="nav-tab" href="web-design.html">Web Design</a>
+    <a class="nav-tab active" href="seo.html">SEO</a>
+    <a class="nav-tab" href="contact.html">Contact</a>
+  </div>
+</header>
+
+<main class="layout" id="layout">
+
+  <div class="form-column">
+
+    <div class="section-nav">
+      <button class="nav-tab active" data-section="1" type="button">
+        <span class="nav-tab-dot"></span>
+        <span class="nav-tab-label">Site &amp; Keywords</span>
+      </button>
+      <button class="nav-tab" data-section="2" type="button">
+        <span class="nav-tab-dot"></span>
+        <span class="nav-tab-label">Visibility &amp; Challenges</span>
+      </button>
+      <button class="nav-tab" data-section="3" type="button">
+        <span class="nav-tab-dot"></span>
+        <span class="nav-tab-label">Contact &amp; Review</span>
+      </button>
+    </div>
+
+    <div class="form-frame">
+      <div class="step-content" id="step-content">
+
+        <!-- Section 1 -->
+        <div class="step-panel visible active" data-step="1">
+          <div class="step-header">
+            <span class="step-kicker">Site &amp; keywords</span>
+            <h2 class="step-title">Let's look at what<br /><span class="text-gradient">you're working with</span></h2>
+            <p class="step-desc">Start with your current site and the terms you actually want to rank for.</p>
+          </div>
+
+          <div class="field-group">
+            <label class="field">
+              <span class="field-label">Website URL</span>
+              <input class="field-input" type="text" id="input-url" placeholder="yourcompany.com" autocomplete="url" />
+            </label>
+          </div>
+
+          <div class="field-group">
+            <label class="field">
+              <span class="field-label">Target keywords</span>
+              <textarea class="field-input field-textarea" id="input-keywords" rows="3" placeholder="e.g. commercial roofing contractor, roof repair near me, emergency roof leak repair…"></textarea>
+            </label>
+          </div>
+
+          <button class="section-continue" data-goto="2" type="button">
+            Continue to Visibility &amp; Challenges
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3.5 8H12.5M12.5 8L8.5 4M12.5 8L8.5 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+
+        <!-- Section 2 -->
+        <div class="step-panel" data-step="2">
+          <div class="step-header">
+            <span class="step-kicker">Visibility &amp; challenges</span>
+            <h2 class="step-title">Where is search<br /><span class="text-gradient">letting you down?</span></h2>
+            <p class="step-desc">Pick what best describes the problem, and how visible you think you already are.</p>
+          </div>
+
+          <div class="field-group">
+            <span class="field-group-label">Primary organic traffic challenge</span>
+            <div class="bento-grid" data-field="challenge" data-mode="single">
+              <button class="bento-card bento-card-lg" data-value="not-ranking" type="button">
+                <span class="bento-icon">
+                  <svg viewBox="0 0 24 24" fill="none"><circle cx="10" cy="10" r="6.5" stroke="currentColor" stroke-width="1.6"/><path d="M15 15L20.5 20.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M7.5 10H12.5M10 7.5V12.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" transform="rotate(45 10 10)"/></svg>
+                </span>
+                <span class="bento-title">Not ranking</span>
+                <span class="bento-desc">Pages barely show up in search results at all, even for our own brand terms.</span>
+              </button>
+              <button class="bento-card" data-value="traffic-declining" type="button">
+                <span class="bento-icon">
+                  <svg viewBox="0 0 24 24" fill="none"><path d="M3 7L10 14L14 10L21 17" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M15 17H21V11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </span>
+                <span class="bento-title">Traffic declining</span>
+                <span class="bento-desc">Rankings or organic traffic have dropped recently.</span>
+              </button>
+              <button class="bento-card" data-value="low-ctr" type="button">
+                <span class="bento-icon">
+                  <svg viewBox="0 0 24 24" fill="none"><path d="M2 12C4.5 7 8 4.5 12 4.5C16 4.5 19.5 7 22 12C19.5 17 16 19.5 12 19.5C8 19.5 4.5 17 2 12Z" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.6"/></svg>
+                </span>
+                <span class="bento-title">Low click-through</span>
+                <span class="bento-desc">Ranking, but few people are actually clicking through.</span>
+              </button>
+              <button class="bento-card" data-value="poor-conversion" type="button">
+                <span class="bento-icon">
+                  <svg viewBox="0 0 24 24" fill="none"><path d="M4 4H20L14 12.5V19L10 21V12.5L4 4Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+                </span>
+                <span class="bento-title">Poor conversion</span>
+                <span class="bento-desc">Getting organic traffic, but it isn't turning into leads or sales.</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="field-group">
+            <span class="field-group-label">Current search visibility</span>
+            <div class="pill-row" data-field="visibility" data-mode="single">
+              <button class="pill" data-value="some-terms" type="button">Ranking well for some terms</button>
+              <button class="pill" data-value="barely-visible" type="button">Barely visible</button>
+              <button class="pill" data-value="not-sure" type="button">Not sure</button>
+            </div>
+          </div>
+
+          <button class="section-continue" data-goto="3" type="button">
+            Continue to Contact &amp; Review
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3.5 8H12.5M12.5 8L8.5 4M12.5 8L8.5 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+
+        <!-- Section 3 -->
+        <div class="step-panel" data-step="3">
+          <div class="step-header">
+            <span class="step-kicker">Contact &amp; review</span>
+            <h2 class="step-title">Where should we<br /><span class="text-gradient">send the review?</span></h2>
+            <p class="step-desc">Last step — then we'll audit your site and follow up with findings.</p>
+          </div>
+
+          <div class="field-group">
+            <div class="field-row">
+              <label class="field">
+                <span class="field-label">Full name</span>
+                <input class="field-input" type="text" id="input-name" placeholder="Jordan Casey" autocomplete="name" />
+              </label>
+              <label class="field">
+                <span class="field-label">Email address</span>
+                <input class="field-input" type="email" id="input-email" placeholder="jordan@company.com" autocomplete="email" />
+              </label>
+            </div>
+            <label class="field">
+              <span class="field-label">Anything else about your current SEO setup? <span class="field-optional">(optional)</span></span>
+              <textarea class="field-input field-textarea" id="input-notes" rows="3" placeholder="Existing tools, past agencies, specific pages of concern…"></textarea>
+            </label>
+          </div>
+
+          <div class="submit-area">
+            <button class="btn btn-primary btn-large" id="btn-submit" type="button" disabled>
+              Request SEO Review
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3.5 8H12.5M12.5 8L8.5 4M12.5 8L8.5 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <p class="submit-hint" id="submit-hint"></p>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+
+  <aside class="summary-drawer" id="summary-drawer">
+    <span class="summary-title">Live summary</span>
+    <div class="summary-list" id="summary-list"></div>
+  </aside>
+
+</main>
+
+<section class="success-state" id="success-state" hidden>
+  <div class="success-inner">
+    <div class="success-icon">✓</div>
+    <h2 class="success-title">Review requested.</h2>
+    <p class="success-sub" id="success-sub">We'll audit your site and follow up by email within one business day.</p>
+    <div class="success-summary" id="success-summary"></div>
+  </div>
+</section>
+
+<script src="js/common.js"></script>
+<script src="js/seo.js"></script>
+</body>
+</html>

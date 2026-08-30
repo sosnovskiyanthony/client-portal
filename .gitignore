@@ -1,0 +1,13 @@
+# OS
+.DS_Store
+
+# Editor / tooling
+.claude/settings.local.json
+
+# Backend runtime (also covered by backend/.gitignore, kept here for
+# visibility at the repo root)
+backend/node_modules/
+backend/.env
+backend/data/
+backend/*.db
+backend/*.db-journal
