@@ -1692,6 +1692,17 @@ button, input, textarea {
   gap: 12px;
 }
 
+/* 2-column variant (e.g. homepage "two ways to work together"). A plain
+   inline style here would beat the .info-grid mobile media query below
+   (inline always wins over any stylesheet rule, media query or not), so
+   this needs to be its own class to actually collapse to 1 column on
+   narrow screens. */
+.info-grid-2col {
+  grid-template-columns: repeat(2, 1fr);
+  max-width: 820px;
+  margin: 0 auto;
+}
+
 /* ---------- Process steps ---------- */
 .process-grid {
   display: grid;
@@ -1837,4 +1848,38 @@ button, input, textarea {
   .accordion-answer-inner p { padding: 0 24px 16px 10px; }
   .admin-dashboard { padding: 110px 20px 60px; }
   .admin-header { flex-direction: column; }
+
+  /* iOS Safari auto-zooms the viewport when a focused input's font-size is
+     under 16px — jarring on every tap into a form field. Desktop keeps the
+     smaller 14px; this only applies below the tablet breakpoint. */
+  .field-input {
+    font-size: 16px;
+  }
+
+  /* Slightly larger tap target on touch-sized screens without changing the
+     desktop pill size. */
+  .pill {
+    padding: 12px 18px;
+  }
+}
+
+/* Narrow phones (iPhone SE and similar, ~375px and under): four nav-pill
+   tabs at full padding can crowd the separate fixed menu-toggle button in
+   the top-right corner. Shrink the pill's own footprint instead of hiding
+   any nav item. */
+@media (max-width: 420px) {
+  .nav-pill {
+    padding: 6px 6px 6px 12px;
+    gap: 6px;
+  }
+  .nav-pill-dot {
+    display: none;
+  }
+  .nav-tabs .nav-tab {
+    padding: 6px 8px;
+    font-size: 11.5px;
+  }
+  .menu-root {
+    right: 1rem;
+  }
 }
