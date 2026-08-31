@@ -11,6 +11,12 @@ const adminRoutes = require("./routes/admin");
 
 const app = express();
 
+// Railway (and most hosts) run the app behind one reverse proxy that sets
+// X-Forwarded-For to the real client IP. Trusting exactly one hop lets
+// express-rate-limit (and req.ip generally) use that IP safely, without
+// blindly trusting the whole header chain.
+app.set("trust proxy", 1);
+
 app.use(cors());
 app.use(express.json());
 
