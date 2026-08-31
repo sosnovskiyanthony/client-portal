@@ -28,7 +28,7 @@ app.use((req, res, next) => {
 
 // Serve the static frontend from the same origin — no CORS juggling needed
 // between the site and its own API.
-app.use(express.static(path.join(__dirname, "..", "frontend")));
+app.use(express.static(path.join(__dirname, "frontend")));
 
 app.use((err, req, res, next) => {
   console.error(err);
