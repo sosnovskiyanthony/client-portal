@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Custom Web Design &amp; Development — Studio</title>
+<meta name="description" content="Hand-written, custom web design and development — no page builders, no templates. Fixed scope, fixed price, 2–6 week turnaround, and direct access to the person building it." />
+<meta name="theme-color" content="#09090b" />
+<link rel="icon" href="favicon.svg" type="image/svg+xml" />
+<link rel="canonical" href="https://client-portal-production-d328.up.railway.app/web-design-services.html" />
+
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="Studio" />
+<meta property="og:title" content="Custom Web Design &amp; Development — Studio" />
+<meta property="og:description" content="Hand-written, custom web design and development — no page builders, no templates. Fixed scope, fixed price, 2–6 week turnaround." />
+<meta property="og:url" content="https://client-portal-production-d328.up.railway.app/web-design-services.html" />
+<meta property="og:image" content="https://client-portal-production-d328.up.railway.app/og-image.png" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta property="og:image:alt" content="Studio — custom web design and SEO" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Custom Web Design &amp; Development — Studio" />
+<meta name="twitter:description" content="Hand-written, custom web design and development — no page builders, no templates." />
+<meta name="twitter:image" content="https://client-portal-production-d328.up.railway.app/og-image.png" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Inter+Tight:wght@600;700;800&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="css/style.css" />
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Service",
+  "serviceType": "Web Design & Development",
+  "provider": {
+    "@type": "Organization",
+    "name": "Studio",
+    "url": "https://client-portal-production-d328.up.railway.app/"
+  },
+  "description": "Custom, hand-written web design and development — no page builders. Fixed scope, fixed price, typical 2–6 week turnaround.",
+  "url": "https://client-portal-production-d328.up.railway.app/web-design-services.html"
+}
+</script>
+</head>
+<body>
+
+<div class="spotlight" id="spotlight"></div>
+<div class="cursor" id="cursor">
+  <div class="cursor-inner">
+    <span class="cursor-tick tick-top"></span>
+    <span class="cursor-tick tick-right"></span>
+    <span class="cursor-tick tick-bottom"></span>
+    <span class="cursor-tick tick-left"></span>
+  </div>
+  <span class="cursor-dot"></span>
+  <span class="cursor-ring"></span>
+  <span class="cursor-caret"></span>
+</div>
+<div class="coord-readout" id="coord-readout">
+  <span id="coord-text">000, 000</span>
+</div>
+<div class="bg-grid"></div>
+
+<!-- Account menu -->
+<div class="menu-root">
+  <button class="menu-toggle" id="menu-toggle" type="button" aria-label="Open menu" aria-expanded="false">
+    <span class="menu-toggle-line"></span>
+    <span class="menu-toggle-line"></span>
+    <span class="menu-toggle-line"></span>
+  </button>
+  <div class="menu-dropdown" id="menu-dropdown" hidden></div>
+</div>
+
+<!-- Auth modal -->
+<div class="modal-overlay" id="modal-overlay" hidden>
+  <div class="modal" id="modal" role="dialog" aria-modal="true">
+    <button class="modal-close" id="modal-close" type="button" aria-label="Close">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M4 4L12 12M12 4L4 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+    </button>
+    <div class="modal-body" id="modal-body"></div>
+  </div>
+</div>
+
+<!-- Site navigation -->
+<header class="nav-pill" id="nav-pill">
+  <span class="nav-pill-dot"></span>
+  <div class="nav-tabs">
+    <a class="nav-tab" href="index.html">Home</a>
+    <a class="nav-tab active" href="web-design-services.html">Web Design</a>
+    <a class="nav-tab" href="seo.html">SEO</a>
+    <a class="nav-tab" href="contact.html">Contact</a>
+  </div>
+</header>
+
+<!-- Hero -->
+<section class="home-hero">
+  <span class="eyebrow">Web Design &amp; Development</span>
+  <h1 class="home-title">Custom web design, built by<br />the person <span class="text-gradient">building it.</span></h1>
+  <p class="home-sub">A fixed-price web design service for brands that want a site that's actually theirs — hand-written code, no page builders, no templates, and a single point of contact from first call to launch.</p>
+
+  <div class="home-highlights">
+    <div class="home-highlight">
+      <span class="home-highlight-icon" aria-hidden="true">
+        <svg viewBox="0 0 16 16" fill="none"><path d="M4 8.5L6.5 11L12 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </span>
+      <span>No long-term contracts</span>
+    </div>
+    <div class="home-highlight">
+      <span class="home-highlight-icon" aria-hidden="true">
+        <svg viewBox="0 0 16 16" fill="none"><path d="M2 2H7L14 9L9 14L2 7V2Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><circle cx="5" cy="5" r="1" fill="currentColor"/></svg>
+      </span>
+      <span>Fixed scope, fixed price</span>
+    </div>
+    <div class="home-highlight">
+      <span class="home-highlight-icon" aria-hidden="true">
+        <svg viewBox="0 0 16 16" fill="none"><path d="M2 3.5H14V10.5H5.5L2 13.5V10.5" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+      </span>
+      <span>Direct line to the person building it</span>
+    </div>
+  </div>
+
+  <div class="home-actions">
+    <a class="btn btn-primary btn-large" href="web-design.html">
+      Start Your Project
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8H12.5M12.5 8L8.5 4M12.5 8L8.5 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </a>
+  </div>
+</section>
+
+<!-- What's included -->
+<section class="faq-container">
+  <div class="faq-header">
+    <span class="eyebrow">What's included</span>
+    <h2 class="faq-heading">Every build ships with the essentials done right</h2>
+    <p class="faq-sub">No add-on packages required to get a site that's fast, correct, and actually maintainable.</p>
+  </div>
+
+  <div class="info-grid">
+    <article class="bento-card">
+      <span class="bento-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M8 6L3 12L8 18" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 6L21 12L16 18" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </span>
+      <span class="bento-title">Hand-written custom code</span>
+      <span class="bento-desc">No page builders or bloated templates. Every line is written for your project — faster load times, and a site you actually own.</span>
+    </article>
+    <article class="bento-card">
+      <span class="bento-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="12" height="9" rx="1.5" stroke="currentColor" stroke-width="1.6"/><rect x="17" y="7" width="4" height="7" rx="1" stroke="currentColor" stroke-width="1.6"/></svg>
+      </span>
+      <span class="bento-title">Responsive by default</span>
+      <span class="bento-desc">Designed and tested across desktop, tablet, and mobile from day one — not bolted on after launch.</span>
+    </article>
+    <article class="bento-card">
+      <span class="bento-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none"><circle cx="10" cy="10" r="6" stroke="currentColor" stroke-width="1.6"/><path d="M15 15L20 20" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      </span>
+      <span class="bento-title">Technical SEO foundations</span>
+      <span class="bento-desc">Clean semantic markup, meta tags, and a sitemap ship with every project — the same foundation this portal itself uses.</span>
+    </article>
+    <article class="bento-card">
+      <span class="bento-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="16" rx="2" stroke="currentColor" stroke-width="1.6"/><path d="M3 9H21" stroke="currentColor" stroke-width="1.6"/><path d="M9 9V20" stroke="currentColor" stroke-width="1.6"/></svg>
+      </span>
+      <span class="bento-title">CMS integration available</span>
+      <span class="bento-desc">Need to edit content without touching code? It's an option, scoped to what your project actually needs — not a forced default.</span>
+    </article>
+  </div>
+</section>
+
+<!-- Process -->
+<section class="faq-container">
+  <div class="faq-header">
+    <span class="eyebrow">Process</span>
+    <h2 class="faq-heading">Three phases, one point of contact</h2>
+    <p class="faq-sub">You'll get a review point at the end of each phase — nothing goes live without your sign-off.</p>
+  </div>
+
+  <div class="process-grid">
+    <div class="process-step">
+      <span class="process-step-number" aria-hidden="true">1</span>
+      <h3 class="process-step-title">Strategy &amp; intake</h3>
+      <p class="process-step-desc">A short intake covering your goals, scope, and timeline, followed by a proposal with a fixed price and schedule.</p>
+    </div>
+    <div class="process-step">
+      <span class="process-step-number" aria-hidden="true">2</span>
+      <h3 class="process-step-title">Design</h3>
+      <p class="process-step-desc">You review and sign off on the design direction before a single line of code gets written.</p>
+    </div>
+    <div class="process-step">
+      <span class="process-step-number" aria-hidden="true">3</span>
+      <h3 class="process-step-title">Build &amp; launch</h3>
+      <p class="process-step-desc">Custom-built and reviewed with you at each milestone. Most projects launch in 2–6 weeks depending on scope.</p>
+    </div>
+  </div>
+</section>
+
+<!-- Closing CTA -->
+<section class="faq-container">
+  <div class="cta-banner">
+    <h2 class="cta-banner-title">Ready to start?</h2>
+    <p class="cta-banner-sub">Most projects begin with a short intake — no commitment, no cost.</p>
+    <div class="cta-banner-links">
+      <a class="btn btn-primary btn-large" href="web-design.html">
+        Start Your Project
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8H12.5M12.5 8L8.5 4M12.5 8L8.5 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </a>
+      <a class="cta-banner-secondary-link" href="index.html#faq">Have questions? See the FAQ</a>
+    </div>
+  </div>
+</section>
+
+<script src="js/common.js"></script>
+<script src="js/web-design-services.js"></script>
+</body>
+</html>
