@@ -35,4 +35,11 @@ module.exports = {
   // needed. Until then this defaults to the same Railway URL already baked
   // into the HTML, so it's a no-op.
   siteUrl: (process.env.SITE_URL || "https://client-portal-production-d328.up.railway.app").replace(/\/$/, ""),
+
+  // Google Analytics 4 Measurement ID. Injected server-side into every
+  // public page (see server.js) via a single <!-- GA_TAG --> placeholder —
+  // not hardcoded per file — so it can be swapped or unset from one place.
+  // Deliberately left off admin.html (no reason to track the owner's own
+  // dashboard visits).
+  gaMeasurementId: process.env.GA_MEASUREMENT_ID || "G-GZ4Y4JKWLR",
 };

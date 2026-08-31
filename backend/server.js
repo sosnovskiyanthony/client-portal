@@ -41,11 +41,24 @@ app.use((req, res, next) => {
 const RAILWAY_DEFAULT_SITE_URL = "https://client-portal-production-d328.up.railway.app";
 const TEMPLATED_FILE = /\.(html|xml|txt)$/;
 const FRONTEND_DIR = path.join(__dirname, "frontend");
+const GA_TAG_PLACEHOLDER = "<!-- GA_TAG -->";
 
 function contentTypeFor(reqPath) {
   if (reqPath.endsWith(".xml")) return "application/xml";
   if (reqPath.endsWith(".txt")) return "text/plain";
   return "text/html";
+}
+
+function renderGaSnippet() {
+  if (!env.gaMeasurementId) return "";
+  const id = env.gaMeasurementId;
+  return `<script async src="https://www.googletagmanager.com/gtag/js?id=${id}"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', '${id}');
+</script>`;
 }
 
 app.get(["/", /\.(html|xml|txt)$/], (req, res, next) => {
@@ -57,6 +70,9 @@ app.get(["/", /\.(html|xml|txt)$/], (req, res, next) => {
     if (err) return next();
     if (env.siteUrl !== RAILWAY_DEFAULT_SITE_URL) {
       contents = contents.split(RAILWAY_DEFAULT_SITE_URL).join(env.siteUrl);
+    }
+    if (contents.includes(GA_TAG_PLACEHOLDER)) {
+      contents = contents.split(GA_TAG_PLACEHOLDER).join(renderGaSnippet());
     }
     res.type(contentTypeFor(reqPath)).send(contents);
   });
