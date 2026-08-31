@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="mark" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#818cf8"/>
+      <stop offset="1" stop-color="#c084fc"/>
+    </linearGradient>
+    <linearGradient id="bar" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#818cf8"/>
+      <stop offset="1" stop-color="#c084fc"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.28" cy="0.32" r="0.75">
+      <stop offset="0" stop-color="#818cf8" stop-opacity="0.20"/>
+      <stop offset="0.55" stop-color="#818cf8" stop-opacity="0.05"/>
+      <stop offset="1" stop-color="#818cf8" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="1200" height="630" fill="#09090b"/>
+  <rect width="1200" height="630" fill="url(#glow)"/>
+
+  <!-- sparkle mark -->
+  <path d="M120 148L133.6 197.4L183 211L133.6 224.6L120 274L106.4 224.6L57 211L106.4 197.4Z" fill="url(#mark)"/>
+
+  <text x="120" y="330" font-family="Helvetica, Arial, sans-serif" font-size="76" font-weight="700" fill="#f4f4f5" letter-spacing="-1">Studio</text>
+
+  <text x="120" y="382" font-family="Helvetica, Arial, sans-serif" font-size="30" font-weight="500" fill="#a1a1aa">Custom web design &amp; SEO for brands that</text>
+  <text x="120" y="422" font-family="Helvetica, Arial, sans-serif" font-size="30" font-weight="500" fill="#a1a1aa">actually convert and get found.</text>
+
+  <rect x="120" y="470" width="120" height="4" rx="2" fill="url(#bar)"/>
+</svg>
