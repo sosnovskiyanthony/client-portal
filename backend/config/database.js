@@ -35,6 +35,28 @@ async function init() {
     );
   `);
 
+  // One AI analysis per submission (re-analyze overwrites the existing row
+  // rather than accumulating history — see services/aiAnalysis.js). `outcome`
+  // is reserved for future manually-entered actual-project data (final scope,
+  // timeline, hours, price, features delivered, outcome) so historical rows
+  // can eventually feed a predictive dataset — nothing populates it yet, and
+  // no UI exists to edit it in this pass; it's just schema headroom.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS submission_analyses (
+      id SERIAL PRIMARY KEY,
+      submission_id INTEGER NOT NULL UNIQUE REFERENCES submissions(id) ON DELETE CASCADE,
+      status TEXT NOT NULL DEFAULT 'pending',
+      provider TEXT,
+      model TEXT,
+      prompt_version TEXT,
+      result JSONB,
+      error TEXT,
+      outcome JSONB,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+
   // The admin account is fully driven by ADMIN_EMAIL/ADMIN_PASSWORD — there's
   // no in-app "change password" flow, so on every startup we reconcile the
   // stored admin to match those env vars, not just seed it once. That way

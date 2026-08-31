@@ -252,6 +252,33 @@ async function updateSubmissionStatus(id, status) {
   return body.submission;
 }
 
+// Triggers (or re-triggers) the AI project analysis for one web-design
+// submission. Admin-only server-side (see routes/admin.js); the request can
+// legitimately take a couple of minutes against a local Ollama model, so
+// callers should show a loading state rather than assume this resolves fast.
+async function analyzeSubmission(id) {
+  let res;
+  try {
+    res = await fetch(`/api/admin/submissions/${id}/analyze`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${getAdminToken()}` },
+    });
+  } catch (err) {
+    throw new Error("Can't reach the server. Is the backend running?");
+  }
+
+  if (res.status === 401 || res.status === 403) {
+    logoutAdmin();
+    throw new Error("Your session expired. Please log in again.");
+  }
+
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(body.error || "Analysis request failed.");
+  }
+  return body.analysis;
+}
+
 // ---------- Account menu ----------
 
 function initMenu() {

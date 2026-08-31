@@ -30,6 +30,12 @@ function makeIntakeHandler(type) {
     // Fire-and-forget — the submission already succeeded and was returned
     // above; a slow or failed email must never affect the response.
     notifyNewSubmission(submission).catch(() => {});
+
+    // AI analysis is deliberately NOT triggered here. It only ever runs when
+    // an authenticated admin clicks "Analyze with AI" (or "Re-analyze") in
+    // the dashboard — see adminController.analyzeSubmission /
+    // services/runAnalysis.js. That's what lets Ollama stay completely shut
+    // down between uses instead of needing to be running for every intake.
   };
 }
 

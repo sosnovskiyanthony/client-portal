@@ -50,4 +50,22 @@ module.exports = {
   // Deliberately left off admin.html (no reason to track the owner's own
   // dashboard visits).
   gaMeasurementId: process.env.GA_MEASUREMENT_ID || "G-GZ4Y4JKWLR",
+
+  // AI project analysis (see ai/aiService.js). "ollama" is the default —
+  // free, local inference, no API key, $0 per request. "anthropic" is built
+  // and available but dormant: it only runs if explicitly selected here AND
+  // ANTHROPIC_API_KEY is set, so switching providers is a config change, not
+  // a code change.
+  aiProvider: process.env.AI_PROVIDER || "ollama",
+
+  // Ollama server location — defaults to the same machine. In production
+  // this must point at a private, non-public Ollama instance (see
+  // ai/README.md) — never a publicly reachable one, since Ollama's API has
+  // no built-in authentication.
+  ollamaBaseUrl: (process.env.OLLAMA_BASE_URL || "http://localhost:11434").replace(/\/$/, ""),
+  ollamaModel: process.env.OLLAMA_MODEL || "qwen2.5:7b",
+
+  // Only used when aiProvider === "anthropic".
+  anthropicApiKey: process.env.ANTHROPIC_API_KEY || null,
+  aiModel: process.env.AI_MODEL || "claude-opus-5",
 };

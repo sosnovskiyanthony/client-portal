@@ -19,4 +19,16 @@ const submissionLimiter = rateLimit({
   message: { error: "Too many submissions from this device. Please try again later." },
 });
 
-module.exports = { loginLimiter, submissionLimiter };
+// The AI analysis endpoint is already authenticated + admin-only (see
+// routes/admin.js), so a public visitor can never reach it at all — this is
+// defense-in-depth against a compromised/leaked admin token or accidental
+// rapid re-clicking, not the primary control.
+const analysisLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many analysis requests. Please try again later." },
+});
+
+module.exports = { loginLimiter, submissionLimiter, analysisLimiter };
