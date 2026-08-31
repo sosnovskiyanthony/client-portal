@@ -35,8 +35,14 @@ async function init() {
     );
   `);
 
-  // Seed the admin account on first run so the system is usable immediately.
-  const { rows } = await pool.query("SELECT id FROM users WHERE role = 'admin' LIMIT 1");
+  // The admin account is fully driven by ADMIN_EMAIL/ADMIN_PASSWORD — there's
+  // no in-app "change password" flow, so on every startup we reconcile the
+  // stored admin to match those env vars, not just seed it once. That way
+  // updating ADMIN_PASSWORD and redeploying is enough to actually change it.
+  const { rows } = await pool.query(
+    "SELECT id, email, password_hash FROM users WHERE role = 'admin' LIMIT 1"
+  );
+
   if (rows.length === 0) {
     const passwordHash = bcrypt.hashSync(env.adminPassword, 10);
     await pool.query(
@@ -44,6 +50,21 @@ async function init() {
       [env.adminEmail, passwordHash]
     );
     console.log(`Seeded admin user: ${env.adminEmail}`);
+  } else {
+    const admin = rows[0];
+    const emailChanged = admin.email !== env.adminEmail;
+    const passwordChanged = !bcrypt.compareSync(env.adminPassword, admin.password_hash);
+
+    if (emailChanged || passwordChanged) {
+      const passwordHash = passwordChanged ? bcrypt.hashSync(env.adminPassword, 10) : admin.password_hash;
+      await pool.query("UPDATE users SET email = $1, password_hash = $2 WHERE id = $3", [
+        env.adminEmail,
+        passwordHash,
+        admin.id,
+      ]);
+      const changed = [emailChanged && "email", passwordChanged && "password"].filter(Boolean).join(", ");
+      console.log(`Synced admin user (${changed} changed): ${env.adminEmail}`);
+    }
   }
 }
 
