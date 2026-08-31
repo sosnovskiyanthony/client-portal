@@ -14,6 +14,10 @@
       name: "",
       email: "",
       website: "",
+      // { path, filename, contentType, sizeBytes } per file — path is a
+      // Supabase Storage object key issued by uploadSelectedAssets() below,
+      // not anything client-controlled. See intakeController.uploadBrandAssets.
+      brandAssets: [],
     },
   };
 
@@ -28,6 +32,14 @@
     timeline: FIELD_LABELS.timeline,
   };
 
+  const DRAFT_KEY = "web-design";
+  const TEXT_BINDINGS = [
+    ["input-summary", "summary"],
+    ["input-name", "name"],
+    ["input-email", "email"],
+    ["input-website", "website"],
+  ];
+
   const els = {
     tabs: Array.from(document.querySelectorAll(".nav-tab[data-section]")),
     layout: document.getElementById("layout"),
@@ -38,10 +50,107 @@
     successState: document.getElementById("success-state"),
     successSub: document.getElementById("success-sub"),
     successSummary: document.getElementById("success-summary"),
+    assetInput: document.getElementById("input-brand-assets"),
+    assetList: document.getElementById("asset-list"),
+    assetStatus: document.getElementById("asset-upload-status"),
   };
 
   // panelFor, initMagneticCards, summaryRow, and the animated section
   // transition (goToSection, below) are shared with seo.js — see common.js.
+
+  // ---------- Brand asset uploads ----------
+  // Files upload straight to Supabase Storage through the server as soon as
+  // they're selected (not deferred to final submit) — the form only ever
+  // carries the resulting {path, filename, contentType, sizeBytes} refs in
+  // state.data.brandAssets, never raw file bytes. This is also why a saved
+  // draft (see common.js's saveDraft) can safely restore an in-progress
+  // upload list: it's just small JSON, the files themselves are already
+  // safely in storage.
+
+  const MAX_BRAND_ASSETS = 5;
+  const MAX_ASSET_BYTES = 15 * 1024 * 1024;
+  const ALLOWED_ASSET_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml", "application/pdf"];
+
+  function renderAssetList() {
+    els.assetList.innerHTML = state.data.brandAssets
+      .map(
+        (a, i) => `
+        <li class="asset-item">
+          <span class="asset-item-name">${escapeHtml(a.filename)}</span>
+          <button class="asset-item-remove" data-remove-index="${i}" type="button" aria-label="Remove ${escapeHtml(a.filename)}">&times;</button>
+        </li>
+      `
+      )
+      .join("");
+  }
+
+  async function uploadSelectedAssets(fileList) {
+    const remaining = MAX_BRAND_ASSETS - state.data.brandAssets.length;
+    if (remaining <= 0) {
+      els.assetStatus.textContent = `You can attach up to ${MAX_BRAND_ASSETS} files.`;
+      return;
+    }
+
+    const files = Array.from(fileList).slice(0, remaining);
+    const rejected = [];
+    const valid = files.filter((f) => {
+      if (!ALLOWED_ASSET_TYPES.includes(f.type)) {
+        rejected.push(`${f.name} (unsupported type)`);
+        return false;
+      }
+      if (f.size > MAX_ASSET_BYTES) {
+        rejected.push(`${f.name} (over 15MB)`);
+        return false;
+      }
+      return true;
+    });
+
+    if (valid.length === 0) {
+      els.assetStatus.textContent = rejected.length ? `Couldn't attach: ${rejected.join(", ")}` : "";
+      return;
+    }
+
+    els.assetStatus.textContent = "Uploading…";
+    const formData = new FormData();
+    valid.forEach((f) => formData.append("files", f));
+
+    let res;
+    try {
+      res = await fetch("/api/intake/web-design/assets", { method: "POST", body: formData });
+    } catch (err) {
+      els.assetStatus.textContent = "Can't reach the server. Is the backend running?";
+      return;
+    }
+
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      els.assetStatus.textContent = body.error || "Upload failed.";
+      return;
+    }
+
+    state.data.brandAssets.push(...body.files);
+    renderAssetList();
+    saveDraft(DRAFT_KEY, state.data);
+    els.assetStatus.textContent = rejected.length
+      ? `Attached ${body.files.length} file(s). Couldn't attach: ${rejected.join(", ")}`
+      : `Attached ${body.files.length} file(s).`;
+  }
+
+  function initAssetUpload() {
+    els.assetInput.addEventListener("change", () => {
+      const files = els.assetInput.files;
+      if (files && files.length > 0) uploadSelectedAssets(files);
+      els.assetInput.value = ""; // clear so the same file(s) can be re-selected later if removed
+    });
+
+    els.assetList.addEventListener("click", (e) => {
+      const btn = e.target.closest(".asset-item-remove[data-remove-index]");
+      if (!btn) return;
+      state.data.brandAssets.splice(Number(btn.dataset.removeIndex), 1);
+      renderAssetList();
+      saveDraft(DRAFT_KEY, state.data);
+    });
+  }
 
   // ---------- Selectors ----------
 
@@ -78,6 +187,7 @@
         renderSummary();
         updateTabs();
         updateSubmitState();
+        saveDraft(DRAFT_KEY, state.data);
       });
     });
   }
@@ -85,20 +195,14 @@
   // ---------- Text inputs ----------
 
   function initTextInputs() {
-    const bindings = [
-      ["input-summary", "summary"],
-      ["input-name", "name"],
-      ["input-email", "email"],
-      ["input-website", "website"],
-    ];
-
-    bindings.forEach(([id, field]) => {
+    TEXT_BINDINGS.forEach(([id, field]) => {
       const el = document.getElementById(id);
       el.addEventListener("input", () => {
         state.data[field] = el.value;
         renderSummary();
         updateTabs();
         updateSubmitState();
+        saveDraft(DRAFT_KEY, state.data);
       });
     });
   }
@@ -197,6 +301,11 @@
     rows.push(summaryRow("Content readiness", LABELS.contentReadiness[d.contentReadiness], !d.contentReadiness));
     rows.push(summaryRow("Timeline", LABELS.timeline[d.timeline], !d.timeline));
     rows.push(summaryRow("Contact", [d.name, d.email, d.website].filter(Boolean).join(" · "), !d.name && !d.email && !d.website));
+    // Optional field — only shown once something's actually attached, unlike
+    // the required fields above which show "Not selected yet" when empty.
+    if (d.brandAssets.length > 0) {
+      rows.push(summaryRow("Brand assets", d.brandAssets.map((a) => a.filename).join(", "), false));
+    }
 
     els.summaryList.innerHTML = rows.join("");
   }
@@ -237,6 +346,8 @@
       return;
     }
 
+    clearDraft(DRAFT_KEY);
+
     // #nav-pill is site-wide navigation (Web Design/SEO/Contact), so it
     // stays visible on the success screen — only the questionnaire fades out.
     els.layout.style.transition = "opacity 0.3s var(--ease)";
@@ -267,14 +378,27 @@
 
   // ---------- Init ----------
 
+  function restoreDraft(data) {
+    Object.assign(state.data, data);
+    if (!Array.isArray(state.data.brandAssets)) state.data.brandAssets = [];
+    hydrateFieldSelectors(state.data);
+    hydrateTextInputs(TEXT_BINDINGS, state.data);
+    renderAssetList();
+    renderSummary();
+    updateTabs();
+    updateSubmitState();
+  }
+
   function init() {
     initCommon();
     initMagneticCards();
     initTabs();
     initSelectors();
     initTextInputs();
+    initAssetUpload();
     initSubmitHint();
     initSubmit();
+    initDraftBanner(DRAFT_KEY, restoreDraft);
 
     renderSummary();
     updateTabs();

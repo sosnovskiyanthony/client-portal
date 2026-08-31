@@ -69,6 +69,51 @@ async function init() {
     );
   `);
 
+  // Manually-entered, post-hoc project data — separate from
+  // submission_analyses.outcome (which is AI-analysis-specific and only
+  // ever applies to web-design submissions). This table is general-purpose:
+  // any submission type can have a recorded outcome, since an SEO or even a
+  // contact inquiry can become real paying work too. This is the actual
+  // seed of the "future predictive dataset" the AI system was built to
+  // eventually feed — nothing populates it automatically; it's filled in by
+  // hand once a project's real trajectory is known.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS project_outcomes (
+      id SERIAL PRIMARY KEY,
+      submission_id INTEGER NOT NULL UNIQUE REFERENCES submissions(id) ON DELETE CASCADE,
+      outcome TEXT,
+      final_scope TEXT,
+      actual_timeline TEXT,
+      quoted_price NUMERIC,
+      final_price NUMERIC,
+      features_delivered JSONB,
+      notes TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+
+  // AI-drafted client outreach emails — one per submission, same
+  // pending/processing/completed/failed lifecycle as submission_analyses
+  // (see models/EmailDraft.js), since drafting also makes a real AI call
+  // that can fail or hang the same way. Only ever populated once an analysis
+  // exists and completed (see ai/aiService.js's draftEmail).
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS email_drafts (
+      id SERIAL PRIMARY KEY,
+      submission_id INTEGER NOT NULL UNIQUE REFERENCES submissions(id) ON DELETE CASCADE,
+      status TEXT NOT NULL DEFAULT 'pending',
+      provider TEXT,
+      model TEXT,
+      prompt_version TEXT,
+      subject TEXT,
+      body TEXT,
+      error TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+
   // The admin account is fully driven by ADMIN_EMAIL/ADMIN_PASSWORD — there's
   // no in-app "change password" flow, so on every startup we reconcile the
   // stored admin to match those env vars, not just seed it once. That way

@@ -15,6 +15,13 @@
     reason: FIELD_LABELS.reason,
   };
 
+  const DRAFT_KEY = "contact";
+  const TEXT_BINDINGS = [
+    ["input-name", "name"],
+    ["input-email", "email"],
+    ["input-message", "message"],
+  ];
+
   const els = {
     layout: document.getElementById("layout"),
     btnSubmit: document.getElementById("btn-submit"),
@@ -47,6 +54,7 @@
         state.data[field] = value;
 
         updateSubmitState();
+        saveDraft(DRAFT_KEY, state.data);
       });
     });
   }
@@ -54,17 +62,12 @@
   // ---------- Text inputs ----------
 
   function initTextInputs() {
-    const bindings = [
-      ["input-name", "name"],
-      ["input-email", "email"],
-      ["input-message", "message"],
-    ];
-
-    bindings.forEach(([id, field]) => {
+    TEXT_BINDINGS.forEach(([id, field]) => {
       const el = document.getElementById(id);
       el.addEventListener("input", () => {
         state.data[field] = el.value;
         updateSubmitState();
+        saveDraft(DRAFT_KEY, state.data);
       });
     });
   }
@@ -104,6 +107,8 @@
       return;
     }
 
+    clearDraft(DRAFT_KEY);
+
     // #nav-pill is site-wide navigation (Web Design/SEO/Contact), so it
     // stays visible on the success screen — only the form fades out.
     els.layout.style.transition = "opacity 0.3s var(--ease)";
@@ -132,11 +137,19 @@
 
   // ---------- Init ----------
 
+  function restoreDraft(data) {
+    Object.assign(state.data, data);
+    hydrateFieldSelectors(state.data);
+    hydrateTextInputs(TEXT_BINDINGS, state.data);
+    updateSubmitState();
+  }
+
   function init() {
     initCommon();
     initSelectors();
     initTextInputs();
     initSubmit();
+    initDraftBanner(DRAFT_KEY, restoreDraft);
 
     updateSubmitState();
   }

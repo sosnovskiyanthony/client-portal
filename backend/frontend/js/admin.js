@@ -9,6 +9,11 @@
     new: "New",
     reviewed: "Reviewed",
     contacted: "Contacted",
+    qualified: "Qualified",
+    discovery: "Discovery",
+    proposal_sent: "Proposal Sent",
+    won: "Won",
+    lost: "Lost",
   };
 
   // Sourced from the shared FIELD_LABELS in common.js (loaded before this
@@ -61,6 +66,7 @@
     filters: document.getElementById("admin-filters"),
     list: document.getElementById("submission-list"),
     pagination: document.getElementById("admin-pagination"),
+    exportBtn: document.getElementById("export-csv-btn"),
   };
 
   // Filtering and pagination are both server-driven (see GET
@@ -79,6 +85,9 @@
   // the disabled state mid-request and let a second click fire a duplicate
   // analysis on top of the one still running.
   const analyzingIds = new Set();
+
+  // Same reasoning as analyzingIds, for the "Draft Outreach Email" button.
+  const draftingIds = new Set();
 
   async function render() {
     if (!isAdminLoggedIn()) {
@@ -101,6 +110,13 @@
 
   const SEVERITY_LABELS = { low: "Low", medium: "Medium", high: "High" };
   const SCOPE_LABELS = { small: "Small", medium: "Medium", large: "Large", complex_custom: "Complex / custom" };
+
+  const OUTCOME_LABELS = {
+    in_progress: "In progress",
+    completed: "Completed",
+    abandoned: "Abandoned",
+    lost: "Lost",
+  };
 
   function renderStringList(items, emptyText) {
     if (!Array.isArray(items) || items.length === 0) {
@@ -283,7 +299,140 @@
 
         <p class="analysis-meta">${escapeHtml(a.provider || "")} · ${escapeHtml(a.model || "")} · prompt v${escapeHtml(a.promptVersion || "")}</p>
         <button class="btn btn-ghost analysis-btn" data-analyze-id="${submission.id}" type="button">${btnLabel}</button>
+
+        ${renderEmailDraftSection(submission)}
       </div>
+    `;
+  }
+
+  // Only ever rendered from renderAnalysisSection's completed branch above —
+  // drafting an outreach email requires a completed analysis to draft from
+  // (see ai/emailPrompt.js's buildEmailContext), same restriction the server
+  // enforces in adminController.draftEmail.
+  function renderEmailDraftSection(submission) {
+    const d = submission.emailDraft;
+
+    if (draftingIds.has(submission.id)) {
+      return `
+        <div class="email-draft-section">
+          <div class="email-draft-header">
+            <span class="email-draft-title">Outreach Email</span>
+            <span class="analysis-status-badge analysis-status-processing">Drafting…</span>
+          </div>
+          <p class="analysis-empty">Drafting — this can take a minute with a local model.</p>
+          <button class="btn btn-ghost email-draft-btn" type="button" disabled>Drafting…</button>
+        </div>
+      `;
+    }
+
+    if (!d || d.status === "failed") {
+      return `
+        <div class="email-draft-section">
+          <div class="email-draft-header">
+            <span class="email-draft-title">Outreach Email</span>
+          </div>
+          ${
+            d && d.status === "failed"
+              ? `<p class="analysis-error">${escapeHtml(d.error || "Drafting failed.")}</p>`
+              : `<p class="analysis-empty">Not yet drafted.</p>`
+          }
+          <button class="btn btn-ghost email-draft-btn" data-draft-email-id="${submission.id}" type="button">${d && d.status === "failed" ? "Retry Draft" : "Draft Outreach Email"}</button>
+        </div>
+      `;
+    }
+
+    if (d.status === "pending" || d.status === "processing") {
+      return `
+        <div class="email-draft-section">
+          <div class="email-draft-header">
+            <span class="email-draft-title">Outreach Email</span>
+            <span class="analysis-status-badge analysis-status-processing">${ANALYSIS_STATUS_LABELS[d.status]}</span>
+          </div>
+          <p class="analysis-empty">Local models can take a minute. Reload the page to check for results.</p>
+        </div>
+      `;
+    }
+
+    return `
+      <div class="email-draft-section">
+        <div class="email-draft-header">
+          <span class="email-draft-title">Outreach Email</span>
+          <span class="analysis-status-badge analysis-status-completed">Drafted</span>
+        </div>
+        <p class="email-draft-subject"><strong>Subject:</strong> ${escapeHtml(d.subject || "")}</p>
+        <p class="email-draft-body">${escapeHtml(d.body || "")}</p>
+        <div class="email-draft-actions">
+          <button class="btn btn-ghost email-draft-copy-btn" data-copy-id="${submission.id}" type="button">Copy Email</button>
+          <button class="btn btn-ghost email-draft-btn" data-draft-email-id="${submission.id}" type="button">Regenerate</button>
+          <span class="email-draft-copy-msg" aria-live="polite"></span>
+        </div>
+      </div>
+    `;
+  }
+
+  // Submission IDs whose outcome <details> the admin has opened. renderList()
+  // rebuilds every card's HTML from scratch, which would otherwise collapse
+  // this section right after a save — same reasoning as analyzingIds above.
+  const openOutcomeIds = new Set();
+
+  // A manually-recorded post-hoc record of what actually happened on a
+  // project — unlike AI analysis, this applies to every submission type,
+  // not just web-design (see backend/models/ProjectOutcome.js).
+  function renderOutcomeSection(submission) {
+    const o = submission.outcome || {};
+    const featuresText = Array.isArray(o.featuresDelivered) ? o.featuresDelivered.join("\n") : "";
+    const outcomeOptions = ["", "in_progress", "completed", "abandoned", "lost"]
+      .map((val) => {
+        const label = val === "" ? "— Not recorded —" : OUTCOME_LABELS[val];
+        const selected = (o.outcome || "") === val ? "selected" : "";
+        return `<option value="${val}" ${selected}>${escapeHtml(label)}</option>`;
+      })
+      .join("");
+    const summaryText = o.outcome ? `Project Outcome — ${OUTCOME_LABELS[o.outcome] || o.outcome}` : "Project Outcome";
+    const isOpen = openOutcomeIds.has(submission.id) ? "open" : "";
+
+    return `
+      <details class="outcome-section" data-outcome-id="${submission.id}" ${isOpen}>
+        <summary class="outcome-summary">${escapeHtml(summaryText)}</summary>
+        <div class="outcome-body">
+          <div class="field-row">
+            <label class="field">
+              <span class="field-label">Outcome</span>
+              <select class="field-input" data-field="outcome">${outcomeOptions}</select>
+            </label>
+            <label class="field">
+              <span class="field-label">Actual timeline</span>
+              <input class="field-input" data-field="actualTimeline" type="text" value="${escapeHtml(o.actualTimeline || "")}" />
+            </label>
+          </div>
+          <div class="field-row">
+            <label class="field">
+              <span class="field-label">Quoted price ($)</span>
+              <input class="field-input" data-field="quotedPrice" type="number" step="0.01" min="0" value="${o.quotedPrice ?? ""}" />
+            </label>
+            <label class="field">
+              <span class="field-label">Final price ($)</span>
+              <input class="field-input" data-field="finalPrice" type="number" step="0.01" min="0" value="${o.finalPrice ?? ""}" />
+            </label>
+          </div>
+          <label class="field">
+            <span class="field-label">Final scope</span>
+            <textarea class="field-input field-textarea" data-field="finalScope" rows="2">${escapeHtml(o.finalScope || "")}</textarea>
+          </label>
+          <label class="field">
+            <span class="field-label">Features delivered <span class="field-optional">(one per line)</span></span>
+            <textarea class="field-input field-textarea" data-field="featuresDelivered" rows="3">${escapeHtml(featuresText)}</textarea>
+          </label>
+          <label class="field">
+            <span class="field-label">Notes</span>
+            <textarea class="field-input field-textarea" data-field="notes" rows="2">${escapeHtml(o.notes || "")}</textarea>
+          </label>
+          <div class="outcome-actions">
+            <button class="btn btn-ghost outcome-save-btn" data-outcome-save-id="${submission.id}" type="button">Save Outcome</button>
+            <span class="outcome-save-msg" aria-live="polite"></span>
+          </div>
+        </div>
+      </details>
     `;
   }
 
@@ -294,6 +443,34 @@
     }
     if (value === null || value === undefined || value === "") return null;
     return field.map ? field.map[value] || value : value;
+  }
+
+  // Brand assets live inside projectDetails.brandAssets (see
+  // intakeController.uploadBrandAssets / sanitizeBrandAssets) rather than as
+  // their own submission field — only ever populated on web-design intakes.
+  // The bucket is private, so "View" fetches a fresh signed URL on click
+  // rather than linking directly (see initAssetViewControls below).
+  function renderBrandAssets(submission) {
+    const assets = (submission.projectDetails && submission.projectDetails.brandAssets) || [];
+    if (!Array.isArray(assets) || assets.length === 0) return "";
+
+    return `
+      <div class="submission-assets">
+        <div class="submission-field-label">Brand assets</div>
+        <ul class="submission-asset-list">
+          ${assets
+            .map(
+              (a) => `
+            <li class="submission-asset-item">
+              <span class="submission-asset-name">${escapeHtml(a.filename || a.path)}</span>
+              <button class="btn btn-ghost submission-asset-view-btn" data-asset-path="${escapeHtml(a.path)}" type="button">View</button>
+            </li>
+          `
+            )
+            .join("")}
+        </ul>
+      </div>
+    `;
   }
 
   function submissionCard(submission) {
@@ -345,6 +522,7 @@
           <span class="submission-time">${escapeHtml(time)}${updatedTime ? ` <span class="submission-updated">· Updated ${escapeHtml(updatedTime)}</span>` : ""}</span>
         </div>
         <div class="submission-fields">${fieldsHtml}</div>
+        ${renderBrandAssets(submission)}
         <div class="submission-actions">
           <label class="submission-status-label">
             Status
@@ -352,6 +530,7 @@
           </label>
         </div>
         ${submission.type === "web-design" ? renderAnalysisSection(submission) : ""}
+        ${renderOutcomeSection(submission)}
       </div>
     `;
   }
@@ -497,12 +676,176 @@
     });
   }
 
+  function initEmailDraftControls() {
+    els.list.addEventListener("click", async (e) => {
+      const copyBtn = e.target.closest(".email-draft-copy-btn[data-copy-id]");
+      if (copyBtn) {
+        const id = Number(copyBtn.dataset.copyId);
+        const submission = cachedSubmissions.find((s) => s.id === id);
+        const draft = submission && submission.emailDraft;
+        const msg = copyBtn.closest(".email-draft-actions").querySelector(".email-draft-copy-msg");
+        if (!draft) return;
+
+        try {
+          await navigator.clipboard.writeText(`Subject: ${draft.subject}\n\n${draft.body}`);
+          msg.textContent = "Copied.";
+        } catch (err) {
+          msg.textContent = "Couldn't copy — select the text manually.";
+        }
+        return;
+      }
+
+      const draftBtn = e.target.closest(".email-draft-btn[data-draft-email-id]");
+      if (!draftBtn) return;
+
+      const id = Number(draftBtn.dataset.draftEmailId);
+      if (draftingIds.has(id)) return; // already in flight — ignore a stray duplicate click
+
+      draftingIds.add(id);
+      renderList(); // immediately reflect the disabled state, same reasoning as initAnalysisControls
+
+      try {
+        const updated = await draftEmail(id);
+        const idx = cachedSubmissions.findIndex((s) => s.id === id);
+        if (idx !== -1) cachedSubmissions[idx] = { ...cachedSubmissions[idx], emailDraft: updated };
+        const clientName = cachedSubmissions[idx] ? cachedSubmissions[idx].clientName : "submission";
+        els.adminSub.textContent =
+          updated.status === "completed"
+            ? `Outreach email drafted for ${clientName}.`
+            : `Email draft failed for ${clientName}: ${updated.error || "unknown error"}`;
+      } catch (err) {
+        els.adminSub.textContent = err.message;
+        if (!isAdminLoggedIn()) {
+          draftingIds.delete(id);
+          render();
+          return;
+        }
+      } finally {
+        draftingIds.delete(id);
+        renderList();
+      }
+    });
+  }
+
+  function initAssetViewControls() {
+    els.list.addEventListener("click", async (e) => {
+      const btn = e.target.closest(".submission-asset-view-btn[data-asset-path]");
+      if (!btn) return;
+
+      const path = btn.dataset.assetPath;
+      const original = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = "Loading…";
+
+      try {
+        const url = await getAssetSignedUrl(path);
+        window.open(url, "_blank", "noopener");
+      } catch (err) {
+        els.adminSub.textContent = err.message;
+        if (!isAdminLoggedIn()) render();
+      } finally {
+        btn.disabled = false;
+        btn.textContent = original;
+      }
+    });
+  }
+
+  function initOutcomeControls() {
+    // "toggle" doesn't bubble, so delegation needs the capture phase — this
+    // is what keeps a section open across the renderList() a save triggers.
+    els.list.addEventListener(
+      "toggle",
+      (e) => {
+        const details = e.target.closest(".outcome-section");
+        if (!details) return;
+        const id = Number(details.dataset.outcomeId);
+        if (details.open) openOutcomeIds.add(id);
+        else openOutcomeIds.delete(id);
+      },
+      true
+    );
+
+    els.list.addEventListener("click", async (e) => {
+      const btn = e.target.closest(".outcome-save-btn[data-outcome-save-id]");
+      if (!btn) return;
+
+      const id = Number(btn.dataset.outcomeSaveId);
+      const section = btn.closest(".outcome-section");
+      const msg = section.querySelector(".outcome-save-msg");
+      const field = (name) => section.querySelector(`[data-field="${name}"]`).value;
+
+      const payload = {
+        outcome: field("outcome") || null,
+        finalScope: field("finalScope") || null,
+        actualTimeline: field("actualTimeline") || null,
+        quotedPrice: field("quotedPrice") === "" ? null : Number(field("quotedPrice")),
+        finalPrice: field("finalPrice") === "" ? null : Number(field("finalPrice")),
+        featuresDelivered: field("featuresDelivered")
+          .split("\n")
+          .map((s) => s.trim())
+          .filter(Boolean),
+        notes: field("notes") || null,
+      };
+
+      btn.disabled = true;
+      msg.textContent = "Saving…";
+
+      try {
+        const updated = await upsertOutcome(id, payload);
+        const idx = cachedSubmissions.findIndex((s) => s.id === id);
+        if (idx !== -1) cachedSubmissions[idx] = { ...cachedSubmissions[idx], outcome: updated };
+        openOutcomeIds.add(id); // stay open through the re-render below so the save is visible
+        renderList();
+      } catch (err) {
+        // Leave the form as-is on failure — no renderList() here — so the
+        // admin doesn't lose what they typed.
+        msg.textContent = err.message;
+        btn.disabled = false;
+        if (!isAdminLoggedIn()) render();
+      }
+    });
+  }
+
+  function initExport() {
+    els.exportBtn.addEventListener("click", async () => {
+      const original = els.exportBtn.textContent;
+      els.exportBtn.disabled = true;
+      els.exportBtn.textContent = "Exporting…";
+
+      try {
+        const { blob, filename } = await exportSubmissionsCsv(currentType);
+        // A plain <a href> can't carry the Authorization header the export
+        // endpoint requires, so the file arrives as a Blob (see
+        // exportSubmissionsCsv in common.js) and this triggers the actual
+        // save via a throwaway object URL.
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        els.adminSub.textContent = err.message;
+        if (!isAdminLoggedIn()) render();
+      } finally {
+        els.exportBtn.disabled = false;
+        els.exportBtn.textContent = original;
+      }
+    });
+  }
+
   function init() {
     initCommon();
     initFilters();
     initStatusControls();
     initAnalysisControls();
+    initEmailDraftControls();
+    initAssetViewControls();
+    initOutcomeControls();
     initPagination();
+    initExport();
 
     els.btnLogin.addEventListener("click", () => openModal("login"));
     els.btnLogout.addEventListener("click", () => {

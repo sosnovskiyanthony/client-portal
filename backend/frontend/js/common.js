@@ -204,6 +204,117 @@ function summaryRow(label, value, empty) {
   `;
 }
 
+// ---------- Draft persistence (save-and-return) ----------
+// Each intake page auto-saves its in-progress state.data to localStorage on
+// every change (see the saveDraft calls in web-design.js/seo.js/contact.js)
+// and offers it back via the #draft-banner markup if the visitor returns
+// before submitting. Cleared automatically on successful submit and on
+// explicit dismissal.
+const DRAFT_PREFIX = "studio:draft:";
+// A draft older than this is more likely stale than actually wanted back.
+const DRAFT_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+
+function saveDraft(key, data) {
+  try {
+    localStorage.setItem(DRAFT_PREFIX + key, JSON.stringify({ data, savedAt: Date.now() }));
+  } catch (err) {
+    // localStorage can throw (private browsing, full quota) — losing draft
+    // persistence silently is fine, it's a convenience, not a requirement.
+  }
+}
+
+function clearDraft(key) {
+  try {
+    localStorage.removeItem(DRAFT_PREFIX + key);
+  } catch (err) {
+    // ignore — see saveDraft
+  }
+}
+
+function loadDraft(key) {
+  try {
+    const raw = localStorage.getItem(DRAFT_PREFIX + key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || !parsed.data || !parsed.savedAt) return null;
+    if (Date.now() - parsed.savedAt > DRAFT_MAX_AGE_MS) {
+      localStorage.removeItem(DRAFT_PREFIX + key);
+      return null;
+    }
+    return parsed;
+  } catch (err) {
+    return null;
+  }
+}
+
+function formatDraftAge(savedAt) {
+  const minutes = Math.round((Date.now() - savedAt) / 60000);
+  if (minutes < 1) return "moments ago";
+  if (minutes < 60) return `${minutes} minute${minutes === 1 ? "" : "s"} ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  const days = Math.round(hours / 24);
+  return `${days} day${days === 1 ? "" : "s"} ago`;
+}
+
+// Wires up the standard #draft-banner markup (present on web-design.html,
+// seo.html, contact.html) against one page's saved draft. onRestore receives
+// the saved data object and is responsible for writing it back into the
+// page's own state + re-rendering — each page's fields are shaped
+// differently, but the DOM-level restoration is handled by the two
+// hydrate helpers below, shared across all three.
+function initDraftBanner(key, onRestore) {
+  const banner = document.getElementById("draft-banner");
+  if (!banner) return;
+
+  const draft = loadDraft(key);
+  if (!draft) return;
+
+  document.getElementById("draft-banner-text").textContent =
+    `You have an unsaved draft from ${formatDraftAge(draft.savedAt)}.`;
+  banner.hidden = false;
+
+  document.getElementById("draft-restore-btn").addEventListener("click", () => {
+    onRestore(draft.data);
+    banner.hidden = true;
+  });
+
+  document.getElementById("draft-dismiss-btn").addEventListener("click", () => {
+    clearDraft(key);
+    banner.hidden = true;
+  });
+}
+
+// Rehydrates the visual selection state of every [data-field] group (pill
+// rows and bento-card grids) from a plain data object — the inverse of the
+// click handlers each page's initSelectors() defines. Used to restore a
+// saved draft's selections back onto the page.
+function hydrateFieldSelectors(data) {
+  document.querySelectorAll("[data-field]").forEach((group) => {
+    const field = group.dataset.field;
+    const mode = group.dataset.mode;
+    const selector = group.classList.contains("pill-row") ? ".pill" : ".bento-card";
+    const value = data[field];
+
+    group.querySelectorAll(selector).forEach((c) => {
+      const isSelected =
+        mode === "single" ? c.dataset.value === value : Array.isArray(value) && value.includes(c.dataset.value);
+      c.classList.toggle("selected", isSelected);
+      c.setAttribute("aria-pressed", String(isSelected));
+    });
+  });
+}
+
+// Rehydrates plain text/textarea inputs from a plain data object. `bindings`
+// is the same [[elementId, dataKey], ...] shape each page's initTextInputs()
+// already defines.
+function hydrateTextInputs(bindings, data) {
+  bindings.forEach(([id, field]) => {
+    const el = document.getElementById(id);
+    if (el) el.value = data[field] || "";
+  });
+}
+
 // The animated section-to-section transition (measure the incoming panel,
 // resize the container, crossfade the panels) — was a ~45-line byte-
 // identical block in both web-design.js and seo.js. This was the single
@@ -420,6 +531,121 @@ async function analyzeSubmission(id) {
     throw new Error(body.error || "Analysis request failed.");
   }
   return body.analysis;
+}
+
+// Triggers (or re-triggers) drafting a client-facing outreach email from a
+// completed AI analysis. Admin-only server-side; only meaningful once
+// analysis has completed for this submission (see routes/admin.js).
+async function draftEmail(id) {
+  let res;
+  try {
+    res = await fetch(`/api/admin/submissions/${id}/draft-email`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${getAdminToken()}` },
+    });
+  } catch (err) {
+    throw new Error("Can't reach the server. Is the backend running?");
+  }
+
+  if (res.status === 401 || res.status === 403) {
+    logoutAdmin();
+    throw new Error("Your session expired. Please log in again.");
+  }
+
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(body.error || "Email draft request failed.");
+  }
+  return body.emailDraft;
+}
+
+// Records (or edits) the actual outcome of a project — works for any
+// submission type, not just web-design. This is manually-entered, post-hoc
+// data (final scope, actual timeline, quoted vs. final price, features
+// delivered, notes) — the seed of a future predictive dataset.
+async function upsertOutcome(id, data) {
+  let res;
+  try {
+    res = await fetch(`/api/admin/submissions/${id}/outcome`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${getAdminToken()}`,
+      },
+      body: JSON.stringify(data),
+    });
+  } catch (err) {
+    throw new Error("Can't reach the server. Is the backend running?");
+  }
+
+  if (res.status === 401 || res.status === 403) {
+    logoutAdmin();
+    throw new Error("Your session expired. Please log in again.");
+  }
+
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(body.error || "Couldn't save outcome.");
+  }
+  return body.outcome;
+}
+
+// Downloads a CSV export of submissions (optionally filtered by type) as a
+// Blob rather than a plain link — the export endpoint is admin-only and
+// needs the Authorization header, which a plain <a href> navigation can't
+// send. The caller turns the returned blob into an actual file download
+// (see admin.js's initExport()).
+async function exportSubmissionsCsv(type) {
+  let res;
+  try {
+    res = await fetch(`/api/admin/submissions/export?type=${encodeURIComponent(type)}`, {
+      headers: { Authorization: `Bearer ${getAdminToken()}` },
+    });
+  } catch (err) {
+    throw new Error("Can't reach the server. Is the backend running?");
+  }
+
+  if (res.status === 401 || res.status === 403) {
+    logoutAdmin();
+    throw new Error("Your session expired. Please log in again.");
+  }
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || "Export failed.");
+  }
+
+  const disposition = res.headers.get("Content-Disposition") || "";
+  const match = disposition.match(/filename="([^"]+)"/);
+  const filename = match ? match[1] : "submissions.csv";
+  const blob = await res.blob();
+  return { blob, filename };
+}
+
+// Gets a short-lived signed URL for viewing one brand asset (the storage
+// bucket is private — see services/storage.js). Admin-only server-side.
+async function getAssetSignedUrl(path) {
+  let res;
+  try {
+    res = await fetch("/api/admin/storage/signed-url", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${getAdminToken()}` },
+      body: JSON.stringify({ path }),
+    });
+  } catch (err) {
+    throw new Error("Can't reach the server. Is the backend running?");
+  }
+
+  if (res.status === 401 || res.status === 403) {
+    logoutAdmin();
+    throw new Error("Your session expired. Please log in again.");
+  }
+
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(body.error || "Couldn't load this file.");
+  }
+  return body.url;
 }
 
 // ---------- Account menu ----------

@@ -23,6 +23,15 @@
     visibility: FIELD_LABELS.visibility,
   };
 
+  const DRAFT_KEY = "seo";
+  const TEXT_BINDINGS = [
+    ["input-url", "url"],
+    ["input-keywords", "keywords"],
+    ["input-name", "name"],
+    ["input-email", "email"],
+    ["input-notes", "notes"],
+  ];
+
   const els = {
     tabs: Array.from(document.querySelectorAll(".nav-tab[data-section]")),
     layout: document.getElementById("layout"),
@@ -74,6 +83,7 @@
         renderSummary();
         updateTabs();
         updateSubmitState();
+        saveDraft(DRAFT_KEY, state.data);
       });
     });
   }
@@ -81,21 +91,14 @@
   // ---------- Text inputs ----------
 
   function initTextInputs() {
-    const bindings = [
-      ["input-url", "url"],
-      ["input-keywords", "keywords"],
-      ["input-name", "name"],
-      ["input-email", "email"],
-      ["input-notes", "notes"],
-    ];
-
-    bindings.forEach(([id, field]) => {
+    TEXT_BINDINGS.forEach(([id, field]) => {
       const el = document.getElementById(id);
       el.addEventListener("input", () => {
         state.data[field] = el.value;
         renderSummary();
         updateTabs();
         updateSubmitState();
+        saveDraft(DRAFT_KEY, state.data);
       });
     });
   }
@@ -226,6 +229,8 @@
       return;
     }
 
+    clearDraft(DRAFT_KEY);
+
     // #nav-pill is site-wide navigation (Web Design/SEO/Contact), so it
     // stays visible on the success screen — only the questionnaire fades out.
     els.layout.style.transition = "opacity 0.3s var(--ease)";
@@ -255,6 +260,15 @@
 
   // ---------- Init ----------
 
+  function restoreDraft(data) {
+    Object.assign(state.data, data);
+    hydrateFieldSelectors(state.data);
+    hydrateTextInputs(TEXT_BINDINGS, state.data);
+    renderSummary();
+    updateTabs();
+    updateSubmitState();
+  }
+
   function init() {
     initCommon();
     initMagneticCards();
@@ -263,6 +277,7 @@
     initTextInputs();
     initSubmitHint();
     initSubmit();
+    initDraftBanner(DRAFT_KEY, restoreDraft);
 
     renderSummary();
     updateTabs();

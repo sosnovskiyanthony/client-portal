@@ -8,12 +8,19 @@
 //   └── AnthropicProvider (opt-in via AI_PROVIDER=anthropic, dormant by default)
 const env = require("../config/env");
 const { AnalysisSchema } = require("./schema");
+const { EmailDraftSchema } = require("./emailSchema");
 const {
   SYSTEM_PROMPT,
   AI_PROMPT_VERSION,
   sanitizeWebDesignSubmission,
   buildUserMessage,
 } = require("./prompt");
+const {
+  EMAIL_SYSTEM_PROMPT,
+  EMAIL_PROMPT_VERSION,
+  buildEmailContext,
+  buildEmailUserMessage,
+} = require("./emailPrompt");
 const { AiAnalysisError } = require("./errors");
 const ollamaProvider = require("./providers/ollamaProvider");
 const anthropicProvider = require("./providers/anthropicProvider");
@@ -88,6 +95,54 @@ async function analyzeSubmission(submission, { client } = {}) {
   };
 }
 
+// Drafts a client-facing outreach email from a completed AI analysis. Only
+// ever called once an analysis exists and succeeded (see
+// services/draftEmail.js) — there's nothing useful to draft from otherwise.
+async function draftEmail(submission, analysis, { client } = {}) {
+  if (!analysis || analysis.status !== "completed" || !analysis.result) {
+    throw new AiAnalysisError(
+      "no_analysis",
+      "An outreach email can only be drafted once AI analysis has completed for this submission."
+    );
+  }
+
+  const providerName = env.aiProvider;
+  const provider = PROVIDERS[providerName];
+  if (!provider) {
+    throw new AiAnalysisError(
+      "unknown_provider",
+      `AI_PROVIDER "${providerName}" is not recognized. Expected one of: ${Object.keys(PROVIDERS).join(", ")}.`
+    );
+  }
+
+  const context = buildEmailContext(submission, analysis);
+  const userMessage = buildEmailUserMessage(context);
+  const model = provider.model();
+
+  const { parsed } = await provider.impl.generateStructuredAnalysis({
+    systemPrompt: EMAIL_SYSTEM_PROMPT,
+    userMessage,
+    zodSchema: EmailDraftSchema,
+    model,
+    client,
+  });
+
+  const validation = EmailDraftSchema.safeParse(parsed);
+  if (!validation.success) {
+    throw new AiAnalysisError(
+      "invalid_schema",
+      `AI response did not match the required email schema: ${validation.error.issues.map((i) => i.path.join(".") + " " + i.message).join("; ")}`
+    );
+  }
+
+  return {
+    result: validation.data,
+    model,
+    provider: providerName,
+    promptVersion: EMAIL_PROMPT_VERSION,
+  };
+}
+
 // Synchronous — lets callers record which provider/model an attempt is
 // about to use (or used, on failure) without needing to complete a request.
 function getActiveProviderInfo() {
@@ -96,4 +151,4 @@ function getActiveProviderInfo() {
   return { provider, model: entry ? entry.model() : null };
 }
 
-module.exports = { analyzeSubmission, getActiveProviderInfo, AiAnalysisError };
+module.exports = { analyzeSubmission, draftEmail, getActiveProviderInfo, AiAnalysisError };

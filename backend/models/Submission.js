@@ -1,6 +1,18 @@
 const { pool } = require("../config/database");
 
-const VALID_STATUSES = ["new", "reviewed", "contacted"];
+// A real sales pipeline, not just "seen it or not" — lets the admin
+// dashboard track a lead all the way through to whether it actually became
+// paying work.
+const VALID_STATUSES = [
+  "new",
+  "reviewed",
+  "contacted",
+  "qualified",
+  "discovery",
+  "proposal_sent",
+  "won",
+  "lost",
+];
 
 async function create({ type, clientName, email, projectDetails, flexiblePaymentPreference }) {
   const { rows } = await pool.query(
@@ -49,6 +61,22 @@ async function findPage({ type, page = 1 } = {}) {
   return rows.map(serialize);
 }
 
+// Unpaginated — used only by the CSV export, which needs every matching row
+// at once. findPage() above stays paginated for the dashboard's own list.
+async function findAll({ type } = {}) {
+  const params = [];
+  let whereClause = "";
+  if (type && type !== "all") {
+    params.push(type);
+    whereClause = `WHERE type = $${params.length}`;
+  }
+  const { rows } = await pool.query(
+    `SELECT * FROM submissions ${whereClause} ORDER BY created_at DESC, id DESC`,
+    params
+  );
+  return rows.map(serialize);
+}
+
 async function count({ type } = {}) {
   const params = [];
   let whereClause = "";
@@ -85,4 +113,4 @@ function serialize(row) {
   };
 }
 
-module.exports = { create, findById, findPage, count, updateStatus, VALID_STATUSES, PAGE_SIZE };
+module.exports = { create, findById, findPage, findAll, count, updateStatus, VALID_STATUSES, PAGE_SIZE };

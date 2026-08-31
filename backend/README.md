@@ -1,6 +1,6 @@
 # Client Portal — Backend
 
-API and static server for the client portal: web design / SEO intake forms, a contact form, admin authentication, an admin dashboard, and an optional AI project-analysis feature.
+API and static server for the client portal: web design / SEO intake forms, a contact form, admin authentication, an admin dashboard, an optional AI project-analysis feature (with AI-drafted outreach emails once analysis completes), CSV export, and optional brand-asset uploads via Supabase Storage.
 
 ## Stack
 
@@ -19,6 +19,7 @@ API and static server for the client portal: web design / SEO intake forms, a co
 2. Copy `.env.example` to `.env` and adjust as needed (see comments in that file for what each one does and where to get it). Every value has a working local-dev default — you don't strictly need to change anything to get started.
 3. Have a local Postgres instance running and reachable at `DATABASE_URL` (defaults to `postgresql://localhost:5432/client_portal_dev` — create that database if it doesn't exist yet). The app creates its own tables and seeds an admin user on first run — no manual migration step.
 4. If you want AI analysis working locally, see `ai/README.md` (Ollama install + model pull). Everything else works fine without it — analysis just fails gracefully and can be retried later.
+5. If you want brand-asset uploads working, set `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` / `SUPABASE_BUCKET` in `.env` (see the comments there for where to get them and how to create the bucket). Optional — the upload UI on the web-design intake form and the "View" button in the admin dashboard just respond with a clear error until these are set; nothing else depends on them.
 
 ## Running
 
@@ -49,7 +50,8 @@ models/                 Database access (Submission, User, Analysis) — all
                         queries parameterized, no raw string interpolation
 middleware/            auth (JWT verification), rateLimit, asyncHandler
 lib/                    Small shared utilities (e.g. email validation)
-services/               Side effects: email notifications, AI analysis orchestration
+services/               Side effects: email notifications, AI analysis/email-draft
+                        orchestration, Supabase Storage wrapper
 ai/                     AI project analysis — see ai/README.md for the full picture
                         (provider abstraction, prompt, schema, sanitization)
 frontend/               The entire static site — plain HTML/CSS/JS, no build step

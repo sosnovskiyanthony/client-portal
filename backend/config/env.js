@@ -68,4 +68,15 @@ module.exports = {
   // Only used when aiProvider === "anthropic".
   anthropicApiKey: process.env.ANTHROPIC_API_KEY || null,
   aiModel: process.env.AI_MODEL || "claude-opus-5",
+
+  // Brand-asset file uploads on the web-design intake form (see
+  // services/storage.js). Optional — when either is unset, upload/view
+  // endpoints respond with a clear 503 instead of the app failing to start.
+  // The service role key must never reach the frontend; it's only ever read
+  // server-side here. Use Project Settings → API in the Supabase dashboard
+  // for both, and create the bucket (private, name matches SUPABASE_BUCKET)
+  // under Storage.
+  supabaseUrl: process.env.SUPABASE_URL || null,
+  supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || null,
+  supabaseBucket: process.env.SUPABASE_BUCKET || "brand-assets",
 };
