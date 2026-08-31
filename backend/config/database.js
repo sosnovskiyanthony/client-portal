@@ -31,9 +31,21 @@ async function init() {
       project_details JSONB,
       flexible_payment_preference BOOLEAN,
       status TEXT NOT NULL DEFAULT 'new',
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `);
+
+  // ADD COLUMN IF NOT EXISTS, not just the CREATE TABLE above — that only
+  // applies to a brand-new database. This is what actually reaches an
+  // existing submissions table (local dev, and production once deployed)
+  // that predates this column.
+  await pool.query(`ALTER TABLE submissions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();`);
+
+  // Supports the admin dashboard's actual query patterns: filtering by type
+  // and sorting newest-first for pagination (see models/Submission.js).
+  await pool.query(`CREATE INDEX IF NOT EXISTS submissions_type_idx ON submissions (type);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS submissions_created_at_idx ON submissions (created_at DESC);`);
 
   // One AI analysis per submission (re-analyze overwrites the existing row
   // rather than accumulating history — see services/aiAnalysis.js). `outcome`

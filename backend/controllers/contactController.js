@@ -1,7 +1,6 @@
 const Submission = require("../models/Submission");
 const { notifyNewSubmission } = require("../services/email");
-
-const EMAIL_RE = /^\S+@\S+\.\S+$/;
+const { EMAIL_RE } = require("../lib/validators");
 
 async function submitContact(req, res) {
   const data = req.body || {};

@@ -10,7 +10,7 @@
     "test": "node --test"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": "26.x"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.122.0",

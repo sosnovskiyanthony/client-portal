@@ -15,18 +15,12 @@
     },
   };
 
+  // Sourced from the shared FIELD_LABELS in common.js (loaded before this
+  // file) rather than defined locally — see that file for the single source
+  // of truth these values come from.
   const LABELS = {
-    challenge: {
-      "not-ranking": "Not ranking",
-      "traffic-declining": "Traffic declining",
-      "low-ctr": "Low click-through",
-      "poor-conversion": "Poor conversion",
-    },
-    visibility: {
-      "some-terms": "Ranking well for some terms",
-      "barely-visible": "Barely visible",
-      "not-sure": "Not sure",
-    },
+    challenge: FIELD_LABELS.challenge,
+    visibility: FIELD_LABELS.visibility,
   };
 
   const els = {
@@ -41,13 +35,9 @@
     successSummary: document.getElementById("success-summary"),
   };
 
-  function panelFor(section) {
-    return document.querySelector(`.step-panel[data-step="${section}"]`);
-  }
-
-  function initMagneticCards() {
-    document.querySelectorAll(".bento-card").forEach(attachMagneticTilt);
-  }
+  // panelFor, initMagneticCards, summaryRow, and the animated section
+  // transition (goToSection, below) are shared with web-design.js — see
+  // common.js.
 
   // ---------- Selectors ----------
 
@@ -187,15 +177,6 @@
 
   // ---------- Live summary ----------
 
-  function summaryRow(label, value, empty) {
-    return `
-      <div class="summary-row">
-        <span class="summary-row-label">${label}</span>
-        <span class="summary-row-value${empty ? " empty" : ""}">${empty ? "Not selected yet" : escapeHtml(value)}</span>
-      </div>
-    `;
-  }
-
   function renderSummary() {
     const d = state.data;
     const rows = [];
@@ -210,53 +191,19 @@
   }
 
   // ---------- Section transitions (animated height, free-roam) ----------
+  // The actual animation lives in common.js's createSectionNavigator,
+  // shared with web-design.js — only what's specific to this page (current
+  // section, how to update it) is supplied here.
 
-  let transitioning = false;
-
-  function goToSection(newSection) {
-    if (transitioning || newSection === state.section || newSection < 1 || newSection > TOTAL_SECTIONS) return;
-    transitioning = true;
-
-    const container = els.stepContent;
-    const oldPanel = panelFor(state.section);
-    const newPanel = panelFor(newSection);
-
-    // Lock the current height as the transition's starting point.
-    container.style.height = `${container.offsetHeight}px`;
-    void container.offsetHeight;
-
-    // Measure the incoming panel's natural height before touching layout.
-    newPanel.classList.add("measuring");
-    const targetHeight = newPanel.scrollHeight;
-    newPanel.classList.remove("measuring");
-
-    // Pull the outgoing panel out of flow immediately so it can't hold the
-    // container open while it fades.
-    oldPanel.classList.remove("active");
-    oldPanel.classList.add("leaving");
-
-    // Bring the incoming panel into flow and animate to its target height
-    // in the same tick, so the resize and the crossfade run concurrently.
-    newPanel.classList.add("visible");
-    container.style.height = `${targetHeight}px`;
-
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => newPanel.classList.add("active"));
-    });
-
-    window.setTimeout(() => {
-      oldPanel.classList.remove("visible", "leaving");
-    }, 420);
-
-    window.setTimeout(() => {
-      container.style.height = "auto";
-      transitioning = false;
-    }, 520);
-
-    state.section = newSection;
-    updateTabs();
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  }
+  const goToSection = createSectionNavigator({
+    totalSections: TOTAL_SECTIONS,
+    stepContentEl: els.stepContent,
+    getCurrentSection: () => state.section,
+    onSectionChange: (newSection) => {
+      state.section = newSection;
+      updateTabs();
+    },
+  });
 
   // ---------- Submission ----------
 
@@ -288,6 +235,11 @@
       els.layout.hidden = true;
       renderSuccess();
       els.successState.hidden = false;
+      // Move focus into the newly-revealed content so keyboard/screen-reader
+      // users land on it instead of losing their place when the form
+      // disappears — the heading has tabindex="-1" so it's focusable
+      // programmatically without being in the normal Tab order.
+      els.successState.querySelector(".success-title").focus();
     }, 300);
   }
 

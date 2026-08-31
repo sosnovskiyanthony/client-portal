@@ -17,35 +17,15 @@
     },
   };
 
+  // Sourced from the shared FIELD_LABELS in common.js (loaded before this
+  // file) rather than defined locally — see that file for the single source
+  // of truth these values come from.
   const LABELS = {
-    goal: {
-      "lead-gen": "Lead Generation / Sales",
-      ecommerce: "E-Commerce Storefront",
-      brand: "Brand Authority / Portfolio",
-      webapp: "Custom Web App / SaaS",
-    },
-    brandStatus: {
-      established: "Fully established",
-      expansion: "Needs expansion",
-      scratch: "Starting from scratch",
-    },
-    features: {
-      cms: "CMS Integration",
-      animations: "Advanced Animations",
-      integrations: "Third-Party Integrations",
-      auth: "User Authentication / Portals",
-      multilingual: "Multilingual Support",
-    },
-    contentReadiness: {
-      ready: "Ready to go",
-      draft: "Rough draft",
-      help: "Need complete help",
-    },
-    timeline: {
-      "2-4-weeks": "2–4 Weeks",
-      "1-2-months": "1–2 Months",
-      "3-plus-months": "3+ Months",
-    },
+    goal: FIELD_LABELS.goal,
+    brandStatus: FIELD_LABELS.brandStatus,
+    features: FIELD_LABELS.features,
+    contentReadiness: FIELD_LABELS.contentReadiness,
+    timeline: FIELD_LABELS.timeline,
   };
 
   const els = {
@@ -60,13 +40,8 @@
     successSummary: document.getElementById("success-summary"),
   };
 
-  function panelFor(section) {
-    return document.querySelector(`.step-panel[data-step="${section}"]`);
-  }
-
-  function initMagneticCards() {
-    document.querySelectorAll(".bento-card").forEach(attachMagneticTilt);
-  }
+  // panelFor, initMagneticCards, summaryRow, and the animated section
+  // transition (goToSection, below) are shared with seo.js — see common.js.
 
   // ---------- Selectors ----------
 
@@ -205,15 +180,6 @@
 
   // ---------- Live summary ----------
 
-  function summaryRow(label, value, empty) {
-    return `
-      <div class="summary-row">
-        <span class="summary-row-label">${label}</span>
-        <span class="summary-row-value${empty ? " empty" : ""}">${empty ? "Not selected yet" : escapeHtml(value)}</span>
-      </div>
-    `;
-  }
-
   function renderSummary() {
     const d = state.data;
     const rows = [];
@@ -236,54 +202,19 @@
   }
 
   // ---------- Section transitions (animated height, free-roam) ----------
+  // The actual animation lives in common.js's createSectionNavigator,
+  // shared with seo.js — only what's specific to this page (current
+  // section, how to update it) is supplied here.
 
-  let transitioning = false;
-
-  function goToSection(newSection) {
-    if (transitioning || newSection === state.section || newSection < 1 || newSection > TOTAL_SECTIONS) return;
-    transitioning = true;
-
-    const container = els.stepContent;
-    const oldPanel = panelFor(state.section);
-    const newPanel = panelFor(newSection);
-
-    // Lock the current height as the transition's starting point.
-    container.style.height = `${container.offsetHeight}px`;
-    void container.offsetHeight;
-
-    // Measure the incoming panel's natural height before touching layout.
-    newPanel.classList.add("measuring");
-    const targetHeight = newPanel.scrollHeight;
-    newPanel.classList.remove("measuring");
-
-    // Pull the outgoing panel out of flow immediately so it can't hold the
-    // container open while it fades — this is what caused the empty-space
-    // glitch when jumping from a tall section to a short one.
-    oldPanel.classList.remove("active");
-    oldPanel.classList.add("leaving");
-
-    // Bring the incoming panel into flow and animate to its target height
-    // in the same tick, so the resize and the crossfade run concurrently.
-    newPanel.classList.add("visible");
-    container.style.height = `${targetHeight}px`;
-
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => newPanel.classList.add("active"));
-    });
-
-    window.setTimeout(() => {
-      oldPanel.classList.remove("visible", "leaving");
-    }, 420);
-
-    window.setTimeout(() => {
-      container.style.height = "auto";
-      transitioning = false;
-    }, 520);
-
-    state.section = newSection;
-    updateTabs();
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  }
+  const goToSection = createSectionNavigator({
+    totalSections: TOTAL_SECTIONS,
+    stepContentEl: els.stepContent,
+    getCurrentSection: () => state.section,
+    onSectionChange: (newSection) => {
+      state.section = newSection;
+      updateTabs();
+    },
+  });
 
   // ---------- Submission ----------
 
@@ -315,6 +246,11 @@
       els.layout.hidden = true;
       renderSuccess();
       els.successState.hidden = false;
+      // Move focus into the newly-revealed content so keyboard/screen-reader
+      // users land on it instead of losing their place when the form
+      // disappears — the heading has tabindex="-1" so it's focusable
+      // programmatically without being in the normal Tab order.
+      els.successState.querySelector(".success-title").focus();
     }, 300);
   }
 

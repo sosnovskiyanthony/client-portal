@@ -19,6 +19,19 @@ const TEST_PORT = 8799;
 const BASE_URL = `http://localhost:${TEST_PORT}`;
 const TEST_EMAIL_MARKER = "@integration-test.example";
 
+// Every field controllers/intakeController.js now requires for a web-design
+// submission (mirrors the frontend's own required-field set) — spread this
+// into each test body so tests unrelated to intake validation itself don't
+// get rejected by it.
+const VALID_WEB_DESIGN_FIELDS = {
+  goal: "brand",
+  summary: "A test submission.",
+  brandStatus: "established",
+  features: ["cms"],
+  contentReadiness: "ready",
+  timeline: "2-4-weeks",
+};
+
 let serverProcess;
 let pool;
 
@@ -36,14 +49,27 @@ async function waitForServer(url, timeoutMs = 15000) {
   throw new Error("Server did not become ready in time");
 }
 
+// Cached and only ever logged in once per test run (see adminToken() below)
+// — the login rate limiter (5/15min) is a real production safety control,
+// and this suite has enough tests needing a token that logging in fresh for
+// each one would exceed it. Reusing one token across the whole run is both
+// the correct fix and just less wasteful.
+let cachedAdminToken = null;
+
 async function adminToken() {
+  if (cachedAdminToken) return cachedAdminToken;
+
   const res = await fetch(`${BASE_URL}/api/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email: "admin@studio.dev", password: "studio-admin" }),
   });
+  if (!res.ok) {
+    throw new Error(`Test setup failed: admin login returned ${res.status}`);
+  }
   const body = await res.json();
-  return body.token;
+  cachedAdminToken = body.token;
+  return cachedAdminToken;
 }
 
 test.before(async () => {
@@ -72,7 +98,7 @@ test("valid submission is saved and returns 201 with an id", async () => {
   const res = await fetch(`${BASE_URL}/api/intake/web-design`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name: "Integration Test", email: `valid${TEST_EMAIL_MARKER}`, goal: "brand", summary: "A test submission." }),
+    body: JSON.stringify({ name: "Integration Test", email: `valid${TEST_EMAIL_MARKER}`, ...VALID_WEB_DESIGN_FIELDS }),
   });
   const body = await res.json();
   assert.equal(res.status, 201);
@@ -88,11 +114,38 @@ test("missing required fields returns 400, nothing is saved", async () => {
   assert.equal(res.status, 400);
 });
 
+test("a name+email-only submission (no project fields) is rejected, not stored as a near-empty record", async () => {
+  const res = await fetch(`${BASE_URL}/api/intake/web-design`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: "Bare Submission", email: `bare${TEST_EMAIL_MARKER}` }),
+  });
+  const body = await res.json();
+  assert.equal(res.status, 400);
+  assert.match(body.error, /missing required field/i);
+});
+
+test("an seo submission missing a required field (visibility) is rejected", async () => {
+  const res = await fetch(`${BASE_URL}/api/intake/seo`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: "SEO Bare",
+      email: `seobare${TEST_EMAIL_MARKER}`,
+      url: "example.com",
+      keywords: "roofing",
+      challenge: "not-ranking",
+      // visibility intentionally omitted
+    }),
+  });
+  assert.equal(res.status, 400);
+});
+
 test("client-facing submission response never contains an 'analysis' key", async () => {
   const res = await fetch(`${BASE_URL}/api/intake/web-design`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name: "No Leak", email: `noleak${TEST_EMAIL_MARKER}`, goal: "brand", summary: "s" }),
+    body: JSON.stringify({ name: "No Leak", email: `noleak${TEST_EMAIL_MARKER}`, ...VALID_WEB_DESIGN_FIELDS }),
   });
   const body = await res.json();
   assert.equal(res.status, 201);
@@ -104,7 +157,7 @@ test("intake never triggers analysis automatically — analysis stays null until
   const createRes = await fetch(`${BASE_URL}/api/intake/web-design`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name: "No Auto Trigger", email: `noauto${TEST_EMAIL_MARKER}`, goal: "webapp", summary: "s" }),
+    body: JSON.stringify({ name: "No Auto Trigger", email: `noauto${TEST_EMAIL_MARKER}`, ...VALID_WEB_DESIGN_FIELDS, goal: "webapp" }),
   });
   const { submission } = await createRes.json();
   assert.equal(createRes.status, 201);
@@ -125,7 +178,7 @@ test("admin-triggered analysis: submission survives an AI analysis failure — s
   const createRes = await fetch(`${BASE_URL}/api/intake/web-design`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name: "Survives Failure", email: `survives${TEST_EMAIL_MARKER}`, goal: "webapp", summary: "s" }),
+    body: JSON.stringify({ name: "Survives Failure", email: `survives${TEST_EMAIL_MARKER}`, ...VALID_WEB_DESIGN_FIELDS, goal: "webapp" }),
   });
   const { submission } = await createRes.json();
   assert.equal(createRes.status, 201);
@@ -165,11 +218,28 @@ test("unauthorized (garbage token) cannot list submissions", async () => {
   assert.equal(res.status, 401);
 });
 
+test("admin submissions list is paginated and returns the expected shape", async () => {
+  const token = await adminToken();
+  const res = await fetch(`${BASE_URL}/api/admin/submissions?page=1`, { headers: { Authorization: `Bearer ${token}` } });
+  const body = await res.json();
+
+  assert.equal(res.status, 200);
+  assert.ok(Array.isArray(body.submissions));
+  assert.ok(body.submissions.length <= body.pageSize, "a page must never return more rows than pageSize");
+  assert.equal(typeof body.total, "number");
+  assert.equal(body.page, 1);
+  assert.ok(body.totalPages >= 1);
+  // Full page-2-exists coverage is verified live (not in this suite) — the
+  // submission rate limiter (10/hour) makes creating 20+ rows in one test
+  // run impractical without special-casing tests around a production
+  // safety control, which isn't worth doing just to exercise this branch.
+});
+
 test("admin (valid token) can view a submission's analysis", async () => {
   const createRes = await fetch(`${BASE_URL}/api/intake/web-design`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name: "Admin View Test", email: `adminview${TEST_EMAIL_MARKER}`, goal: "brand", summary: "s" }),
+    body: JSON.stringify({ name: "Admin View Test", email: `adminview${TEST_EMAIL_MARKER}`, ...VALID_WEB_DESIGN_FIELDS }),
   });
   const { submission } = await createRes.json();
 
@@ -185,7 +255,7 @@ test("re-analyze (admin-triggered) works on a submission with an existing failed
   const createRes = await fetch(`${BASE_URL}/api/intake/web-design`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name: "Retry Test", email: `retry${TEST_EMAIL_MARKER}`, goal: "brand", summary: "s" }),
+    body: JSON.stringify({ name: "Retry Test", email: `retry${TEST_EMAIL_MARKER}`, ...VALID_WEB_DESIGN_FIELDS }),
   });
   const { submission } = await createRes.json();
   const token = await adminToken();
@@ -219,4 +289,16 @@ test("seo/contact submissions are not analyzed (feature scoped to web-design onl
   // response (contact submissions aren't even joined against analyses in
   // the admin list for non-web-design types) — this test documents the
   // scoping decision and confirms contact submissions still work normally.
+
+  // Reuses the submission just created above (rather than making a new
+  // POST) to verify the admin list's ?type= filter is enforced server-side —
+  // the submission rate limiter (10/hour, shared across all intake/contact
+  // endpoints) makes an extra POST here impractical alongside this suite's
+  // other submission-creating tests.
+  const token = await adminToken();
+  const filterRes = await fetch(`${BASE_URL}/api/admin/submissions?type=contact&page=1`, { headers: { Authorization: `Bearer ${token}` } });
+  const filterBody = await filterRes.json();
+  assert.equal(filterRes.status, 200);
+  assert.ok(filterBody.submissions.length > 0, "the contact submission just created must appear in the filtered results");
+  assert.ok(filterBody.submissions.every((s) => s.type === "contact"), "every returned row must match the requested type filter");
 });

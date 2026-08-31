@@ -1,7 +1,7 @@
 (() => {
-  function initTilt() {
-    document.querySelectorAll(".bento-card").forEach(attachMagneticTilt);
-  }
+  // initMagneticCards is the shared version in common.js (also used by
+  // web-design.js/seo.js) — this file used to keep its own identically-
+  // bodied copy under a different name (initTilt).
 
   function initAccordion() {
     const items = Array.from(document.querySelectorAll(".accordion-item"));
@@ -26,7 +26,7 @@
 
   function init() {
     initCommon();
-    initTilt();
+    initMagneticCards();
     initAccordion();
   }
 

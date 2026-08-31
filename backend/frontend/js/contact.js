@@ -8,13 +8,11 @@
     },
   };
 
+  // Sourced from the shared FIELD_LABELS in common.js (loaded before this
+  // file) rather than defined locally — see that file for the single source
+  // of truth these values come from.
   const LABELS = {
-    reason: {
-      "new-project": "New project inquiry",
-      "seo-question": "Question about SEO",
-      general: "General question",
-      other: "Other",
-    },
+    reason: FIELD_LABELS.reason,
   };
 
   const els = {
@@ -115,6 +113,11 @@
       els.layout.hidden = true;
       renderSuccess();
       els.successState.hidden = false;
+      // Move focus into the newly-revealed content so keyboard/screen-reader
+      // users land on it instead of losing their place when the form
+      // disappears — the heading has tabindex="-1" so it's focusable
+      // programmatically without being in the normal Tab order.
+      els.successState.querySelector(".success-title").focus();
     }, 300);
   }
 

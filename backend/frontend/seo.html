@@ -76,7 +76,7 @@
 <div class="modal-overlay" id="modal-overlay" hidden>
   <div class="modal" id="modal" role="dialog" aria-modal="true">
     <button class="modal-close" id="modal-close" type="button" aria-label="Close">
-      <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M4 4L12 12M12 4L4 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 4L12 12M12 4L4 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
     </button>
     <div class="modal-body" id="modal-body"></div>
   </div>
@@ -93,6 +93,7 @@
   </nav>
 </header>
 
+<main>
 <section class="home-hero home-hero-compact">
   <span class="eyebrow">SEO Consulting</span>
   <h1 class="home-title">SEO Consulting &amp; Technical SEO</h1>
@@ -109,7 +110,7 @@
   <p class="section-copy" style="max-width: 640px; text-align: center; margin: 20px auto 0;">Prefer to just talk it through first? <a href="contact.html">Contact us</a> — or fill out the structured review below and we'll follow up with findings.</p>
 </section>
 
-<main class="layout layout-tight" id="layout">
+<div class="layout layout-tight" id="layout">
 
   <div class="form-column">
 
@@ -155,7 +156,7 @@
 
           <button class="section-continue" data-goto="2" type="button">
             Continue to Visibility &amp; Challenges
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3.5 8H12.5M12.5 8L8.5 4M12.5 8L8.5 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8H12.5M12.5 8L8.5 4M12.5 8L8.5 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </button>
         </div>
 
@@ -172,28 +173,28 @@
             <div class="bento-grid" data-field="challenge" data-mode="single">
               <button class="bento-card bento-card-lg" data-value="not-ranking" type="button">
                 <span class="bento-icon">
-                  <svg viewBox="0 0 24 24" fill="none"><circle cx="10" cy="10" r="6.5" stroke="currentColor" stroke-width="1.6"/><path d="M15 15L20.5 20.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M7.5 10H12.5M10 7.5V12.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" transform="rotate(45 10 10)"/></svg>
+                  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="10" cy="10" r="6.5" stroke="currentColor" stroke-width="1.6"/><path d="M15 15L20.5 20.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M7.5 10H12.5M10 7.5V12.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" transform="rotate(45 10 10)"/></svg>
                 </span>
                 <span class="bento-title">Not ranking</span>
                 <span class="bento-desc">Pages barely show up in search results at all, even for our own brand terms.</span>
               </button>
               <button class="bento-card" data-value="traffic-declining" type="button">
                 <span class="bento-icon">
-                  <svg viewBox="0 0 24 24" fill="none"><path d="M3 7L10 14L14 10L21 17" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M15 17H21V11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 7L10 14L14 10L21 17" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M15 17H21V11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 </span>
                 <span class="bento-title">Traffic declining</span>
                 <span class="bento-desc">Rankings or organic traffic have dropped recently.</span>
               </button>
               <button class="bento-card" data-value="low-ctr" type="button">
                 <span class="bento-icon">
-                  <svg viewBox="0 0 24 24" fill="none"><path d="M2 12C4.5 7 8 4.5 12 4.5C16 4.5 19.5 7 22 12C19.5 17 16 19.5 12 19.5C8 19.5 4.5 17 2 12Z" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.6"/></svg>
+                  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M2 12C4.5 7 8 4.5 12 4.5C16 4.5 19.5 7 22 12C19.5 17 16 19.5 12 19.5C8 19.5 4.5 17 2 12Z" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.6"/></svg>
                 </span>
                 <span class="bento-title">Low click-through</span>
                 <span class="bento-desc">Ranking, but few people are actually clicking through.</span>
               </button>
               <button class="bento-card" data-value="poor-conversion" type="button">
                 <span class="bento-icon">
-                  <svg viewBox="0 0 24 24" fill="none"><path d="M4 4H20L14 12.5V19L10 21V12.5L4 4Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+                  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 4H20L14 12.5V19L10 21V12.5L4 4Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
                 </span>
                 <span class="bento-title">Poor conversion</span>
                 <span class="bento-desc">Getting organic traffic, but it isn't turning into leads or sales.</span>
@@ -212,7 +213,7 @@
 
           <button class="section-continue" data-goto="3" type="button">
             Continue to Contact &amp; Review
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3.5 8H12.5M12.5 8L8.5 4M12.5 8L8.5 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8H12.5M12.5 8L8.5 4M12.5 8L8.5 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </button>
         </div>
 
@@ -244,9 +245,9 @@
           <div class="submit-area">
             <button class="btn btn-primary btn-large" id="btn-submit" type="button" disabled>
               Request SEO Review
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3.5 8H12.5M12.5 8L8.5 4M12.5 8L8.5 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8H12.5M12.5 8L8.5 4M12.5 8L8.5 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </button>
-            <p class="submit-hint" id="submit-hint"></p>
+            <p class="submit-hint" id="submit-hint" aria-live="polite"></p>
           </div>
         </div>
 
@@ -260,16 +261,17 @@
     <div class="summary-list" id="summary-list"></div>
   </aside>
 
-</main>
+</div>
 
 <section class="success-state" id="success-state" hidden>
   <div class="success-inner">
     <div class="success-icon">✓</div>
-    <h2 class="success-title">Review requested.</h2>
+    <h2 class="success-title" tabindex="-1">Review requested.</h2>
     <p class="success-sub" id="success-sub">We'll audit your site and follow up by email within one business day.</p>
     <div class="success-summary" id="success-summary"></div>
   </div>
 </section>
+</main>
 
 <footer class="site-footer">
   <p>&copy; 2026 Studio. <a href="contact.html">Contact</a></p>

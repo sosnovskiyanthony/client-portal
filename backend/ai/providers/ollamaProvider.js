@@ -14,6 +14,12 @@ const { AiAnalysisError } = require("../errors");
 // without leaving a hung request open indefinitely.
 const REQUEST_TIMEOUT_MS = 5 * 60 * 1000;
 
+// Matches MAX_OUTPUT_TOKENS in anthropicProvider.js — plenty for this
+// schema's structured JSON output, and a real ceiling so a runaway/repetitive
+// generation can't run indefinitely on its own before the request timeout
+// above even kicks in.
+const MAX_OUTPUT_TOKENS = 4096;
+
 async function generateStructuredAnalysis({ systemPrompt, userMessage, zodSchema, model }) {
   const url = `${env.ollamaBaseUrl}/api/chat`;
   const jsonSchema = z.toJSONSchema(zodSchema);
@@ -40,7 +46,7 @@ async function generateStructuredAnalysis({ systemPrompt, userMessage, zodSchema
         // constrains generation, it doesn't replace validation.
         format: jsonSchema,
         stream: false,
-        options: { temperature: 0.2 },
+        options: { temperature: 0.2, num_predict: MAX_OUTPUT_TOKENS },
       }),
       signal: controller.signal,
     });
@@ -90,4 +96,4 @@ async function generateStructuredAnalysis({ systemPrompt, userMessage, zodSchema
   return { parsed, raw: body };
 }
 
-module.exports = { generateStructuredAnalysis, REQUEST_TIMEOUT_MS };
+module.exports = { generateStructuredAnalysis, REQUEST_TIMEOUT_MS, MAX_OUTPUT_TOKENS };

@@ -77,29 +77,39 @@ function renderGaSnippet() {
 </script>`;
 }
 
+function templateFileContents(contents) {
+  if (env.siteUrl !== RAILWAY_DEFAULT_SITE_URL) {
+    contents = contents.split(RAILWAY_DEFAULT_SITE_URL).join(env.siteUrl);
+  }
+  if (contents.includes(GA_TAG_PLACEHOLDER)) {
+    contents = contents.split(GA_TAG_PLACEHOLDER).join(renderGaSnippet());
+  }
+  return contents;
+}
+
+// Confines a request path to FRONTEND_DIR before any filesystem read.
+// Express's router already normalizes "../" segments out of req.path before
+// a route like this ever matches, but that's an implementation detail of
+// path-to-regexp, not a documented security guarantee — don't build a
+// traversal boundary on top of framework behavior that could change under
+// us. Returns null if the resolved path would escape FRONTEND_DIR.
+function resolveFrontendPath(reqPath) {
+  const filePath = path.join(FRONTEND_DIR, reqPath);
+  return filePath.startsWith(FRONTEND_DIR + path.sep) ? filePath : null;
+}
+
 app.get(["/", /\.(html|xml|txt)$/], (req, res, next) => {
   const reqPath = req.path === "/" ? "/index.html" : req.path;
   if (!TEMPLATED_FILE.test(reqPath)) return next();
 
-  // Express's router already normalizes "../" segments out of req.path before
-  // this ever matches, but that's an implementation detail of path-to-regexp,
-  // not a documented security guarantee — don't build a traversal boundary on
-  // top of framework behavior that could change under us. Explicitly confine
-  // the resolved path to FRONTEND_DIR before touching the filesystem.
-  const filePath = path.join(FRONTEND_DIR, reqPath);
-  if (!filePath.startsWith(FRONTEND_DIR + path.sep)) {
+  const filePath = resolveFrontendPath(reqPath);
+  if (!filePath) {
     return res.status(400).json({ error: "Invalid path." });
   }
 
   fs.readFile(filePath, "utf8", (err, contents) => {
     if (err) return next();
-    if (env.siteUrl !== RAILWAY_DEFAULT_SITE_URL) {
-      contents = contents.split(RAILWAY_DEFAULT_SITE_URL).join(env.siteUrl);
-    }
-    if (contents.includes(GA_TAG_PLACEHOLDER)) {
-      contents = contents.split(GA_TAG_PLACEHOLDER).join(renderGaSnippet());
-    }
-    res.type(contentTypeFor(reqPath)).send(contents);
+    res.type(contentTypeFor(reqPath)).send(templateFileContents(contents));
   });
 });
 
@@ -107,9 +117,32 @@ app.get(["/", /\.(html|xml|txt)$/], (req, res, next) => {
 // between the site and its own API.
 app.use(express.static(FRONTEND_DIR));
 
+// Nothing above matched: not an API route (already handled), not a real
+// templated file, not a static asset. A genuinely unknown URL — serve a
+// real, on-brand 404 page with an actual 404 status, instead of Express's
+// bare unbranded default.
+app.use((req, res) => {
+  const filePath = resolveFrontendPath("/404.html");
+  fs.readFile(filePath, "utf8", (err, contents) => {
+    if (err) return res.status(404).type("text/plain").send("Not found.");
+    res.status(404).type("text/html").send(templateFileContents(contents));
+  });
+});
+
 app.use((err, req, res, next) => {
-  console.error(err);
-  res.status(500).json({ error: "Something went wrong." });
+  // express.json() throws a SyntaxError tagged with a 4xx status for
+  // malformed request bodies — that's bad input, not a server failure, and
+  // shouldn't be reported (to the client or in logs) as one.
+  const code = err.status || err.statusCode;
+  const isClientError = Number.isInteger(code) && code >= 400 && code < 500;
+
+  if (!isClientError) {
+    console.error(err);
+    return res.status(500).json({ error: "Something went wrong." });
+  }
+
+  console.error(`[${code}] ${err.message}`);
+  res.status(code).json({ error: "Invalid request." });
 });
 
 async function start() {

@@ -1,7 +1,21 @@
 const Submission = require("../models/Submission");
 const { notifyNewSubmission } = require("../services/email");
+const { EMAIL_RE } = require("../lib/validators");
 
-const EMAIL_RE = /^\S+@\S+\.\S+$/;
+// Mirrors each form's own client-side "isComplete" gating on its submit
+// button (frontend/js/web-design.js, frontend/js/seo.js) — server-side, so a
+// direct API call (not just the real form) can't store a near-empty
+// submission with nothing but a name and email.
+const REQUIRED_FIELDS = {
+  "web-design": ["goal", "summary", "brandStatus", "features", "contentReadiness", "timeline"],
+  seo: ["url", "keywords", "challenge", "visibility"],
+};
+
+function isMissing(value) {
+  if (Array.isArray(value)) return value.length === 0;
+  if (typeof value === "string") return value.trim().length === 0;
+  return value === undefined || value === null;
+}
 
 function makeIntakeHandler(type) {
   return async function handleIntake(req, res) {
@@ -13,6 +27,11 @@ function makeIntakeHandler(type) {
     }
     if (!email || !EMAIL_RE.test(email)) {
       return res.status(400).json({ error: "A valid email is required." });
+    }
+
+    const missingField = (REQUIRED_FIELDS[type] || []).find((field) => isMissing(data[field]));
+    if (missingField) {
+      return res.status(400).json({ error: `Missing required field: ${missingField}.` });
     }
 
     const submission = await Submission.create({

@@ -2,8 +2,7 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const env = require("../config/env");
 const User = require("../models/User");
-
-const EMAIL_RE = /^\S+@\S+\.\S+$/;
+const { EMAIL_RE } = require("../lib/validators");
 
 async function login(req, res) {
   const { email, password } = req.body || {};
