@@ -10,7 +10,9 @@
 
   --text-primary: #f4f4f5;
   --text-secondary: #a1a1aa;
-  --text-tertiary: #6b6b74;
+  /* WCAG AA requires >=4.5:1 against --bg for normal-size text; the
+     original #6b6b74 measured ~3.78:1 (fails). #8a8a93 measures ~5.8:1. */
+  --text-tertiary: #8a8a93;
 
   --accent-1: #818cf8;
   --accent-2: #c084fc;
@@ -1171,6 +1173,20 @@ button, input, textarea {
   box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.35);
 }
 
+/* ---------- Focus-visible (keyboard focus ring, consistent across all
+   interactive controls that only had hover states before) ---------- */
+.bento-card:focus-visible,
+.pill:focus-visible,
+.nav-tab:focus-visible,
+.btn:focus-visible,
+.menu-toggle:focus-visible,
+.modal-close:focus-visible,
+.section-continue:focus-visible,
+.cta-banner-secondary-link:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.45);
+}
+
 .accordion-item.open .accordion-question {
   border-color: rgba(255, 255, 255, 0.2);
   background: rgba(255, 255, 255, 0.025);
@@ -1755,6 +1771,24 @@ button, input, textarea {
 }
 
 .cta-banner-secondary-link:hover {
+  color: var(--text-primary);
+}
+
+/* ---------- Site footer ---------- */
+.site-footer {
+  position: relative;
+  z-index: 1;
+  text-align: center;
+  padding: 32px 2rem 48px;
+  font-size: 12.5px;
+  color: var(--text-tertiary);
+}
+
+.site-footer a {
+  color: var(--text-secondary);
+}
+
+.site-footer a:hover {
   color: var(--text-primary);
 }
 
