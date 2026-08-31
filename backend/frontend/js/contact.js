@@ -33,13 +33,19 @@
       const field = group.dataset.field;
       const selector = ".pill";
 
+      group.querySelectorAll(selector).forEach((c) => c.setAttribute("aria-pressed", "false"));
+
       group.addEventListener("click", (e) => {
         const item = e.target.closest(selector);
         if (!item) return;
         const value = item.dataset.value;
 
-        group.querySelectorAll(selector).forEach((c) => c.classList.remove("selected"));
+        group.querySelectorAll(selector).forEach((c) => {
+          c.classList.remove("selected");
+          c.setAttribute("aria-pressed", "false");
+        });
         item.classList.add("selected");
+        item.setAttribute("aria-pressed", "true");
         state.data[field] = value;
 
         updateSubmitState();

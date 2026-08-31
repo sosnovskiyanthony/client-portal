@@ -26,4 +26,13 @@ module.exports = {
   resendApiKey: process.env.RESEND_API_KEY || null,
   notifyEmail: process.env.NOTIFY_EMAIL || null,
   notifyFromEmail: process.env.NOTIFY_FROM_EMAIL || "onboarding@resend.dev",
+
+  // Canonical production URL, no trailing slash. Every canonical link,
+  // Open Graph tag, JSON-LD url, and the sitemap/robots.txt Sitemap line in
+  // the frontend HTML is hardcoded to RAILWAY_DEFAULT_SITE_URL (see
+  // server.js). When a real custom domain exists, set SITE_URL here and
+  // server.js rewrites every occurrence at serve time — no HTML file edits
+  // needed. Until then this defaults to the same Railway URL already baked
+  // into the HTML, so it's a no-op.
+  siteUrl: (process.env.SITE_URL || "https://client-portal-production-d328.up.railway.app").replace(/\/$/, ""),
 };

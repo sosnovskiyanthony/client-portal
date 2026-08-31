@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Studio — Web Design Intake</title>
+<title>Web Design Project Intake | Studio</title>
 <meta name="description" content="Start a web design project with Studio — a quick intake covering your goals, scope, and timeline. Hand-written custom code, no page builders." />
 <meta name="robots" content="noindex, nofollow" />
 <meta name="theme-color" content="#09090b" />
@@ -81,6 +81,8 @@
 
 <main class="layout" id="layout">
 
+  <h1 class="sr-only">Web Design Project Intake</h1>
+
   <div class="form-column">
 
     <div class="section-nav">
@@ -146,7 +148,7 @@
           <div class="field-group">
             <label class="field">
               <span class="field-label">Give us a brief summary of your business</span>
-              <textarea class="field-input field-textarea" id="input-summary" rows="3" placeholder="What you do, who you serve, what makes you different…"></textarea>
+              <textarea class="field-input field-textarea" id="input-summary" name="summary" rows="3" placeholder="What you do, who you serve, what makes you different…" required></textarea>
             </label>
           </div>
 
@@ -251,16 +253,16 @@
             <div class="field-row">
               <label class="field">
                 <span class="field-label">Full name</span>
-                <input class="field-input" type="text" id="input-name" placeholder="Jordan Casey" autocomplete="name" />
+                <input class="field-input" type="text" id="input-name" name="name" placeholder="Jordan Casey" autocomplete="name" required />
               </label>
               <label class="field">
                 <span class="field-label">Email address</span>
-                <input class="field-input" type="email" id="input-email" placeholder="jordan@company.com" autocomplete="email" />
+                <input class="field-input" type="email" id="input-email" name="email" placeholder="jordan@company.com" autocomplete="email" required />
               </label>
             </div>
             <label class="field">
               <span class="field-label">Website URL <span class="field-optional">(optional)</span></span>
-              <input class="field-input" type="text" id="input-website" placeholder="yourcompany.com" autocomplete="url" />
+              <input class="field-input" type="url" id="input-website" name="website" placeholder="yourcompany.com" autocomplete="url" />
             </label>
           </div>
 

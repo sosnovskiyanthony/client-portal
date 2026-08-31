@@ -76,17 +76,24 @@
       const mode = group.dataset.mode;
       const selector = group.classList.contains("pill-row") ? ".pill" : ".bento-card";
 
+      group.querySelectorAll(selector).forEach((c) => c.setAttribute("aria-pressed", "false"));
+
       group.addEventListener("click", (e) => {
         const item = e.target.closest(selector);
         if (!item) return;
         const value = item.dataset.value;
 
         if (mode === "single") {
-          group.querySelectorAll(selector).forEach((c) => c.classList.remove("selected"));
+          group.querySelectorAll(selector).forEach((c) => {
+            c.classList.remove("selected");
+            c.setAttribute("aria-pressed", "false");
+          });
           item.classList.add("selected");
+          item.setAttribute("aria-pressed", "true");
           state.data[field] = value;
         } else {
           item.classList.toggle("selected");
+          item.setAttribute("aria-pressed", String(item.classList.contains("selected")));
           const list = state.data[field];
           const idx = list.indexOf(value);
           if (item.classList.contains("selected") && idx === -1) list.push(value);

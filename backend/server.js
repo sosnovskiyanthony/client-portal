@@ -1,4 +1,5 @@
 const path = require("path");
+const fs = require("fs");
 const express = require("express");
 const cors = require("cors");
 const env = require("./config/env");
@@ -32,9 +33,38 @@ app.use((req, res, next) => {
   next();
 });
 
+// The frontend's HTML/XML/TXT files have the Railway URL hardcoded as their
+// canonical/OG/JSON-LD/sitemap domain. Rather than templating tokens into
+// the markup, we rewrite that literal string to env.siteUrl at serve time —
+// so setting SITE_URL to a real domain later updates every page at once
+// with zero file edits. A no-op today since the default matches the HTML.
+const RAILWAY_DEFAULT_SITE_URL = "https://client-portal-production-d328.up.railway.app";
+const TEMPLATED_FILE = /\.(html|xml|txt)$/;
+const FRONTEND_DIR = path.join(__dirname, "frontend");
+
+function contentTypeFor(reqPath) {
+  if (reqPath.endsWith(".xml")) return "application/xml";
+  if (reqPath.endsWith(".txt")) return "text/plain";
+  return "text/html";
+}
+
+app.get(["/", /\.(html|xml|txt)$/], (req, res, next) => {
+  const reqPath = req.path === "/" ? "/index.html" : req.path;
+  if (!TEMPLATED_FILE.test(reqPath)) return next();
+
+  const filePath = path.join(FRONTEND_DIR, reqPath);
+  fs.readFile(filePath, "utf8", (err, contents) => {
+    if (err) return next();
+    if (env.siteUrl !== RAILWAY_DEFAULT_SITE_URL) {
+      contents = contents.split(RAILWAY_DEFAULT_SITE_URL).join(env.siteUrl);
+    }
+    res.type(contentTypeFor(reqPath)).send(contents);
+  });
+});
+
 // Serve the static frontend from the same origin — no CORS juggling needed
 // between the site and its own API.
-app.use(express.static(path.join(__dirname, "frontend")));
+app.use(express.static(FRONTEND_DIR));
 
 app.use((err, req, res, next) => {
   console.error(err);
