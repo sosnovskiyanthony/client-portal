@@ -1,7 +1,6 @@
 const path = require("path");
 const fs = require("fs");
 const express = require("express");
-const cors = require("cors");
 const env = require("./config/env");
 const { init } = require("./config/database");
 
@@ -18,7 +17,24 @@ const app = express();
 // blindly trusting the whole header chain.
 app.set("trust proxy", 1);
 
-app.use(cors());
+// Stop leaking the framework in every response header.
+app.disable("x-powered-by");
+
+// No CORS middleware: the frontend and API are served from this exact same
+// Express app on the same origin, so no cross-origin access is legitimate.
+// A wildcard cors() here previously let any external site's JS call
+// /api/auth/login (and every other endpoint) cross-origin for no reason —
+// removing it restores the browser's default same-origin restriction.
+
+app.use((req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  // No-op over plain HTTP (local dev); takes effect once served over HTTPS.
+  res.setHeader("Strict-Transport-Security", "max-age=63072000; includeSubDomains");
+  next();
+});
+
 app.use(express.json());
 
 app.use("/api/auth", authRoutes);
@@ -65,7 +81,16 @@ app.get(["/", /\.(html|xml|txt)$/], (req, res, next) => {
   const reqPath = req.path === "/" ? "/index.html" : req.path;
   if (!TEMPLATED_FILE.test(reqPath)) return next();
 
+  // Express's router already normalizes "../" segments out of req.path before
+  // this ever matches, but that's an implementation detail of path-to-regexp,
+  // not a documented security guarantee — don't build a traversal boundary on
+  // top of framework behavior that could change under us. Explicitly confine
+  // the resolved path to FRONTEND_DIR before touching the filesystem.
   const filePath = path.join(FRONTEND_DIR, reqPath);
+  if (!filePath.startsWith(FRONTEND_DIR + path.sep)) {
+    return res.status(400).json({ error: "Invalid path." });
+  }
+
   fs.readFile(filePath, "utf8", (err, contents) => {
     if (err) return next();
     if (env.siteUrl !== RAILWAY_DEFAULT_SITE_URL) {

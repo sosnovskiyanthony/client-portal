@@ -1,16 +1,24 @@
 require("dotenv").config();
 
-function required(name, fallback) {
-  const value = process.env[name] ?? fallback;
-  if (value === undefined) {
-    throw new Error(`Missing required environment variable: ${name}`);
+// A silent fallback here would mean: if JWT_SECRET ever went unset in
+// production (a Railway config mistake, a wiped env var), the app would
+// start up fine and just sign every admin token with a fixed string that's
+// sitting in plaintext in this file — anyone who's ever read this repo could
+// forge a valid admin JWT. Fail loudly in production; only fall back (with a
+// visible warning) for local dev, where no real submissions data is at risk.
+const INSECURE_JWT_FALLBACK = "dev-only-insecure-secret-change-me";
+let jwtSecret = process.env.JWT_SECRET;
+if (!jwtSecret) {
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("JWT_SECRET must be set in production — refusing to start with an insecure default.");
   }
-  return value;
+  console.warn("[env] JWT_SECRET not set — using an insecure default. This is only OK for local dev.");
+  jwtSecret = INSECURE_JWT_FALLBACK;
 }
 
 module.exports = {
   port: Number(process.env.PORT) || 8743,
-  jwtSecret: required("JWT_SECRET", "dev-only-insecure-secret-change-me"),
+  jwtSecret,
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || "12h",
   adminEmail: (process.env.ADMIN_EMAIL || "admin@studio.dev").toLowerCase(),
   adminPassword: process.env.ADMIN_PASSWORD || "studio-admin",
