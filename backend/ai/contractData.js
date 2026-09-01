@@ -46,6 +46,12 @@ function buildApprovedContractData(contract, selectedFeatures) {
       method: (contract.paymentTerms && contract.paymentTerms.method) || null,
       due_dates: (contract.paymentTerms && contract.paymentTerms.dueDates) || null,
       late_payment_terms: (contract.paymentTerms && contract.paymentTerms.latePaymentTerms) || null,
+      // Optional equity-in-lieu-of-cash arrangement — null/null for a
+      // normal cash-only deal. Never invented by the AI; only ever set by
+      // the admin explicitly typing a percentage/description in the
+      // builder (see frontend/js/contracts.js's Payment Terms section).
+      equity_percentage: (contract.paymentTerms && contract.paymentTerms.equityPercentage) ?? null,
+      equity_description: (contract.paymentTerms && contract.paymentTerms.equityDescription) || null,
     },
     timeline: {
       start_date: contract.startDate || null,

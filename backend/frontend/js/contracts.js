@@ -588,6 +588,11 @@
         <label class="contract-field"><span>Due dates</span><input type="text" id="cf-pt-dueDates" value="${escapeHtml(pt.dueDates || "")}" placeholder="e.g. Net 15" /></label>
         <label class="contract-field contract-field-wide"><span>Late payment terms</span><textarea id="cf-pt-late" rows="2">${escapeHtml(pt.latePaymentTerms || "")}</textarea></label>
       </div>
+      <p class="contract-imported-note">Equity / stake (optional) — only fill this in for deals where the client is offering equity instead of (or alongside) cash. Leave blank for a normal cash deal; the contract will state compensation is cash-only.</p>
+      <div class="contract-field-grid">
+        <label class="contract-field"><span>Equity / stake %</span><input type="number" id="cf-pt-equityPercentage" min="0" max="100" step="0.01" value="${pt.equityPercentage ?? ""}" placeholder="e.g. 5" /></label>
+        <label class="contract-field contract-field-wide"><span>Equity notes</span><textarea id="cf-pt-equityDescription" rows="2" placeholder="e.g. 5% equity in Acme Inc., vesting over 24 months, in lieu of $2,000 of the project fee">${escapeHtml(pt.equityDescription || "")}</textarea></label>
+      </div>
       <button class="btn btn-primary" id="btn-save-payment-terms" type="button">Save Payment Terms</button>
     `
     );
@@ -595,6 +600,7 @@
   function wirePaymentTermsSection() {
     document.getElementById("btn-save-payment-terms").addEventListener("click", async (e) => {
       const btn = e.currentTarget;
+      const equityPercentage = document.getElementById("cf-pt-equityPercentage").value;
       try {
         activeContract = await updateContract(activeContract.id, {
           paymentTerms: {
@@ -602,6 +608,8 @@
             method: document.getElementById("cf-pt-method").value.trim(),
             dueDates: document.getElementById("cf-pt-dueDates").value.trim(),
             latePaymentTerms: document.getElementById("cf-pt-late").value.trim(),
+            equityPercentage: equityPercentage ? Number(equityPercentage) : null,
+            equityDescription: document.getElementById("cf-pt-equityDescription").value.trim() || null,
           },
         });
         flashSaved(btn, "Save Payment Terms");
