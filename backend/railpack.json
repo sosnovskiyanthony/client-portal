@@ -3,6 +3,7 @@
   "provider": "node",
   "deploy": {
     "inputs": ["..."],
+    "aptPackages": ["curl"],
     "startCommand": "sh scripts/start-with-tailscale.sh"
   }
 }
