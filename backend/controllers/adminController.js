@@ -7,6 +7,7 @@ const { runDraftEmail } = require("../services/draftEmail");
 const { toCsv } = require("../utils/csv");
 const storage = require("../services/storage");
 const { BRAND_ASSET_PATH_RE } = require("../lib/validators");
+const { cleanupOrphanedAssets } = require("../services/orphanCleanup");
 
 async function listSubmissions(req, res) {
   const type = typeof req.query.type === "string" ? req.query.type : "all";
@@ -165,6 +166,93 @@ async function getAssetSignedUrl(req, res) {
   res.json({ url });
 }
 
+// Admin-only, permanent and irreversible. FK ON DELETE CASCADE handles the
+// related analysis/outcome/email-draft rows automatically (see
+// config/database.js) — this only needs to also clean up any attached
+// brand-asset files, since those live in Supabase Storage, not the database.
+// Best-effort on the storage side: a storage hiccup must never block
+// honoring the deletion request itself, and even if it silently fails here,
+// the file becomes unreferenced the moment the row is gone — the orphaned-
+// asset cleanup job (services/orphanCleanup.js) catches it either way.
+async function deleteSubmission(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) {
+    return res.status(400).json({ error: "Invalid submission id." });
+  }
+
+  const submission = await Submission.findById(id);
+  if (!submission) {
+    return res.status(404).json({ error: "Submission not found." });
+  }
+
+  const assets = (submission.projectDetails && submission.projectDetails.brandAssets) || [];
+  if (Array.isArray(assets) && assets.length > 0 && storage.isConfigured()) {
+    try {
+      await storage.deleteFiles(assets.map((a) => a && a.path).filter(Boolean));
+    } catch (err) {
+      console.error(`[deleteSubmission] Failed to delete storage files for submission #${id}:`, err);
+    }
+  }
+
+  await Submission.deleteById(id);
+  res.status(204).end();
+}
+
+// Admin-only. Removes one attached file from a submission without deleting
+// the submission itself — the reverse of uploadBrandAssets: drops the entry
+// from projectDetails.brandAssets and best-effort deletes the underlying
+// Supabase object (same reasoning as deleteSubmission above — the file is
+// unreferenced either way once this returns, so a failed storage call still
+// gets caught by the orphan-cleanup job later).
+async function removeAsset(req, res) {
+  const id = Number(req.params.id);
+  const { path } = req.body || {};
+  if (!Number.isInteger(id)) {
+    return res.status(400).json({ error: "Invalid submission id." });
+  }
+  if (typeof path !== "string" || !BRAND_ASSET_PATH_RE.test(path)) {
+    return res.status(400).json({ error: "Invalid asset path." });
+  }
+
+  const submission = await Submission.findById(id);
+  if (!submission) {
+    return res.status(404).json({ error: "Submission not found." });
+  }
+
+  const assets = (submission.projectDetails && submission.projectDetails.brandAssets) || [];
+  if (!Array.isArray(assets) || !assets.some((a) => a && a.path === path)) {
+    return res.status(404).json({ error: "This submission has no attached file at that path." });
+  }
+
+  if (storage.isConfigured()) {
+    try {
+      await storage.deleteFiles([path]);
+    } catch (err) {
+      console.error(`[removeAsset] Failed to delete storage file ${path} for submission #${id}:`, err);
+    }
+  }
+
+  const updatedAssets = assets.filter((a) => !a || a.path !== path);
+  const updated = await Submission.updateProjectDetails(id, { ...submission.projectDetails, brandAssets: updatedAssets });
+  res.json({ submission: updated });
+}
+
+// Admin-only, admin-triggered (no automatic schedule — see
+// services/orphanCleanup.js). Deletes storage objects no submission
+// references, past a 24h safety window.
+async function cleanupAssets(req, res) {
+  if (!storage.isConfigured()) {
+    return res.status(503).json({ error: "File storage is not configured on this server." });
+  }
+  try {
+    const result = await cleanupOrphanedAssets();
+    res.json(result);
+  } catch (err) {
+    console.error("[cleanupAssets] Cleanup failed:", err);
+    res.status(502).json({ error: "Cleanup failed. Please try again." });
+  }
+}
+
 // Mirrors the STUCK_THRESHOLD_MS used in frontend/js/admin.js to decide when
 // a "processing" row shows a retry button instead of a passive message —
 // same reasoning applies here: Ollama's own request timeout is 5 minutes, so
@@ -270,4 +358,7 @@ module.exports = {
   exportSubmissions,
   draftEmail,
   getAssetSignedUrl,
+  deleteSubmission,
+  removeAsset,
+  cleanupAssets,
 };

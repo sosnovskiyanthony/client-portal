@@ -99,6 +99,45 @@ async function updateStatus(id, status) {
   return rows[0] ? serialize(rows[0]) : null;
 }
 
+// Used to remove a single attached brand asset from projectDetails.brandAssets
+// (adminController.removeAsset) without touching any other field.
+async function updateProjectDetails(id, projectDetails) {
+  const { rows } = await pool.query(
+    "UPDATE submissions SET project_details = $1, updated_at = now() WHERE id = $2 RETURNING *",
+    [projectDetails, id]
+  );
+  return rows[0] ? serialize(rows[0]) : null;
+}
+
+// FK ON DELETE CASCADE on project_outcomes/submission_analyses/email_drafts
+// (see config/database.js) means this is the only query needed — deleting
+// the submission row cleans up every related child row automatically. It
+// does NOT touch any attached brand-asset files in Supabase Storage — that
+// has to happen before this is called (see adminController.deleteSubmission).
+async function deleteById(id) {
+  const { rows } = await pool.query("DELETE FROM submissions WHERE id = $1 RETURNING *", [id]);
+  return rows[0] ? serialize(rows[0]) : null;
+}
+
+// Every brand-asset path any submission currently references — used only by
+// services/orphanCleanup.js to tell "still in use" storage objects apart
+// from abandoned ones. Reads project_details directly rather than a
+// relational table (brandAssets lives in the JSONB column, not its own
+// table — see intakeController.js's sanitizeBrandAssets). Unpaginated, same
+// reasoning as findAll(): fine at this app's realistic data volume.
+async function getAllReferencedAssetPaths() {
+  const { rows } = await pool.query("SELECT project_details FROM submissions WHERE project_details IS NOT NULL");
+  const paths = new Set();
+  for (const row of rows) {
+    const assets = row.project_details && row.project_details.brandAssets;
+    if (!Array.isArray(assets)) continue;
+    for (const a of assets) {
+      if (a && typeof a === "object" && typeof a.path === "string") paths.add(a.path);
+    }
+  }
+  return paths;
+}
+
 function serialize(row) {
   return {
     id: row.id,
@@ -113,4 +152,16 @@ function serialize(row) {
   };
 }
 
-module.exports = { create, findById, findPage, findAll, count, updateStatus, VALID_STATUSES, PAGE_SIZE };
+module.exports = {
+  create,
+  findById,
+  findPage,
+  findAll,
+  count,
+  updateStatus,
+  updateProjectDetails,
+  deleteById,
+  getAllReferencedAssetPaths,
+  VALID_STATUSES,
+  PAGE_SIZE,
+};

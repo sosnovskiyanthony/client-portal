@@ -1,6 +1,6 @@
 # Client Portal — Backend
 
-API and static server for the client portal: web design / SEO intake forms, a contact form, admin authentication, an admin dashboard, an optional AI project-analysis feature (with AI-drafted outreach emails once analysis completes), CSV export, and optional brand-asset uploads via Supabase Storage.
+API and static server for the client portal: web design / SEO intake forms, a contact form, admin authentication, an admin dashboard (with submission/asset deletion), an optional AI project-analysis feature (with AI-drafted outreach emails once analysis completes), CSV export, optional brand-asset uploads via Supabase Storage (with admin-triggered orphaned-file cleanup), a health-check endpoint, and optional Sentry error tracking.
 
 ## Stack
 
@@ -20,6 +20,7 @@ API and static server for the client portal: web design / SEO intake forms, a co
 3. Have a local Postgres instance running and reachable at `DATABASE_URL` (defaults to `postgresql://localhost:5432/client_portal_dev` — create that database if it doesn't exist yet). The app creates its own tables and seeds an admin user on first run — no manual migration step.
 4. If you want AI analysis working locally, see `ai/README.md` (Ollama install + model pull). Everything else works fine without it — analysis just fails gracefully and can be retried later.
 5. If you want brand-asset uploads working, set `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` / `SUPABASE_BUCKET` in `.env` (see the comments there for where to get them and how to create the bucket). Optional — the upload UI on the web-design intake form and the "View" button in the admin dashboard just respond with a clear error until these are set; nothing else depends on them.
+6. If you want error tracking, set `SENTRY_DSN` in `.env` (sign up at sentry.io, create a Node project, copy the DSN — see the comment in `.env.example`). Optional — everything works identically without it, errors just aren't reported anywhere external to this app's own logs. `GET /api/health` (unauthenticated) is separate from this and always available for an uptime monitor regardless.
 
 ## Running
 
@@ -41,8 +42,12 @@ Runs the full suite via Node's built-in test runner (`node --test`, zero extra t
 ## Project structure
 
 ```
+instrument.js         Optional Sentry init — must load before every other
+                      module (see server.js's first line); dormant unless
+                      SENTRY_DSN is set
 server.js            Entry point — Express app, security headers, static file
-                      serving (with domain/GA templating), 404 handling
+                      serving (with domain/GA templating), 404 handling,
+                      GET /api/health for uptime monitors
 config/               env.js (all env vars, one place), database.js (schema + migrations)
 routes/                One file per resource: auth, intake, contact, admin
 controllers/           Request handling for each route

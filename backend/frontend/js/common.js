@@ -672,6 +672,82 @@ async function getAssetSignedUrl(path) {
   return body.url;
 }
 
+// Permanently deletes a submission and best-effort deletes any attached
+// brand-asset files. Admin-only, irreversible — the caller is responsible
+// for confirming with the admin first (see admin.js's delete button).
+async function deleteSubmission(id) {
+  let res;
+  try {
+    res = await fetch(`/api/admin/submissions/${id}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${getAdminToken()}` },
+    });
+  } catch (err) {
+    throw new Error("Can't reach the server. Is the backend running?");
+  }
+
+  if (res.status === 401 || res.status === 403) {
+    logoutAdmin();
+    throw new Error("Your session expired. Please log in again.");
+  }
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || "Couldn't delete this submission.");
+  }
+}
+
+// Removes one attached brand-asset file from a submission — the submission
+// itself stays. Admin-only.
+async function deleteAsset(id, path) {
+  let res;
+  try {
+    res = await fetch(`/api/admin/submissions/${id}/assets`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${getAdminToken()}` },
+      body: JSON.stringify({ path }),
+    });
+  } catch (err) {
+    throw new Error("Can't reach the server. Is the backend running?");
+  }
+
+  if (res.status === 401 || res.status === 403) {
+    logoutAdmin();
+    throw new Error("Your session expired. Please log in again.");
+  }
+
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(body.error || "Couldn't remove this file.");
+  }
+  return body.submission;
+}
+
+// Deletes any Supabase Storage file no submission references, past a 24h
+// safety window (see services/orphanCleanup.js). Admin-only, admin-
+// triggered — there's no automatic schedule.
+async function cleanupOrphanedAssets() {
+  let res;
+  try {
+    res = await fetch("/api/admin/storage/cleanup-orphans", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${getAdminToken()}` },
+    });
+  } catch (err) {
+    throw new Error("Can't reach the server. Is the backend running?");
+  }
+
+  if (res.status === 401 || res.status === 403) {
+    logoutAdmin();
+    throw new Error("Your session expired. Please log in again.");
+  }
+
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(body.error || "Cleanup failed.");
+  }
+  return body;
+}
+
 // ---------- Account menu ----------
 
 function initMenu() {

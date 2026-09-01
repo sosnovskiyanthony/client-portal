@@ -45,4 +45,53 @@ async function createSignedUrl(path, expiresInSeconds) {
   return data.signedUrl;
 }
 
-module.exports = { isConfigured, uploadFile, createSignedUrl };
+// Bulk-remove — used both to delete a submission's attached files (when the
+// submission itself is deleted, or a single asset is removed from it — see
+// adminController.js) and by the orphaned-file cleanup job. No-op on an
+// empty list rather than an error, since callers don't need to special-case it.
+async function deleteFiles(paths) {
+  if (!paths || paths.length === 0) return;
+  const client = getClient();
+  if (!client) throw new Error("Supabase Storage is not configured.");
+  const { error } = await client.storage.from(env.supabaseBucket).remove(paths);
+  if (error) throw new Error(error.message);
+}
+
+// Every object this app has ever uploaded lives under the "brand-assets/"
+// folder inside the bucket (see uploadBrandAssets's path generation) —
+// paginated since Supabase's list() caps each response (100 by default).
+// Returns {path, createdAt} so the orphan-cleanup job can apply an age
+// safety window before deleting anything (see services/orphanCleanup.js).
+async function listAllFiles(prefix = "brand-assets") {
+  const client = getClient();
+  if (!client) throw new Error("Supabase Storage is not configured.");
+
+  const pageSize = 100;
+  let offset = 0;
+  const all = [];
+
+  while (true) {
+    const { data, error } = await client.storage.from(env.supabaseBucket).list(prefix, {
+      limit: pageSize,
+      offset,
+      sortBy: { column: "created_at", order: "asc" },
+    });
+    if (error) throw new Error(error.message);
+    if (!data || data.length === 0) break;
+
+    for (const item of data) {
+      // Supabase's list() can also return a placeholder entry representing
+      // the folder itself in some SDK versions — it has no id/metadata.
+      // Skip anything that isn't a real file.
+      if (!item.id) continue;
+      all.push({ path: `${prefix}/${item.name}`, createdAt: item.created_at });
+    }
+
+    if (data.length < pageSize) break;
+    offset += pageSize;
+  }
+
+  return all;
+}
+
+module.exports = { isConfigured, uploadFile, createSignedUrl, deleteFiles, listAllFiles };

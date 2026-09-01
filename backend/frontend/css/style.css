@@ -1833,6 +1833,12 @@ a:focus-visible {
   white-space: nowrap;
 }
 
+.submission-asset-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
 .submission-status {
   font-size: 11px;
   font-weight: 700;
@@ -1879,6 +1885,15 @@ a:focus-visible {
   margin-top: 16px;
   padding-top: 16px;
   border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.submission-delete-btn {
+  color: #f87171;
 }
 
 /* ---------- AI project analysis (admin-only) ---------- */

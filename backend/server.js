@@ -1,8 +1,12 @@
+// Must be the very first require in the app — see instrument.js.
+require("./instrument");
+
 const path = require("path");
 const fs = require("fs");
 const express = require("express");
+const Sentry = require("@sentry/node");
 const env = require("./config/env");
-const { init } = require("./config/database");
+const { init, pool } = require("./config/database");
 
 const authRoutes = require("./routes/auth");
 const intakeRoutes = require("./routes/intake");
@@ -58,6 +62,22 @@ app.use((req, res, next) => {
 });
 
 app.use(express.json());
+
+// Unauthenticated, unrated — this is what an external uptime monitor
+// (UptimeRobot, Better Uptime, Railway's own health checks, etc.) hits
+// repeatedly and needs to always be reachable. Pings the DB rather than
+// just returning a static 200, since "the process is up but the database
+// connection is dead" is exactly the failure mode a monitor needs to catch
+// — the app would otherwise look "healthy" while every real request 500s.
+app.get("/api/health", async (req, res) => {
+  try {
+    await pool.query("SELECT 1");
+    res.status(200).json({ status: "ok", database: "connected" });
+  } catch (err) {
+    console.error("[health] Database check failed:", err.message);
+    res.status(503).json({ status: "error", database: "unreachable" });
+  }
+});
 
 app.use("/api/auth", authRoutes);
 app.use("/api/intake", intakeRoutes);
@@ -160,11 +180,38 @@ app.use((err, req, res, next) => {
 
   if (!isClientError) {
     console.error(err);
+    // A safe no-op when SENTRY_DSN isn't set (see instrument.js) — never
+    // throws, never blocks the response either way.
+    Sentry.captureException(err);
     return res.status(500).json({ error: "Something went wrong." });
   }
 
   console.error(`[${code}] ${err.message}`);
   res.status(code).json({ error: "Invalid request." });
+});
+
+// Neither of these previously had any handler at all — an uncaught
+// exception or unhandled rejection anywhere (including outside a request,
+// e.g. in a fire-and-forget call like notifyNewSubmission) would otherwise
+// only ever show up as a bare stack trace in Railway's logs, with nothing
+// external to notice it happened. Reporting to Sentry is a safe no-op when
+// SENTRY_DSN isn't set (see instrument.js).
+//
+// uncaughtException still exits — Node's own documented recommendation,
+// since the process may be in an inconsistent state afterward; Railway
+// restarts the container the same way it always would on a crash.
+// unhandledRejection does not exit — many of these are recoverable
+// (a single failed background call), and this app didn't crash on them
+// before this handler existed either, so this only adds visibility, not a
+// new crash path.
+process.on("uncaughtException", (err) => {
+  console.error("[uncaughtException]", err);
+  Sentry.captureException(err);
+  process.exit(1);
+});
+process.on("unhandledRejection", (reason) => {
+  console.error("[unhandledRejection]", reason);
+  Sentry.captureException(reason instanceof Error ? reason : new Error(String(reason)));
 });
 
 async function start() {

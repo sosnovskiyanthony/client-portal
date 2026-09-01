@@ -67,6 +67,7 @@
     list: document.getElementById("submission-list"),
     pagination: document.getElementById("admin-pagination"),
     exportBtn: document.getElementById("export-csv-btn"),
+    cleanupBtn: document.getElementById("cleanup-orphans-btn"),
   };
 
   // Filtering and pagination are both server-driven (see GET
@@ -449,7 +450,7 @@
   // intakeController.uploadBrandAssets / sanitizeBrandAssets) rather than as
   // their own submission field — only ever populated on web-design intakes.
   // The bucket is private, so "View" fetches a fresh signed URL on click
-  // rather than linking directly (see initAssetViewControls below).
+  // rather than linking directly (see initAssetControls below).
   function renderBrandAssets(submission) {
     const assets = (submission.projectDetails && submission.projectDetails.brandAssets) || [];
     if (!Array.isArray(assets) || assets.length === 0) return "";
@@ -463,7 +464,10 @@
               (a) => `
             <li class="submission-asset-item">
               <span class="submission-asset-name">${escapeHtml(a.filename || a.path)}</span>
-              <button class="btn btn-ghost submission-asset-view-btn" data-asset-path="${escapeHtml(a.path)}" type="button">View</button>
+              <div class="submission-asset-actions">
+                <button class="btn btn-ghost submission-asset-view-btn" data-asset-path="${escapeHtml(a.path)}" type="button">View</button>
+                <button class="btn btn-ghost submission-asset-remove-btn" data-asset-path="${escapeHtml(a.path)}" data-submission-id="${submission.id}" type="button">Remove</button>
+              </div>
             </li>
           `
             )
@@ -528,6 +532,7 @@
             Status
             <select class="submission-status-select" data-id="${submission.id}">${statusOptions}</select>
           </label>
+          <button class="btn btn-ghost submission-delete-btn" data-delete-id="${submission.id}" type="button">Delete</button>
         </div>
         ${submission.type === "web-design" ? renderAnalysisSection(submission) : ""}
         ${renderOutcomeSection(submission)}
@@ -727,37 +732,57 @@
     });
   }
 
-  function initAssetViewControls() {
+  function initAssetControls() {
     els.list.addEventListener("click", async (e) => {
-      const btn = e.target.closest(".submission-asset-view-btn[data-asset-path]");
-      if (!btn) return;
+      const viewBtn = e.target.closest(".submission-asset-view-btn[data-asset-path]");
+      if (viewBtn) {
+        const path = viewBtn.dataset.assetPath;
+        const original = viewBtn.textContent;
+        viewBtn.disabled = true;
+        viewBtn.textContent = "Loading…";
 
-      const path = btn.dataset.assetPath;
-      const original = btn.textContent;
-      btn.disabled = true;
-      btn.textContent = "Loading…";
+        // Most browsers only allow window.open() to succeed when it's called
+        // synchronously within the original click — once anything is awaited
+        // first, it's silently blocked as a popup (returns null, doesn't
+        // throw). Opening a blank tab right here, then redirecting it once
+        // the signed URL resolves, keeps this inside the trusted-gesture window.
+        const win = window.open("", "_blank", "noopener");
 
-      // Most browsers only allow window.open() to succeed when it's called
-      // synchronously within the original click — once anything is awaited
-      // first, it's silently blocked as a popup (returns null, doesn't
-      // throw). Opening a blank tab right here, then redirecting it once the
-      // signed URL resolves, keeps this inside the trusted-gesture window.
-      const win = window.open("", "_blank", "noopener");
-
-      try {
-        const url = await getAssetSignedUrl(path);
-        if (win) {
-          win.location = url;
-        } else {
-          els.adminSub.textContent = "Your browser blocked the new tab — allow pop-ups for this site and try again.";
+        try {
+          const url = await getAssetSignedUrl(path);
+          if (win) {
+            win.location = url;
+          } else {
+            els.adminSub.textContent = "Your browser blocked the new tab — allow pop-ups for this site and try again.";
+          }
+        } catch (err) {
+          if (win) win.close();
+          els.adminSub.textContent = err.message;
+          if (!isAdminLoggedIn()) render();
+        } finally {
+          viewBtn.disabled = false;
+          viewBtn.textContent = original;
         }
-      } catch (err) {
-        if (win) win.close();
-        els.adminSub.textContent = err.message;
-        if (!isAdminLoggedIn()) render();
-      } finally {
-        btn.disabled = false;
-        btn.textContent = original;
+        return;
+      }
+
+      const removeBtn = e.target.closest(".submission-asset-remove-btn[data-asset-path]");
+      if (removeBtn) {
+        const path = removeBtn.dataset.assetPath;
+        const id = Number(removeBtn.dataset.submissionId);
+        if (!window.confirm("Remove this file? This can't be undone.")) return;
+
+        removeBtn.disabled = true;
+        try {
+          const updated = await deleteAsset(id, path);
+          const idx = cachedSubmissions.findIndex((s) => s.id === id);
+          if (idx !== -1) cachedSubmissions[idx] = { ...cachedSubmissions[idx], projectDetails: updated.projectDetails };
+          renderList();
+        } catch (err) {
+          els.adminSub.textContent = err.message;
+          removeBtn.disabled = false;
+          if (!isAdminLoggedIn()) render();
+        }
       }
     });
   }
@@ -831,6 +856,51 @@
     });
   }
 
+  function initDeleteControls() {
+    els.list.addEventListener("click", async (e) => {
+      const btn = e.target.closest(".submission-delete-btn[data-delete-id]");
+      if (!btn) return;
+
+      const id = Number(btn.dataset.deleteId);
+      if (!window.confirm("Permanently delete this submission? This can't be undone.")) return;
+
+      btn.disabled = true;
+      try {
+        await deleteSubmission(id);
+        cachedSubmissions = cachedSubmissions.filter((s) => s.id !== id);
+        paginationMeta = { ...paginationMeta, total: Math.max(0, paginationMeta.total - 1) };
+        renderList();
+      } catch (err) {
+        els.adminSub.textContent = err.message;
+        btn.disabled = false;
+        if (!isAdminLoggedIn()) render();
+      }
+    });
+  }
+
+  function initCleanupOrphans() {
+    if (!els.cleanupBtn) return;
+    els.cleanupBtn.addEventListener("click", async () => {
+      const original = els.cleanupBtn.textContent;
+      els.cleanupBtn.disabled = true;
+      els.cleanupBtn.textContent = "Cleaning…";
+
+      try {
+        const result = await cleanupOrphanedAssets();
+        els.adminSub.textContent =
+          result.deleted > 0
+            ? `Removed ${result.deleted} unused file${result.deleted === 1 ? "" : "s"} (scanned ${result.scanned}).`
+            : `No unused files found (scanned ${result.scanned}).`;
+      } catch (err) {
+        els.adminSub.textContent = err.message;
+        if (!isAdminLoggedIn()) render();
+      } finally {
+        els.cleanupBtn.disabled = false;
+        els.cleanupBtn.textContent = original;
+      }
+    });
+  }
+
   function initExport() {
     els.exportBtn.addEventListener("click", async () => {
       const original = els.exportBtn.textContent;
@@ -867,10 +937,12 @@
     initStatusControls();
     initAnalysisControls();
     initEmailDraftControls();
-    initAssetViewControls();
+    initAssetControls();
     initOutcomeControls();
+    initDeleteControls();
     initPagination();
     initExport();
+    initCleanupOrphans();
 
     els.btnLogin.addEventListener("click", () => openModal("login"));
     els.btnLogout.addEventListener("click", () => {
