@@ -121,6 +121,47 @@ test("chatReply: prior turns are replayed as user/assistant messages, mapped fro
   assert.equal(roles[roles.length - 1], "user");
 });
 
+test("updateAnalysisFromConversation: a well-formed revision passes end-to-end, reusing AnalysisSchema", async () => {
+  let capturedBody;
+  await withMockedFetch(
+    async (url, opts) => {
+      capturedBody = JSON.parse(opts.body);
+      return { ok: true, status: 200, json: async () => ({ message: { content: JSON.stringify({ ...VALID_RESULT, project_summary: "Revised summary" }) } }) };
+    },
+    async () => {
+      const outcome = await aiService.updateAnalysisFromConversation(
+        VALID_RESULT,
+        { business_summary: "A bakery site." },
+        [{ role: "admin", content: "Actually the client wants e-commerce, not just lead-gen." }]
+      );
+      assert.equal(outcome.provider, "ollama");
+      assert.ok(outcome.model);
+      assert.ok(outcome.promptVersion);
+      assert.equal(outcome.result.project_summary, "Revised summary");
+    }
+  );
+
+  // No "format" field would be wrong here — this DOES reuse the schema-
+  // constrained path (generateStructuredAnalysis), unlike chatReply.
+  assert.ok(capturedBody.format);
+  const userMessage = capturedBody.messages[1].content;
+  assert.ok(userMessage.includes("<SUBMISSION_DATA>"));
+  assert.ok(userMessage.includes("<CURRENT_ANALYSIS>"));
+  assert.ok(userMessage.includes("<CONVERSATION>"));
+});
+
+test("updateAnalysisFromConversation: malformed structured output is rejected as invalid_schema", async () => {
+  await withMockedFetch(
+    async () => ({ ok: true, status: 200, json: async () => ({ message: { content: JSON.stringify({ project_summary: "only this field" }) } }) }),
+    async () => {
+      await assert.rejects(
+        () => aiService.updateAnalysisFromConversation(VALID_RESULT, {}, []),
+        (err) => err instanceof AiAnalysisError && err.code === "invalid_schema"
+      );
+    }
+  );
+});
+
 test("chatReply: an empty response from Ollama is classified as invalid_json, not silently returned as a reply", async () => {
   await withMockedFetch(
     async () => ({ ok: true, status: 200, json: async () => ({ message: { content: "" } }) }),

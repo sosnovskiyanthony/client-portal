@@ -80,3 +80,70 @@ test("schema produces a valid JSON Schema for structured-output use (Ollama form
   assert.ok(jsonSchema.properties.potential_risks);
   assert.equal(jsonSchema.properties.potential_risks.type, "array");
 });
+
+// seo_recommendations/feature_recommendations/research_used are additive —
+// every analysis stored before this schema change is missing them
+// entirely, and the schema must keep accepting that shape unchanged.
+test("schema still accepts an analysis with no seo_recommendations/feature_recommendations/research_used (backward compatibility)", () => {
+  const result = AnalysisSchema.safeParse(VALID_ANALYSIS);
+  assert.equal(result.success, true);
+  assert.equal(result.data.seo_recommendations, undefined);
+  assert.equal(result.data.feature_recommendations, undefined);
+});
+
+test("schema accepts a fully populated seo_recommendations/feature_recommendations/research_used", () => {
+  const withRecommendations = {
+    ...VALID_ANALYSIS,
+    seo_recommendations: [
+      {
+        recommendation: "Create a dedicated /roofing-repair-[city] page for each service area.",
+        why: "The client serves several distinct towns and currently has one generic services page.",
+        expected_value: "Captures location-specific search intent this client is currently invisible to.",
+        evidence: "Submission lists three separate service areas under business_summary.",
+        priority: "high",
+        category: "local",
+      },
+    ],
+    feature_recommendations: [
+      {
+        feature: "Before/after project gallery with filtering by service type",
+        problem_solved: "Homeowners can't currently see proof of past work before requesting a quote.",
+        reasoning: "Client explicitly cited trust-building with homeowners as a goal.",
+        expected_impact: "Higher quote-request conversion from cold traffic.",
+        priority: "medium",
+        dependencies_considerations: "Requires the client to supply real project photos.",
+      },
+    ],
+    research_used: false,
+  };
+  const result = AnalysisSchema.safeParse(withRecommendations);
+  assert.equal(result.success, true);
+  assert.equal(result.data.seo_recommendations[0].priority, "high");
+  assert.equal(result.data.feature_recommendations[0].feature.includes("gallery"), true);
+});
+
+test("schema rejects a seo_recommendations entry missing a required field", () => {
+  const bad = {
+    ...VALID_ANALYSIS,
+    seo_recommendations: [{ recommendation: "Do SEO", why: "Because", priority: "high" }], // missing expected_value/evidence
+  };
+  const result = AnalysisSchema.safeParse(bad);
+  assert.equal(result.success, false);
+});
+
+test("schema rejects a feature_recommendations entry with an invalid priority enum", () => {
+  const bad = {
+    ...VALID_ANALYSIS,
+    feature_recommendations: [
+      {
+        feature: "X",
+        problem_solved: "Y",
+        reasoning: "Z",
+        expected_impact: "W",
+        priority: "urgent", // not a valid enum value
+      },
+    ],
+  };
+  const result = AnalysisSchema.safeParse(bad);
+  assert.equal(result.success, false);
+});

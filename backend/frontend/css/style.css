@@ -2220,6 +2220,47 @@ a:focus-visible {
   margin: 0;
 }
 
+/* SEO/feature recommendation cards (seo_recommendations/
+   feature_recommendations) — reuses .risk-severity's priority-color
+   badges directly, since both use the same low/medium/high enum. */
+.reco-item {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.reco-item:last-child {
+  border-bottom: none;
+}
+
+.reco-item-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.reco-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.reco-field {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin: 0 0 4px;
+}
+
+.reco-field strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.reco-sources a {
+  color: var(--accent-1);
+}
+
 .analysis-raw {
   margin: 16px 0;
   border: 1px solid var(--border);
@@ -2338,6 +2379,53 @@ a:focus-visible {
   font-style: italic;
 }
 
+/* Wraps a bubble plus its action row (Copy / Retry) so they align and move
+   together — the bubble itself keeps its own max-width/align-self from the
+   rules above, since js/chat.js's "Thinking…" placeholder is still a bare
+   .chat-bubble with no group wrapper and needs those to keep working
+   unchanged. */
+.chat-bubble-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 88%;
+}
+
+.chat-bubble-group-admin {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+
+.chat-bubble-group-assistant {
+  align-self: flex-start;
+  align-items: flex-start;
+}
+
+.chat-bubble-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.chat-action-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 4px;
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease);
+}
+
+.chat-action-btn:hover:not(:disabled) {
+  color: var(--text-primary);
+}
+
+.chat-action-btn:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
 .chat-bubble-analysis {
   align-self: stretch;
   max-width: 100%;
@@ -2441,8 +2529,10 @@ a:focus-visible {
   gap: 10px;
 }
 
-.chat-paste-toggle {
-  align-self: flex-start;
+.chat-footer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
 .chat-input-row {
@@ -2456,10 +2546,44 @@ a:focus-visible {
   resize: none;
 }
 
+.chat-send-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
 .chat-input-error {
   color: #f87171;
   font-size: 12.5px;
   margin: 0;
+}
+
+/* "Researched N sources" — kept collapsed and quiet by default so a
+   research-backed reply doesn't look any busier than a normal one until
+   the admin actually wants to see where it came from. */
+.chat-sources {
+  align-self: flex-start;
+  max-width: 88%;
+  font-size: 11.5px;
+}
+
+.chat-sources summary {
+  cursor: pointer;
+  color: var(--text-tertiary);
+  font-weight: 600;
+}
+
+.chat-sources summary:hover {
+  color: var(--text-primary);
+}
+
+.chat-sources-list {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
+.chat-sources-list a {
+  color: var(--accent-1);
 }
 
 @media (max-width: 640px) {

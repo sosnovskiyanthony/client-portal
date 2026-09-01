@@ -23,6 +23,12 @@ const {
   buildChatContextMessage,
 } = require("./chatPrompt");
 const {
+  AI_ANALYSIS_UPDATE_PROMPT_VERSION,
+  ANALYSIS_UPDATE_SYSTEM_PROMPT,
+  buildAnalysisUpdateUserMessage,
+} = require("./analysisUpdatePrompt");
+const { WEB_SEARCH_TOOL, RESEARCH_INSTRUCTIONS, executeWebSearch } = require("./researchTool");
+const {
   EMAIL_SYSTEM_PROMPT,
   EMAIL_PROMPT_VERSION,
   buildEmailContext,
@@ -178,6 +184,15 @@ async function analyzeRawText(rawText, { client, onProgress } = {}) {
   };
 }
 
+// Replayed on every chat turn regardless of how long the conversation gets
+// — without a cap, both cost and latency grow unbounded on a long back-
+// and-forth. 20 turns (10 admin + 10 assistant, roughly) is generous
+// headroom for real continuity while keeping a hard ceiling. Older turns
+// are simply dropped, oldest first — the context message (submission +
+// analysis) is re-sent every call regardless, so the model never loses
+// the actual submission grounding even when older chat turns age out.
+const MAX_CHAT_HISTORY_TURNS = 20;
+
 // One turn of the AI chat feature — a free-text, conversational reply, not
 // a schema-constrained one (see ai/providers/*.js's generateChatReply).
 // `sanitizedIntake`/`analysisResult` seed the context message every call
@@ -189,7 +204,11 @@ async function analyzeRawText(rawText, { client, onProgress } = {}) {
 // and would need their own formatting to be useful as conversation context;
 // a future enhancement could summarize them in, but that's not needed for
 // the fields already carried in `analysisResult` itself.
-async function chatReply({ sanitizedIntake, analysisResult, history, userMessage }, { client, onProgress } = {}) {
+//
+// `regenerate: true` (services/runChat.js's regenerateLastReply) bumps
+// temperature so a "give me a different take" retry isn't just a near-
+// identical rerun of the same deterministic-ish output.
+async function chatReply({ sanitizedIntake, analysisResult, history, userMessage, regenerate = false }, { client, onProgress } = {}) {
   const providerName = env.aiProvider;
   const provider = PROVIDERS[providerName];
   if (!provider) {
@@ -202,6 +221,7 @@ async function chatReply({ sanitizedIntake, analysisResult, history, userMessage
   onProgress?.("preparing");
   const priorTurns = (history || [])
     .filter((m) => m.role === "admin" || m.role === "assistant")
+    .slice(-MAX_CHAT_HISTORY_TURNS)
     .map((m) => ({ role: m.role === "admin" ? "user" : "assistant", content: String(m.content || "") }));
 
   const messages = [
@@ -219,6 +239,7 @@ async function chatReply({ sanitizedIntake, analysisResult, history, userMessage
     model,
     client,
     onProgress,
+    temperature: regenerate ? 0.65 : undefined,
   });
 
   return {
@@ -226,6 +247,118 @@ async function chatReply({ sanitizedIntake, analysisResult, history, userMessage
     model,
     provider: providerName,
     promptVersion: AI_CHAT_PROMPT_VERSION,
+  };
+}
+
+// Research only ever pairs with Ollama (see ai/researchTool.js's module
+// comment and config/env.js's braveApiKey) — the tool-calling loop lives on
+// ollamaProvider.js specifically, not behind the generic PROVIDERS
+// dispatch every other function here uses. Exported so the controller can
+// show/hide the "Research this" action without duplicating this check.
+function isResearchAvailable() {
+  return env.aiProvider === "ollama" && Boolean(env.braveApiKey);
+}
+
+// The AI chat feature's manual "Research this" action — same shape as
+// chatReply() above (same context message, same history replay), but
+// routes through ollamaProvider.js's generateChatReplyWithTools instead of
+// generateChatReply, with CHAT_SYSTEM_PROMPT extended by
+// RESEARCH_INSTRUCTIONS only for this call (see ai/researchTool.js — the
+// base prompt every other chat turn uses stays untouched). Whether the
+// model actually searches at all is still its own decision, made per call
+// by its own tool-use judgment — this only makes the tool available.
+async function chatReplyWithResearch({ sanitizedIntake, analysisResult, history, userMessage }, { onProgress } = {}) {
+  if (!isResearchAvailable()) {
+    throw new AiAnalysisError(
+      "research_unavailable",
+      "Online research isn't configured — set BRAVE_API_KEY and use AI_PROVIDER=ollama to enable it."
+    );
+  }
+
+  onProgress?.("preparing");
+  const priorTurns = (history || [])
+    .filter((m) => m.role === "admin" || m.role === "assistant")
+    .slice(-MAX_CHAT_HISTORY_TURNS)
+    .map((m) => ({ role: m.role === "admin" ? "user" : "assistant", content: String(m.content || "") }));
+
+  const messages = [
+    { role: "user", content: buildChatContextMessage(sanitizedIntake, analysisResult) },
+    { role: "assistant", content: CONTEXT_ACK_MESSAGE },
+    ...priorTurns,
+    { role: "user", content: userMessage },
+  ];
+  const model = env.ollamaModel;
+
+  onProgress?.("sending");
+  const { text, sources } = await ollamaProvider.generateChatReplyWithTools({
+    systemPrompt: CHAT_SYSTEM_PROMPT + RESEARCH_INSTRUCTIONS,
+    messages,
+    model,
+    onProgress,
+    tools: [WEB_SEARCH_TOOL],
+    executeTool: executeWebSearch,
+    maxToolCalls: 3,
+  });
+
+  return {
+    text,
+    sources,
+    model,
+    provider: "ollama",
+    promptVersion: AI_CHAT_PROMPT_VERSION,
+  };
+}
+
+// "Update Analysis from this Conversation" — reuses AnalysisSchema exactly
+// (see ai/analysisUpdatePrompt.js's own comment for why this is a distinct
+// third prompt from SYSTEM_PROMPT/CHAT_SYSTEM_PROMPT). `currentAnalysis` is
+// the exact stored AnalysisSchema-shaped result; `conversationTurns` is the
+// filtered admin/assistant/analysis history (same filtering chatReply
+// already does — see services/runAnalysisUpdate.js for the caller).
+// Result is never saved automatically by this function — same "admin
+// explicitly reviews and saves" discipline as analyzeRawText.
+async function updateAnalysisFromConversation(currentAnalysis, sanitizedIntake, conversationTurns, { client, onProgress } = {}) {
+  const providerName = env.aiProvider;
+  const provider = PROVIDERS[providerName];
+  if (!provider) {
+    throw new AiAnalysisError(
+      "unknown_provider",
+      `AI_PROVIDER "${providerName}" is not recognized. Expected one of: ${Object.keys(PROVIDERS).join(", ")}.`
+    );
+  }
+
+  onProgress?.("preparing");
+  const userMessage = buildAnalysisUpdateUserMessage(currentAnalysis, sanitizedIntake, conversationTurns);
+  const model = provider.model();
+
+  onProgress?.("sending");
+  const { parsed } = await provider.impl.generateStructuredAnalysis({
+    systemPrompt: ANALYSIS_UPDATE_SYSTEM_PROMPT,
+    userMessage,
+    zodSchema: AnalysisSchema,
+    model,
+    client,
+    onProgress,
+  });
+  onProgress?.("validating");
+
+  if (typeof parsed?.confidence === "number" && parsed.confidence > 1) {
+    parsed.confidence = Math.max(0, Math.min(1, parsed.confidence / 100));
+  }
+
+  const validation = AnalysisSchema.safeParse(parsed);
+  if (!validation.success) {
+    throw new AiAnalysisError(
+      "invalid_schema",
+      `AI response did not match the required analysis schema: ${validation.error.issues.map((i) => i.path.join(".") + " " + i.message).join("; ")}`
+    );
+  }
+
+  return {
+    result: validation.data,
+    model,
+    provider: providerName,
+    promptVersion: AI_ANALYSIS_UPDATE_PROMPT_VERSION,
   };
 }
 
@@ -386,6 +519,9 @@ module.exports = {
   analyzeSubmission,
   analyzeRawText,
   chatReply,
+  chatReplyWithResearch,
+  isResearchAvailable,
+  updateAnalysisFromConversation,
   draftEmail,
   reviewContract,
   generateContract,

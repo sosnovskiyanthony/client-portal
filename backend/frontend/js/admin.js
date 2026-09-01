@@ -310,6 +310,58 @@
       .join("");
   }
 
+  // seo_recommendations/feature_recommendations (ai/schema.js) are
+  // additive fields — absent entirely on any analysis generated before
+  // they existed, and legitimately empty when the AI decided SEO/new
+  // features weren't relevant for this client. Both render nothing at all
+  // in that case (returning "" here, checked by the caller below), rather
+  // than an empty section header cluttering the dashboard.
+  function renderSeoRecommendations(items) {
+    if (!Array.isArray(items) || items.length === 0) return "";
+    return items
+      .map(
+        (r) => `
+        <div class="reco-item">
+          <div class="reco-item-head">
+            <span class="reco-name">${escapeHtml(r.recommendation || "")}</span>
+            <span class="risk-severity risk-severity-${escapeHtml(r.priority || "")}">${escapeHtml(SEVERITY_LABELS[r.priority] || r.priority || "")}</span>
+          </div>
+          <p class="reco-field"><strong>Why:</strong> ${escapeHtml(r.why || "")}</p>
+          <p class="reco-field"><strong>Expected value:</strong> ${escapeHtml(r.expected_value || "")}</p>
+          <p class="reco-field"><strong>Evidence:</strong> ${escapeHtml(r.evidence || "")}</p>
+          ${
+            Array.isArray(r.sources) && r.sources.length
+              ? `<p class="reco-field reco-sources"><strong>Sources:</strong> ${r.sources
+                  .map((s) => `<a href="${escapeHtml(s.url || "#")}" target="_blank" rel="noopener noreferrer">${escapeHtml(s.title || s.url || "source")}</a>`)
+                  .join(", ")}</p>`
+              : ""
+          }
+        </div>
+      `
+      )
+      .join("");
+  }
+
+  function renderFeatureRecommendations(items) {
+    if (!Array.isArray(items) || items.length === 0) return "";
+    return items
+      .map(
+        (r) => `
+        <div class="reco-item">
+          <div class="reco-item-head">
+            <span class="reco-name">${escapeHtml(r.feature || "")}</span>
+            <span class="risk-severity risk-severity-${escapeHtml(r.priority || "")}">${escapeHtml(SEVERITY_LABELS[r.priority] || r.priority || "")}</span>
+          </div>
+          <p class="reco-field"><strong>Problem solved:</strong> ${escapeHtml(r.problem_solved || "")}</p>
+          <p class="reco-field"><strong>Reasoning:</strong> ${escapeHtml(r.reasoning || "")}</p>
+          <p class="reco-field"><strong>Expected impact:</strong> ${escapeHtml(r.expected_impact || "")}</p>
+          ${r.dependencies_considerations ? `<p class="reco-field"><strong>Dependencies/considerations:</strong> ${escapeHtml(r.dependencies_considerations)}</p>` : ""}
+        </div>
+      `
+      )
+      .join("");
+  }
+
   // AI project analysis is only implemented for web-design submissions —
   // see backend/ai/aiService.js. Rendered as a distinct section within the
   // card so it reads clearly as internal-only, never client-facing content.
@@ -392,6 +444,8 @@
     }
 
     const r = a.result || {};
+    const seoRecoHtml = renderSeoRecommendations(r.seo_recommendations);
+    const featureRecoHtml = renderFeatureRecommendations(r.feature_recommendations);
     return `
       <div class="analysis-section">
         <div class="analysis-header">
@@ -454,6 +508,24 @@
             ${renderStringList(r.internal_notes)}
           </div>
         </div>
+
+        ${
+          seoRecoHtml
+            ? `<div class="analysis-block">
+                <span class="analysis-block-label">SEO recommendations</span>
+                ${seoRecoHtml}
+              </div>`
+            : ""
+        }
+
+        ${
+          featureRecoHtml
+            ? `<div class="analysis-block">
+                <span class="analysis-block-label">Feature recommendations</span>
+                ${featureRecoHtml}
+              </div>`
+            : ""
+        }
 
         <div class="analysis-block">
           <span class="analysis-block-label">Potential risks</span>

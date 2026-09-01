@@ -25,6 +25,54 @@ const TimelineRecommendationSchema = z.object({
   qa_and_launch: z.string(),
 });
 
+const SourceSchema = z.object({
+  title: z.string(),
+  url: z.string(),
+});
+
+// Additive — introduced alongside the existing seo_opportunities/
+// recommended_features string-array fields below, not a replacement for
+// them. Every stored analysis generated before this schema change is
+// missing seo_recommendations/feature_recommendations entirely; both
+// default to [] specifically so a response that never populates them
+// (SEO or new features genuinely weren't relevant for this client) still
+// validates — an empty array here is a real, meaningful "not applicable
+// for this client" answer, not a missing field.
+const SeoRecommendationSchema = z.object({
+  recommendation: z.string().describe("What should be done"),
+  why: z.string().describe("Why this makes sense for this specific client — not generic SEO advice"),
+  expected_value: z.string().describe("What problem/opportunity this addresses"),
+  evidence: z.string().describe("What in the submission (or research, if any) supports this"),
+  priority: z.enum(["low", "medium", "high"]),
+  category: z
+    .enum([
+      "on_page",
+      "technical",
+      "local",
+      "structured_data",
+      "content",
+      "internal_linking",
+      "conversion",
+      "search_intent",
+      "keyword_topic",
+      "other",
+    ])
+    .optional(),
+  // Only present when this specific recommendation was backed by external
+  // research (see ai/researchTool.js) — absent for a recommendation drawn
+  // purely from the submission and general expertise.
+  sources: z.array(SourceSchema).optional(),
+});
+
+const FeatureRecommendationSchema = z.object({
+  feature: z.string().describe("What should be built"),
+  problem_solved: z.string().describe("What client/user problem this addresses"),
+  reasoning: z.string().describe("Why this feature is appropriate for this specific client — not because it's common"),
+  expected_impact: z.string().describe("What outcome this could improve"),
+  priority: z.enum(["low", "medium", "high"]),
+  dependencies_considerations: z.string().optional().describe("Anything to consider before implementing it"),
+});
+
 const AnalysisSchema = z.object({
   project_summary: z.string().describe("Concise professional summary based only on the actual submission"),
   business_summary: z.string(),
@@ -36,10 +84,22 @@ const AnalysisSchema = z.object({
   recommended_pages: z.array(z.string()),
   required_features: z.array(z.string()).describe("Features the client explicitly asked for — facts, not AI opinion"),
   recommended_features: z.array(z.string()).describe("Features the AI believes would help — clearly separate from required_features"),
+  feature_recommendations: z
+    .array(FeatureRecommendationSchema)
+    .optional()
+    .describe(
+      "Detailed feature recommendations, grounded in this client's actual goals/audience/business model — never a generic list of common website features."
+    ),
   technical_requirements: z.array(z.string()),
   cms_recommendation: z.string(),
   integrations: z.array(z.string()),
   seo_opportunities: z.array(z.string()).describe("No invented keyword volume, rankings, or traffic projections"),
+  seo_recommendations: z
+    .array(SeoRecommendationSchema)
+    .optional()
+    .describe(
+      "Detailed SEO recommendations — only include this when SEO is genuinely relevant to this client; an absent or empty array is a real answer, not a gap, when it isn't."
+    ),
   analytics_recommendations: z.array(z.string()),
   content_requirements: z.array(z.string()),
   brand_requirements: z.string(),
@@ -63,6 +123,10 @@ const AnalysisSchema = z.object({
   confidence: z.number().min(0).max(1).describe(
     "Your confidence in this analysis, as a decimal fraction between 0.0 and 1.0 — e.g. 0.75, never a percentage like 75 or 75%"
   ),
+  // Set only by the research-backed analysis/update paths (see
+  // ai/researchTool.js) — absent/false for a normal analysis with no
+  // external research involved.
+  research_used: z.boolean().optional(),
 });
 
-module.exports = { AnalysisSchema };
+module.exports = { AnalysisSchema, SeoRecommendationSchema, FeatureRecommendationSchema, SourceSchema };

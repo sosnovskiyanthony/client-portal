@@ -34,9 +34,13 @@ router.post("/ollama/stop", asyncHandler(adminController.stopOllamaRemote));
 router.post("/chat/analyze", chatLimiter, asyncHandler(chatController.analyzePastedTextStandalone));
 router.get("/chat/analyze/progress/:requestId", chatController.getAnalyzePastedProgressStandalone);
 router.post("/chat/analyze/save-as-submission", asyncHandler(chatController.saveStandaloneAnalysisAsSubmission));
+router.get("/chat/research-status", chatController.getResearchStatus);
 
 router.get("/submissions/:id/chat", asyncHandler(chatController.getChatHistory));
 router.post("/submissions/:id/chat", chatLimiter, asyncHandler(chatController.sendChatMessage));
+router.post("/submissions/:id/chat/regenerate", chatLimiter, asyncHandler(chatController.regenerateChatReply));
+router.post("/submissions/:id/chat/update-analysis", chatLimiter, asyncHandler(chatController.updateAnalysisFromChat));
+router.get("/submissions/:id/chat/update-analysis/progress", chatController.getAnalysisUpdateProgress);
 router.get("/submissions/:id/chat/progress", chatController.getChatProgress);
 router.post("/submissions/:id/chat/analyze", chatLimiter, asyncHandler(chatController.analyzePastedTextForSubmission));
 router.get("/submissions/:id/chat/analyze/progress", chatController.getAnalyzePastedProgressForSubmission);

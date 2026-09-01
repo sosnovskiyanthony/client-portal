@@ -79,7 +79,7 @@ async function generateStructuredAnalysis({ systemPrompt, userMessage, zodSchema
 // output schema to constrain a conversational reply to — see
 // ollamaProvider.js's generateChatReply for the matching Ollama-side
 // implementation and ai/aiService.js's chatReply for the shared caller.
-async function generateChatReply({ systemPrompt, messages, model, client, onProgress }) {
+async function generateChatReply({ systemPrompt, messages, model, client, onProgress, temperature = 1 }) {
   const activeClient = client || getClient();
   if (!activeClient) {
     throw new AiAnalysisError("missing_api_key", "ANTHROPIC_API_KEY is not configured.");
@@ -94,6 +94,7 @@ async function generateChatReply({ systemPrompt, messages, model, client, onProg
         max_tokens: MAX_OUTPUT_TOKENS,
         system: systemPrompt,
         messages,
+        temperature,
       },
       { timeout: REQUEST_TIMEOUT_MS }
     );

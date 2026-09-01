@@ -6,11 +6,13 @@
 const Submission = require("../models/Submission");
 const Analysis = require("../models/Analysis");
 const SubmissionChat = require("../models/SubmissionChat");
-const { runChat } = require("../services/runChat");
+const { runChat, regenerateLastReply, RegenerateValidationError } = require("../services/runChat");
 const { runRawTextAnalysis } = require("../services/runRawTextAnalysis");
+const { runAnalysisUpdate } = require("../services/runAnalysisUpdate");
 const { AnalysisSchema } = require("../ai/schema");
 const { AI_PROMPT_VERSION } = require("../ai/prompt");
 const { AiAnalysisError } = require("../ai/errors");
+const aiService = require("../ai/aiService");
 const analysisProgress = require("../lib/analysisProgress");
 
 // Mirrors MAX_TEXT_FIELD_CHARS in ai/prompt.js — a chat message is admin-
@@ -54,6 +56,8 @@ async function sendChatMessage(req, res) {
     return res.status(400).json({ error: `Chat messages are limited to ${MAX_CHAT_MESSAGE_CHARS} characters.` });
   }
 
+  const research = req.body?.research === true;
+
   const analysis = await Analysis.findBySubmissionId(submission.id);
   const existing = await SubmissionChat.findBySubmissionId(submission.id);
 
@@ -63,7 +67,7 @@ async function sendChatMessage(req, res) {
   // The admin's own message is still persisted regardless (see
   // services/runChat.js), so it's not lost even when this returns an error.
   try {
-    const chat = await runChat(submission, analysis, existing ? existing.messages : [], message);
+    const chat = await runChat(submission, analysis, existing ? existing.messages : [], message, { research });
     res.json({ chat });
   } catch (err) {
     if (err instanceof AiAnalysisError) {
@@ -71,6 +75,84 @@ async function sendChatMessage(req, res) {
     }
     throw err;
   }
+}
+
+// Whether the "Research & Send" action is even available (BRAVE_API_KEY
+// configured, AI_PROVIDER=ollama) — checked once when the drawer opens, so
+// the frontend never shows a button that's guaranteed to fail.
+function getResearchStatus(req, res) {
+  res.json({ available: aiService.isResearchAvailable() });
+}
+
+// "Retry"/"Regenerate" — replaces the most recent assistant reply with a
+// fresh one, same prompt and context, without duplicating the admin's
+// message (see services/runChat.js's regenerateLastReply for exactly how).
+async function regenerateChatReply(req, res) {
+  const submission = await loadSubmissionOr404(req, res);
+  if (!submission) return;
+
+  const existing = await SubmissionChat.findBySubmissionId(submission.id);
+  if (!existing || existing.messages.length === 0) {
+    return res.status(400).json({ error: "There's no reply to regenerate yet." });
+  }
+
+  const analysis = await Analysis.findBySubmissionId(submission.id);
+
+  try {
+    const chat = await regenerateLastReply(submission, analysis, existing.messages);
+    res.json({ chat });
+  } catch (err) {
+    if (err instanceof AiAnalysisError) {
+      return res.status(502).json({ error: err.message, code: err.code });
+    }
+    if (err instanceof RegenerateValidationError) {
+      return res.status(400).json({ error: err.message });
+    }
+    throw err;
+  }
+}
+
+// "Update Analysis from this Conversation" — revises the submission's
+// CURRENT analysis using the conversation as context (see
+// ai/analysisUpdatePrompt.js). Only makes sense once a completed analysis
+// exists (400 otherwise, same restriction adminController.draftEmail
+// already applies to drafting from an analysis). The result is appended to
+// the chat thread as an "analysis"-role entry — the exact same display and
+// save path (saveChatAnalysis, below) that paste-and-analyze already uses —
+// never written to submission_analyses until the admin explicitly saves it.
+async function updateAnalysisFromChat(req, res) {
+  const submission = await loadSubmissionOr404(req, res);
+  if (!submission) return;
+
+  const analysis = await Analysis.findBySubmissionId(submission.id);
+  if (!analysis || analysis.status !== "completed") {
+    return res.status(400).json({ error: "An analysis must exist and be completed before it can be updated from this conversation." });
+  }
+
+  const existing = await SubmissionChat.findBySubmissionId(submission.id);
+
+  try {
+    const outcome = await runAnalysisUpdate(submission, analysis.result, existing ? existing.messages : []);
+    await SubmissionChat.appendMessages(submission.id, [
+      { role: "analysis", content: outcome, source: "conversation_update", createdAt: new Date().toISOString() },
+    ]);
+    res.json(outcome);
+  } catch (err) {
+    if (err instanceof AiAnalysisError) {
+      return res.status(502).json({ error: err.message, code: err.code });
+    }
+    throw err;
+  }
+}
+
+function getAnalysisUpdateProgress(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) {
+    return res.status(400).json({ error: "Invalid submission id." });
+  }
+  const progress = analysisProgress.get("analysis-update", id);
+  if (!progress) return res.json({ active: false });
+  res.json({ active: true, ...progress });
 }
 
 function getChatProgress(req, res) {
@@ -235,6 +317,10 @@ async function saveStandaloneAnalysisAsSubmission(req, res) {
 module.exports = {
   getChatHistory,
   sendChatMessage,
+  getResearchStatus,
+  regenerateChatReply,
+  updateAnalysisFromChat,
+  getAnalysisUpdateProgress,
   getChatProgress,
   analyzePastedTextForSubmission,
   getAnalyzePastedProgressForSubmission,

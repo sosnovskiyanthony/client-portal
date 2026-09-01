@@ -143,10 +143,16 @@
     </div>
 
     <div class="chat-drawer-footer" id="chat-drawer-footer">
-      <button class="btn btn-ghost chat-paste-toggle" id="chat-paste-toggle" type="button">Paste client info to analyze</button>
+      <div class="chat-footer-actions">
+        <button class="btn btn-ghost chat-paste-toggle" id="chat-paste-toggle" type="button">Paste client info to analyze</button>
+        <button class="btn btn-ghost" id="chat-update-analysis-btn" type="button">Update Analysis from this Conversation</button>
+      </div>
       <div class="chat-input-row">
         <textarea class="field-input chat-input" id="chat-input" rows="2" placeholder="Ask a follow-up, challenge a conclusion, or request a reconsideration…"></textarea>
-        <button class="btn btn-primary" id="chat-send-btn" type="button">Send</button>
+        <div class="chat-send-buttons">
+          <button class="btn btn-primary" id="chat-send-btn" type="button">Send</button>
+          <button class="btn btn-ghost" id="chat-research-send-btn" type="button" hidden title="Lets the AI search the web if it decides that would help answer this">🔎 Research &amp; Send</button>
+        </div>
       </div>
       <p class="chat-input-error" id="chat-input-error" aria-live="polite"></p>
     </div>

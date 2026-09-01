@@ -28,6 +28,21 @@ async function appendMessages(submissionId, newMessages) {
   return serialize(rows[0]);
 }
 
+// Full overwrite — used by regenerate (services/runChat.js's
+// regenerateLastReply), which needs to replace one specific message in
+// place rather than append. Callers are responsible for computing the full
+// next array; this just persists it atomically.
+async function setMessages(submissionId, messages) {
+  const { rows } = await pool.query(
+    `UPDATE submission_chats
+     SET messages = $2::jsonb, updated_at = now()
+     WHERE submission_id = $1
+     RETURNING *`,
+    [submissionId, JSON.stringify(messages)]
+  );
+  return rows[0] ? serialize(rows[0]) : null;
+}
+
 function serialize(row) {
   return {
     id: row.id,
@@ -38,4 +53,4 @@ function serialize(row) {
   };
 }
 
-module.exports = { findBySubmissionId, appendMessages };
+module.exports = { findBySubmissionId, appendMessages, setMessages };

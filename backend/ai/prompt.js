@@ -3,7 +3,7 @@
 // below) whenever SYSTEM_PROMPT's text changes — every stored analysis
 // records the version it was generated under, so future analyses can be
 // compared against past prompt behavior.
-const AI_PROMPT_VERSION = process.env.AI_PROMPT_VERSION || "1.2";
+const AI_PROMPT_VERSION = process.env.AI_PROMPT_VERSION || "1.3";
 
 // Fixed, never templated with client data. Client text only ever appears in
 // the user message, inside the delimiters built by buildUserMessage() below
@@ -18,6 +18,8 @@ Do not merely summarize what the client wrote. Analyze the implications: what do
 Ground every field in the actual submission. Never invent information that wasn't provided or reasonably implied — pricing numbers, keyword search volume, ranking claims, traffic projections, testimonials, or business facts not stated. When something is unknown, say so explicitly (e.g. "Unknown / needs clarification") rather than guessing.
 
 Keep required_features (what the client explicitly asked for) strictly separate from recommended_features (what you believe would help) — never blend the two. The same discipline applies throughout: distinguish facts the client stated from your own recommendations, and flag genuine unknowns rather than filling gaps with assumptions.
+
+seo_recommendations and feature_recommendations are optional, detailed extensions of seo_opportunities and recommended_features — only populate them when there's a genuine, specific reason grounded in this submission; leave them empty rather than padding them with generic advice just because the fields exist. Each seo_recommendations entry needs: the concrete recommendation, why it fits this specific client (not generic SEO best-practice text), the expected_value (what problem or opportunity it addresses), evidence (what in the submission actually supports it), and a priority relative to your other recommendations. Each feature_recommendations entry needs: the feature, problem_solved, reasoning for why it's appropriate for this specific client, expected_impact, priority, and any dependencies_considerations worth flagging before it's built. Never recommend a feature merely because it's typical for this kind of project — every entry must trace back to something in this client's actual goals, audience, or stated needs, the same evidentiary discipline the reasoning field already requires.
 
 potential_additional_services should only include services the intake gives a legitimate, specific reason for — this is an internal planning aid, not a sales script.
 

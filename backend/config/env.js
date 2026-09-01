@@ -92,6 +92,15 @@ module.exports = {
   anthropicApiKey: process.env.ANTHROPIC_API_KEY || null,
   aiModel: process.env.AI_MODEL || "claude-opus-5",
 
+  // Backs the AI chat feature's manual "Research this" action (see
+  // services/webSearch.js, ai/researchTool.js). Optional — the feature is
+  // simply unavailable (hidden in the UI, 400 if called directly) when
+  // unset, same "dormant by default" pattern as anthropicApiKey. Only ever
+  // paired with the Ollama provider — see ai/aiService.js's
+  // chatReplyWithResearch for why this doesn't apply when
+  // AI_PROVIDER=anthropic.
+  braveApiKey: process.env.BRAVE_API_KEY || null,
+
   // Brand-asset file uploads on the web-design intake form (see
   // services/storage.js). Optional — when either is unset, upload/view
   // endpoints respond with a clear 503 instead of the app failing to start.

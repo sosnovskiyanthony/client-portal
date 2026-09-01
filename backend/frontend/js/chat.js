@@ -24,8 +24,10 @@
     pasteError: document.getElementById("chat-paste-error"),
     footer: document.getElementById("chat-drawer-footer"),
     pasteToggle: document.getElementById("chat-paste-toggle"),
+    updateAnalysisBtn: document.getElementById("chat-update-analysis-btn"),
     input: document.getElementById("chat-input"),
     sendBtn: document.getElementById("chat-send-btn"),
+    researchSendBtn: document.getElementById("chat-research-send-btn"),
     inputError: document.getElementById("chat-input-error"),
     newAnalysisBtn: document.getElementById("new-analysis-btn"),
   };
@@ -41,8 +43,15 @@
   let standaloneResult = null; // last analyze outcome in standalone mode, held until saved
   let sending = false;
   let analyzing = false;
+  let regenerating = false;
+  let updatingAnalysis = false;
   let progressPollHandle = null;
   let thinkingEl = null;
+  // Fetched once at init — whether the "Research & Send" button should
+  // ever be shown at all (server-side: BRAVE_API_KEY configured and
+  // AI_PROVIDER=ollama). Not per-submission, so one check covers every
+  // time the drawer opens.
+  let researchAvailable = false;
 
   const STAGE_LABELS = {
     preparing: "Preparing",
@@ -151,16 +160,45 @@
     els.thread.innerHTML = messages
       .map((m, i) => {
         if (m.role === "admin") {
-          return `<div class="chat-bubble chat-bubble-admin">${escapeHtml(m.content)}</div>`;
+          return `
+            <div class="chat-bubble-group chat-bubble-group-admin">
+              <div class="chat-bubble chat-bubble-admin">${escapeHtml(m.content)}</div>
+              <div class="chat-bubble-actions">
+                <button class="chat-action-btn" data-copy-index="${i}" type="button" title="Copy prompt">Copy</button>
+              </div>
+            </div>
+          `;
         }
         if (m.role === "assistant") {
-          return `<div class="chat-bubble chat-bubble-assistant">${escapeHtml(m.content)}</div>`;
+          const isLast = i === messages.length - 1;
+          const hasSources = Array.isArray(m.sources) && m.sources.length > 0;
+          return `
+            <div class="chat-bubble-group chat-bubble-group-assistant">
+              <div class="chat-bubble chat-bubble-assistant">${escapeHtml(m.content)}</div>
+              ${
+                hasSources
+                  ? `<details class="chat-sources">
+                      <summary>🔎 Researched ${m.sources.length} source${m.sources.length === 1 ? "" : "s"}</summary>
+                      <ul class="chat-sources-list">
+                        ${m.sources.map((s) => `<li><a href="${escapeHtml(s.url || "#")}" target="_blank" rel="noopener noreferrer">${escapeHtml(s.title || s.url || "source")}</a></li>`).join("")}
+                      </ul>
+                    </details>`
+                  : ""
+              }
+              <div class="chat-bubble-actions">
+                <button class="chat-action-btn" data-copy-index="${i}" type="button" title="Copy response">Copy</button>
+                ${isLast ? `<button class="chat-action-btn" data-retry-index="${i}" type="button" title="Regenerate response">↻ Retry</button>` : ""}
+              </div>
+            </div>
+          `;
         }
         if (m.role === "analysis") {
-          const saveBtn = `<button class="btn btn-primary chat-save-analysis-btn" data-save-msg-index="${i}" type="button">Save as this submission's analysis</button>`;
+          const isUpdate = m.source === "conversation_update";
+          const saveLabel = isUpdate ? "Save as this submission's updated analysis" : "Save as this submission's analysis";
+          const saveBtn = `<button class="btn btn-primary chat-save-analysis-btn" data-save-msg-index="${i}" type="button">${saveLabel}</button>`;
           return `
             <div class="chat-bubble chat-bubble-analysis">
-              <div class="chat-analysis-label">Analysis from pasted client text</div>
+              <div class="chat-analysis-label">${isUpdate ? "Updated analysis from this conversation" : "Analysis from pasted client text"}</div>
               ${m.pastedText ? `<details class="chat-pasted-text"><summary>Pasted text</summary><pre>${escapeHtml(m.pastedText)}</pre></details>` : ""}
               ${renderAnalysisCard(m.content && m.content.result, saveBtn)}
             </div>
@@ -187,6 +225,8 @@
     standaloneResult = null;
     sending = false;
     analyzing = false;
+    regenerating = false;
+    updatingAnalysis = false;
     stopPolling();
     removeThinking();
     els.thread.innerHTML = "";
@@ -232,24 +272,25 @@
     resetDrawerState();
   }
 
-  async function sendMessage() {
+  async function sendMessage(research = false) {
     if (sending || !submissionId) return;
     const text = els.input.value.trim();
     if (!text) return;
 
     sending = true;
     els.sendBtn.disabled = true;
+    els.researchSendBtn.disabled = true;
     els.inputError.textContent = "";
     messages.push({ role: "admin", content: text });
     renderThread();
     els.input.value = "";
-    showThinking("Thinking…");
+    showThinking(research ? "Thinking — may search the web if that would help…" : "Thinking…");
     startPolling(() => contractFetch(`/api/admin/submissions/${submissionId}/chat/progress`));
 
     try {
       const data = await contractFetch(`/api/admin/submissions/${submissionId}/chat`, {
         method: "POST",
-        body: { message: text },
+        body: { message: text, research },
       });
       messages = (data.chat && data.chat.messages) || messages;
     } catch (err) {
@@ -268,6 +309,75 @@
       removeThinking();
       sending = false;
       els.sendBtn.disabled = false;
+      els.researchSendBtn.disabled = false;
+      renderThread();
+    }
+  }
+
+  async function copyMessage(index, btn) {
+    const msg = messages[index];
+    if (!msg || typeof msg.content !== "string") return;
+    try {
+      await navigator.clipboard.writeText(msg.content);
+      const original = btn.textContent;
+      btn.textContent = "Copied";
+      btn.disabled = true;
+      setTimeout(() => {
+        btn.textContent = original;
+        btn.disabled = false;
+      }, 1500);
+    } catch (err) {
+      // Clipboard access can be denied by the browser — not worth a visible
+      // error for a convenience action; the button simply doesn't flip to
+      // "Copied", which is signal enough.
+    }
+  }
+
+  async function retryLastReply(btn) {
+    if (regenerating || !submissionId) return;
+    regenerating = true;
+    btn.disabled = true;
+
+    // Replace the last assistant bubble's own content in place, rather than
+    // a full re-render, so the rest of the thread (and scroll position)
+    // doesn't jump while this is in flight.
+    const group = btn.closest(".chat-bubble-group-assistant");
+    const bubble = group?.querySelector(".chat-bubble-assistant");
+    const originalText = bubble?.textContent;
+    if (bubble) bubble.textContent = "Generating a new response…";
+    startPolling(() => contractFetch(`/api/admin/submissions/${submissionId}/chat/progress`));
+
+    try {
+      const data = await contractFetch(`/api/admin/submissions/${submissionId}/chat/regenerate`, { method: "POST" });
+      messages = (data.chat && data.chat.messages) || messages;
+    } catch (err) {
+      if (bubble) bubble.textContent = originalText || "";
+      els.inputError.textContent = err.message;
+    } finally {
+      stopPolling();
+      regenerating = false;
+      renderThread();
+    }
+  }
+
+  async function updateAnalysisFromConversation() {
+    if (updatingAnalysis || !submissionId) return;
+    updatingAnalysis = true;
+    els.updateAnalysisBtn.disabled = true;
+    els.inputError.textContent = "";
+    showThinking("Updating analysis from this conversation…");
+    startPolling(() => contractFetch(`/api/admin/submissions/${submissionId}/chat/update-analysis/progress`));
+
+    try {
+      const outcome = await contractFetch(`/api/admin/submissions/${submissionId}/chat/update-analysis`, { method: "POST" });
+      messages.push({ role: "analysis", content: outcome, source: "conversation_update", createdAt: new Date().toISOString() });
+    } catch (err) {
+      els.inputError.textContent = err.message;
+    } finally {
+      stopPolling();
+      removeThinking();
+      updatingAnalysis = false;
+      els.updateAnalysisBtn.disabled = false;
       renderThread();
     }
   }
@@ -408,13 +518,28 @@
       if (!els.overlay.hidden && e.key === "Escape") closeDrawer();
     });
 
-    els.sendBtn.addEventListener("click", sendMessage);
+    // Wrapped in arrow functions, not passed directly as the listener —
+    // addEventListener would otherwise hand sendMessage the click/keydown
+    // Event object as its first argument, which is truthy and would be
+    // misread as `research: true` on every plain Send.
+    els.sendBtn.addEventListener("click", () => sendMessage(false));
+    els.researchSendBtn.addEventListener("click", () => sendMessage(true));
     els.input.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
-        sendMessage();
+        sendMessage(false);
       }
     });
+
+    contractFetch("/api/admin/chat/research-status")
+      .then((data) => {
+        researchAvailable = Boolean(data && data.available);
+        els.researchSendBtn.hidden = !researchAvailable;
+      })
+      .catch(() => {
+        // Leave it hidden — a failed check is the same as "not available"
+        // from the UI's point of view.
+      });
 
     els.pasteToggle.addEventListener("click", () => {
       els.pastePanel.hidden = !els.pastePanel.hidden;
@@ -422,6 +547,7 @@
     });
     els.pasteCancel.addEventListener("click", resetPasteForm);
     els.pasteSubmit.addEventListener("click", submitPaste);
+    els.updateAnalysisBtn.addEventListener("click", updateAnalysisFromConversation);
 
     els.thread.addEventListener("click", (e) => {
       const saveBtn = e.target.closest("[data-save-msg-index]");
@@ -431,6 +557,16 @@
       }
       if (e.target.closest(".chat-save-standalone-btn")) {
         saveStandaloneAnalysis();
+        return;
+      }
+      const copyBtn = e.target.closest("[data-copy-index]");
+      if (copyBtn) {
+        copyMessage(Number(copyBtn.dataset.copyIndex), copyBtn);
+        return;
+      }
+      const retryBtn = e.target.closest("[data-retry-index]");
+      if (retryBtn) {
+        retryLastReply(retryBtn);
       }
     });
   }

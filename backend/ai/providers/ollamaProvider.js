@@ -187,7 +187,7 @@ async function generateStructuredAnalysis({ systemPrompt, userMessage, zodSchema
 // `format` field, since a conversational reply has no schema to constrain
 // generation to. Returns { text }, not { parsed } — nothing to validate
 // against a Zod schema here.
-async function generateChatReply({ systemPrompt, messages, model, onProgress }) {
+async function generateChatReply({ systemPrompt, messages, model, onProgress, temperature = 0.4 }) {
   const url = `${env.ollamaBaseUrl}/api/chat`;
 
   const startedAt = Date.now();
@@ -199,7 +199,7 @@ async function generateChatReply({ systemPrompt, messages, model, onProgress }) 
     model,
     messages: [{ role: "system", content: systemPrompt }, ...messages],
     stream: false,
-    options: { temperature: 0.4, num_predict: MAX_OUTPUT_TOKENS },
+    options: { temperature, num_predict: MAX_OUTPUT_TOKENS },
   });
 
   async function attempt(timeoutMs) {
@@ -275,4 +275,132 @@ async function generateChatReply({ systemPrompt, messages, model, onProgress }) 
   return { text: content.trim(), raw: body };
 }
 
-module.exports = { generateStructuredAnalysis, generateChatReply, REQUEST_TIMEOUT_MS, MAX_OUTPUT_TOKENS };
+// A single call's timeout, not the whole loop's — matches the per-request
+// budget every other function here uses; a multi-turn tool loop naturally
+// takes longer overall, but there's no reason a single web_search-bearing
+// turn should get a smaller budget than a single plain chat turn.
+const TOOL_CALL_TIMEOUT_MS = REQUEST_TIMEOUT_MS;
+
+async function ollamaChatRequest(body) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TOOL_CALL_TIMEOUT_MS);
+  let res;
+  try {
+    res = await fetch(`${env.ollamaBaseUrl}/api/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+      dispatcher: tailscaleDispatcher,
+    });
+  } catch (err) {
+    if (err.name === "AbortError") {
+      throw new AiAnalysisError("timeout", `Ollama request timed out after ${TOOL_CALL_TIMEOUT_MS}ms.`, err);
+    }
+    throw new AiAnalysisError("ollama_unavailable", `Could not reach Ollama at ${env.ollamaBaseUrl}. Is it running?`, err);
+  } finally {
+    clearTimeout(timer);
+  }
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new AiAnalysisError("provider_error", `Ollama returned HTTP ${res.status}.`, text);
+  }
+  return res.json().catch((err) => {
+    throw new AiAnalysisError("invalid_json", "Ollama's response body was not valid JSON.", err);
+  });
+}
+
+// Multi-turn tool-calling loop for the AI chat feature's "Research this"
+// action (see ai/researchTool.js, services/runChat.js's
+// runChatWithResearch). Ollama and the tool executor never talk to each
+// other directly — this function is the only thing that reads a tool_call
+// request out of Ollama's response and is the only thing that calls
+// `executeTool`; every round-trip is a separate, ordinary HTTP call.
+//
+// Simpler failure handling than generateChatReply/generateStructuredAnalysis
+// above (no retry-on-502 dance) — this is a manual, occasional admin action,
+// not the default path every chat message takes, so a first, more direct
+// implementation is the right amount of complexity for now.
+//
+// `maxToolCalls` bounds how many times the model can call the tool in one
+// turn (cost/runaway-loop control — see ai/researchTool.js's caller for the
+// actual configured cap). Once that's reached, one final request is made
+// with `tools` omitted, forcing a text answer instead of another tool call.
+async function generateChatReplyWithTools({ systemPrompt, messages, model, onProgress, tools, executeTool, maxToolCalls = 3 }) {
+  onProgress?.("generating");
+  let workingMessages = [{ role: "system", content: systemPrompt }, ...messages];
+  const sources = [];
+  const seenUrls = new Set();
+
+  for (let attempt = 0; attempt <= maxToolCalls; attempt++) {
+    const includeTools = attempt < maxToolCalls;
+    const body = await ollamaChatRequest({
+      model,
+      messages: workingMessages,
+      ...(includeTools ? { tools } : {}),
+      stream: false,
+      options: { temperature: 0.4, num_predict: MAX_OUTPUT_TOKENS },
+    });
+
+    const message = body?.message || {};
+    const toolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
+
+    if (toolCalls.length === 0) {
+      const content = typeof message.content === "string" ? message.content.trim() : "";
+      if (!content) {
+        throw new AiAnalysisError("invalid_json", "Ollama returned an empty chat response.");
+      }
+      return { text: content, sources, raw: body };
+    }
+
+    // The assistant's own tool-call request has to become part of the
+    // conversation before the tool result does, or the next request has no
+    // record of what the model actually asked for.
+    workingMessages = [...workingMessages, { role: "assistant", tool_calls: toolCalls }];
+
+    for (const call of toolCalls) {
+      const name = call?.function?.name;
+      let results = [];
+      try {
+        if (name === "web_search") {
+          results = (await executeTool(call.function.arguments)) || [];
+        }
+      } catch (err) {
+        // A failed search shouldn't take down the whole reply — tell the
+        // model the search failed (as tool content, not a thrown error)
+        // and let it continue/answer with what it has.
+        results = [];
+        workingMessages.push({
+          role: "tool",
+          tool_name: name || "web_search",
+          content: `Search failed: ${err instanceof Error ? err.message : "unknown error"}`,
+        });
+        continue;
+      }
+
+      for (const r of results) {
+        if (r.url && !seenUrls.has(r.url)) {
+          seenUrls.add(r.url);
+          sources.push({ title: r.title || r.url, url: r.url });
+        }
+      }
+
+      workingMessages.push({
+        role: "tool",
+        tool_name: name || "web_search",
+        content: JSON.stringify(results),
+      });
+    }
+  }
+
+  throw new AiAnalysisError("provider_error", "The model kept requesting searches without producing an answer.");
+}
+
+module.exports = {
+  generateStructuredAnalysis,
+  generateChatReply,
+  generateChatReplyWithTools,
+  REQUEST_TIMEOUT_MS,
+  MAX_OUTPUT_TOKENS,
+};
