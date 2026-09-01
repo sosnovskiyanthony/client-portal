@@ -47,31 +47,49 @@ async function generateStructuredAnalysis({ systemPrompt, userMessage, zodSchema
   console.log(`[ollamaProvider] Sending request to Ollama at ${env.ollamaBaseUrl} (model=${model})...`);
   onProgress?.("generating");
 
-  let res;
-  try {
-    res = await fetch(url, {
+  const requestBody = JSON.stringify({
+    model,
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userMessage },
+    ],
+    // Ollama's structured-output mode: passing a JSON Schema object
+    // (rather than the string "json") constrains token generation to
+    // match it, not just a "please return JSON" instruction — this is
+    // what "the appropriate Ollama-compatible structured-output
+    // approach" means here. We still validate the parsed result against
+    // the Zod schema afterward regardless (see ai/aiService.js) — this
+    // constrains generation, it doesn't replace validation.
+    format: jsonSchema,
+    stream: false,
+    options: { temperature: 0.2, num_predict: MAX_OUTPUT_TOKENS },
+  });
+  const doFetch = () =>
+    fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userMessage },
-        ],
-        // Ollama's structured-output mode: passing a JSON Schema object
-        // (rather than the string "json") constrains token generation to
-        // match it, not just a "please return JSON" instruction — this is
-        // what "the appropriate Ollama-compatible structured-output
-        // approach" means here. We still validate the parsed result against
-        // the Zod schema afterward regardless (see ai/aiService.js) — this
-        // constrains generation, it doesn't replace validation.
-        format: jsonSchema,
-        stream: false,
-        options: { temperature: 0.2, num_predict: MAX_OUTPUT_TOKENS },
-      }),
+      body: requestBody,
       signal: controller.signal,
       dispatcher: tailscaleDispatcher,
     });
+
+  let res;
+  try {
+    res = await doFetch();
+    // Confirmed via a real deploy log: Tailscale's own outbound-http-proxy
+    // (userspace-networking mode, see lib/tailscaleDispatcher.js) logged
+    // "http: proxy error: EOF" — its relay connection to the Ollama host
+    // idled out and was mid-reconnect at the exact moment this request
+    // landed, so the proxy itself returned 502 before ever reaching Ollama.
+    // That's a transient race inherent to an infrequently-used tunnel (see
+    // ai/README.md), not a real Ollama error, so one retry after a short
+    // delay is worth it before treating this as a genuine failure — unlike
+    // 404/other non-2xx below, which are real responses from Ollama itself.
+    if (res.status === 502) {
+      console.log(`[ollamaProvider] Got HTTP 502 (likely a transient Tailscale proxy hiccup) — retrying once in 2s...`);
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      res = await doFetch();
+    }
   } catch (err) {
     clearTimeout(timer);
     const elapsedMs = Date.now() - startedAt;
@@ -100,6 +118,18 @@ async function generateStructuredAnalysis({ systemPrompt, userMessage, zodSchema
   }
   if (!res.ok) {
     const body = await res.text().catch(() => "");
+    // A 502 here is Tailscale's own proxy reporting it couldn't reach the
+    // Ollama host (see the retry above) — never a response Ollama itself
+    // sent. "Ollama returned HTTP 502" would be actively misleading (it
+    // reads as Ollama responding with an error, when Ollama was never
+    // reached at all), so this is worded around the real cause instead.
+    if (res.status === 502) {
+      throw new AiAnalysisError(
+        "ollama_unavailable",
+        `Could not reach Ollama at ${env.ollamaBaseUrl} through the Tailscale connection (tried twice). Is it running, and is the connection stable?`,
+        body
+      );
+    }
     throw new AiAnalysisError("provider_error", `Ollama returned HTTP ${res.status}.`, body);
   }
 

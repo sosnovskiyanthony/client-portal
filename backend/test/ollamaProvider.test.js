@@ -109,3 +109,44 @@ test("HTTP 500 from Ollama classifies as provider_error", async () => {
     }
   );
 });
+
+// Reproduces a real production failure: Tailscale's outbound proxy logged
+// "http: proxy error: EOF" and returned 502 to this app when its relay
+// connection to the Ollama host idled out mid-reconnect — never a response
+// from Ollama itself. One retry is worth it before treating this as real.
+test("a single transient 502 (Tailscale proxy hiccup) is retried once and succeeds", async () => {
+  let callCount = 0;
+  await withMockedFetch(
+    async () => {
+      callCount += 1;
+      if (callCount === 1) return { ok: false, status: 502, text: async () => "" };
+      return { ok: true, status: 200, json: async () => ({ message: { content: '{"foo":"bar"}' } }) };
+    },
+    async () => {
+      const result = await generateStructuredAnalysis({ systemPrompt: "sys", userMessage: "msg", zodSchema: TINY_SCHEMA, model: "qwen2.5:7b" });
+      assert.deepEqual(result.parsed, { foo: "bar" });
+    }
+  );
+  assert.equal(callCount, 2);
+});
+
+test("a 502 that persists through the retry classifies as ollama_unavailable, not a misleading provider_error", async () => {
+  let callCount = 0;
+  await withMockedFetch(
+    async () => {
+      callCount += 1;
+      return { ok: false, status: 502, text: async () => "" };
+    },
+    async () => {
+      await assert.rejects(
+        () => generateStructuredAnalysis({ systemPrompt: "sys", userMessage: "msg", zodSchema: TINY_SCHEMA, model: "qwen2.5:7b" }),
+        (err) => {
+          assert.ok(err instanceof AiAnalysisError);
+          assert.equal(err.code, "ollama_unavailable");
+          return true;
+        }
+      );
+    }
+  );
+  assert.equal(callCount, 2);
+});
