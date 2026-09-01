@@ -37,6 +37,14 @@ async function generateStructuredAnalysis({ systemPrompt, userMessage, zodSchema
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
+  // The only real-time signal an admin has that a request is actually
+  // progressing rather than hung — the dashboard just shows a static
+  // "Analyzing…" for the whole (potentially minutes-long) request, so
+  // these are meant to be watched live in Railway's log tab, not read
+  // after the fact.
+  const startedAt = Date.now();
+  console.log(`[ollamaProvider] Sending request to Ollama at ${env.ollamaBaseUrl} (model=${model})...`);
+
   let res;
   try {
     res = await fetch(url, {
@@ -64,12 +72,15 @@ async function generateStructuredAnalysis({ systemPrompt, userMessage, zodSchema
     });
   } catch (err) {
     clearTimeout(timer);
+    const elapsedMs = Date.now() - startedAt;
     if (err.name === "AbortError") {
+      console.error(`[ollamaProvider] Timed out after ${elapsedMs}ms waiting on Ollama.`);
       throw new AiAnalysisError("timeout", `Ollama request timed out after ${REQUEST_TIMEOUT_MS}ms.`, err);
     }
     // fetch() throws a plain TypeError ("fetch failed") for connection
     // refused / DNS failure / host unreachable — exactly the "Ollama is
     // stopped" case this whole feature is required to survive.
+    console.error(`[ollamaProvider] Could not reach Ollama after ${elapsedMs}ms:`, err.message);
     throw new AiAnalysisError(
       "ollama_unavailable",
       `Could not reach Ollama at ${env.ollamaBaseUrl}. Is it running?`,
@@ -77,6 +88,7 @@ async function generateStructuredAnalysis({ systemPrompt, userMessage, zodSchema
     );
   }
   clearTimeout(timer);
+  console.log(`[ollamaProvider] Ollama responded after ${Date.now() - startedAt}ms (HTTP ${res.status}).`);
 
   if (res.status === 404) {
     throw new AiAnalysisError(

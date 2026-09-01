@@ -94,6 +94,66 @@
   // Same reasoning as analyzingIds, for the "Draft Outreach Email" button.
   const draftingIds = new Set();
 
+  // Elapsed-time display for both of the above — a request can genuinely
+  // take a couple of minutes against a local model, and a static
+  // "Analyzing…" label gives no way to tell that apart from a hung
+  // request. A ticking counter is a cheap, honest signal: as long as it's
+  // counting up, the request is still alive from the browser's point of
+  // view (see ai/providers/ollamaProvider.js for the matching server-side
+  // timing logs, visible in Railway's log tab, which confirm what stage
+  // the request on the Ollama side is actually at).
+  const analyzingStartTimes = new Map();
+  const draftingStartTimes = new Map();
+  let elapsedTickHandle = null;
+
+  function formatElapsed(ms) {
+    const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+    const m = Math.floor(totalSeconds / 60);
+    const s = totalSeconds % 60;
+    return `${m}:${String(s).padStart(2, "0")}`;
+  }
+
+  // Updates the in-flight cards' text directly via the DOM rather than
+  // going through renderList() — a full list re-render every second would
+  // fight with anything else the admin is doing at the time (a status
+  // dropdown open, scroll position, etc.) for no benefit here, since only
+  // these two elements per in-flight card actually change each tick.
+  function tickElapsedLabels() {
+    if (analyzingIds.size === 0 && draftingIds.size === 0) {
+      clearInterval(elapsedTickHandle);
+      elapsedTickHandle = null;
+      return;
+    }
+    const now = Date.now();
+    for (const id of analyzingIds) {
+      const start = analyzingStartTimes.get(id);
+      if (!start) continue;
+      const section = els.list.querySelector(`.submission-card[data-id="${id}"] .analysis-section`);
+      if (!section) continue;
+      const label = `Analyzing… ${formatElapsed(now - start)}`;
+      const badge = section.querySelector(".analysis-status-badge");
+      const btn = section.querySelector(".analysis-btn");
+      if (badge) badge.textContent = label;
+      if (btn) btn.textContent = label;
+    }
+    for (const id of draftingIds) {
+      const start = draftingStartTimes.get(id);
+      if (!start) continue;
+      const section = els.list.querySelector(`.submission-card[data-id="${id}"] .email-draft-section`);
+      if (!section) continue;
+      const label = `Drafting… ${formatElapsed(now - start)}`;
+      const badge = section.querySelector(".analysis-status-badge");
+      const btn = section.querySelector(".email-draft-btn");
+      if (badge) badge.textContent = label;
+      if (btn) btn.textContent = label;
+    }
+  }
+
+  function ensureElapsedTicking() {
+    if (elapsedTickHandle) return;
+    elapsedTickHandle = setInterval(tickElapsedLabels, 1000);
+  }
+
   async function render() {
     if (!isAdminLoggedIn()) {
       els.dashboard.hidden = true;
@@ -657,6 +717,8 @@
       if (analyzingIds.has(id)) return; // already in flight — ignore a stray duplicate click
 
       analyzingIds.add(id);
+      analyzingStartTimes.set(id, Date.now());
+      ensureElapsedTicking();
       renderList(); // immediately reflect the disabled state, and make it survive any later unrelated re-render
 
       try {
@@ -676,11 +738,13 @@
         els.adminSub.textContent = err.message;
         if (!isAdminLoggedIn()) {
           analyzingIds.delete(id);
+          analyzingStartTimes.delete(id);
           render();
           return;
         }
       } finally {
         analyzingIds.delete(id);
+        analyzingStartTimes.delete(id);
         renderList();
       }
     });
@@ -712,6 +776,8 @@
       if (draftingIds.has(id)) return; // already in flight — ignore a stray duplicate click
 
       draftingIds.add(id);
+      draftingStartTimes.set(id, Date.now());
+      ensureElapsedTicking();
       renderList(); // immediately reflect the disabled state, same reasoning as initAnalysisControls
 
       try {
@@ -727,11 +793,13 @@
         els.adminSub.textContent = err.message;
         if (!isAdminLoggedIn()) {
           draftingIds.delete(id);
+          draftingStartTimes.delete(id);
           render();
           return;
         }
       } finally {
         draftingIds.delete(id);
+        draftingStartTimes.delete(id);
         renderList();
       }
     });
