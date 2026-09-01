@@ -22,8 +22,24 @@ const { tailscaleDispatcher } = require("../../lib/tailscaleDispatcher");
 // object realistically takes much longer than a hosted API call — a fixed
 // 60s budget (reasonable for a hosted provider) would misclassify normal
 // local inference as a timeout. 5 minutes gives real hardware room to finish
-// without leaving a hung request open indefinitely.
+// without leaving a hung request open indefinitely. This is the hard
+// ceiling for the WHOLE operation (first attempt + retry combined, see
+// FIRST_ATTEMPT_TIMEOUT_MS below) — a retry never extends it.
 const REQUEST_TIMEOUT_MS = 5 * 60 * 1000;
+
+// Confirmed via a real deploy log: a Tailscale connection attempt (userspace-
+// networking mode, see lib/tailscaleDispatcher.js) to the Ollama host can go
+// completely silent — no error, no response, nothing — for the ENTIRE
+// request budget, when its direct-path negotiation to the peer fails (the
+// log showed a peer contact registering "via=direct" right as the request
+// went out, then nothing at all until our own abort fired 5 minutes later,
+// which Tailscale's proxy then logged as "context canceled" — that's our
+// abort reaching it, not the proxy reporting its own failure the way the 502
+// case does). Giving the first attempt only this long, then abandoning it
+// for a fresh connection, means a bad path gets replaced quickly instead of
+// silently eating the whole budget on a connection that was never going
+// anywhere.
+const FIRST_ATTEMPT_TIMEOUT_MS = 45 * 1000;
 
 // Matches MAX_OUTPUT_TOKENS in anthropicProvider.js — plenty for this
 // schema's structured JSON output, and a real ceiling so a runaway/repetitive
@@ -34,8 +50,6 @@ const MAX_OUTPUT_TOKENS = 4096;
 async function generateStructuredAnalysis({ systemPrompt, userMessage, zodSchema, model, onProgress }) {
   const url = `${env.ollamaBaseUrl}/api/chat`;
   const jsonSchema = z.toJSONSchema(zodSchema);
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
   // Server-side timing log, meant to be watched live in Railway's log tab.
   // onProgress (see lib/analysisProgress.js) is the matching signal for the
@@ -44,6 +58,7 @@ async function generateStructuredAnalysis({ systemPrompt, userMessage, zodSchema
   // sub-stage between "request sent" and "response received" without
   // switching to streaming.
   const startedAt = Date.now();
+  const overallDeadline = startedAt + REQUEST_TIMEOUT_MS;
   console.log(`[ollamaProvider] Sending request to Ollama at ${env.ollamaBaseUrl} (model=${model})...`);
   onProgress?.("generating");
 
@@ -64,38 +79,51 @@ async function generateStructuredAnalysis({ systemPrompt, userMessage, zodSchema
     stream: false,
     options: { temperature: 0.2, num_predict: MAX_OUTPUT_TOKENS },
   });
-  const doFetch = () =>
-    fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: requestBody,
-      signal: controller.signal,
-      dispatcher: tailscaleDispatcher,
-    });
 
-  let res;
-  try {
-    res = await doFetch();
-    // Confirmed via a real deploy log: Tailscale's own outbound-http-proxy
-    // (userspace-networking mode, see lib/tailscaleDispatcher.js) logged
-    // "http: proxy error: EOF" — its relay connection to the Ollama host
-    // idled out and was mid-reconnect at the exact moment this request
-    // landed, so the proxy itself returned 502 before ever reaching Ollama.
-    // That's a transient race inherent to an infrequently-used tunnel (see
-    // ai/README.md), not a real Ollama error, so one retry after a short
-    // delay is worth it before treating this as a genuine failure — unlike
-    // 404/other non-2xx below, which are real responses from Ollama itself.
-    if (res.status === 502) {
-      console.log(`[ollamaProvider] Got HTTP 502 (likely a transient Tailscale proxy hiccup) — retrying once in 2s...`);
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-      res = await doFetch();
+  // One attempt = one fresh connection with its own timeout/AbortController,
+  // so a retry genuinely starts over rather than reusing whatever the first
+  // attempt's connection was doing. Returns { res } or { err }, never
+  // throws — the caller decides what a failure means at each stage.
+  async function attempt(timeoutMs) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: requestBody,
+        signal: controller.signal,
+        dispatcher: tailscaleDispatcher,
+      });
+      return { res };
+    } catch (err) {
+      return { err };
+    } finally {
+      clearTimeout(timer);
     }
-  } catch (err) {
-    clearTimeout(timer);
+  }
+
+  let { res, err } = await attempt(Math.min(FIRST_ATTEMPT_TIMEOUT_MS, REQUEST_TIMEOUT_MS));
+
+  // Retry once, with a fresh connection, on anything that isn't a clean
+  // success: a hang (err.name === "AbortError" — the bounded first-attempt
+  // timeout above firing, not the overall one), a connection-level error, or
+  // a 502 (see the comment on the 502 branch further below). A real,
+  // non-502 HTTP response — even an error one like 404/500 — is Ollama
+  // itself actually answering, which a retry can't fix, so that's left to
+  // the normal status handling after this block.
+  if (err || (res && res.status === 502)) {
+    const reason = err ? (err.name === "AbortError" ? `no response within ${FIRST_ATTEMPT_TIMEOUT_MS}ms` : err.message) : "HTTP 502";
+    const remainingMs = Math.max(5000, overallDeadline - Date.now());
+    console.log(`[ollamaProvider] First attempt failed (${reason}) — retrying once with a fresh connection (${Math.round(remainingMs / 1000)}s left)...`);
+    ({ res, err } = await attempt(remainingMs));
+  }
+
+  if (err) {
     const elapsedMs = Date.now() - startedAt;
     if (err.name === "AbortError") {
       console.error(`[ollamaProvider] Timed out after ${elapsedMs}ms waiting on Ollama.`);
-      throw new AiAnalysisError("timeout", `Ollama request timed out after ${REQUEST_TIMEOUT_MS}ms.`, err);
+      throw new AiAnalysisError("timeout", `Ollama request timed out after ${elapsedMs}ms.`, err);
     }
     // fetch() throws a plain TypeError ("fetch failed") for connection
     // refused / DNS failure / host unreachable — exactly the "Ollama is
@@ -107,7 +135,6 @@ async function generateStructuredAnalysis({ systemPrompt, userMessage, zodSchema
       err
     );
   }
-  clearTimeout(timer);
   console.log(`[ollamaProvider] Ollama responded after ${Date.now() - startedAt}ms (HTTP ${res.status}).`);
 
   if (res.status === 404) {
