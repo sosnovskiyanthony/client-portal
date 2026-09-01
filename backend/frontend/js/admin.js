@@ -799,6 +799,19 @@
         notes: field("notes") || null,
       };
 
+      // The price inputs have min="0", but nothing here ever calls
+      // checkValidity() (there's no native <form>/submit — see
+      // frontend/web-design.html's field markup pattern), so a typed
+      // negative value would otherwise reach the server unchecked. The
+      // server validates this too (adminController.upsertOutcome), but
+      // catching it here avoids a pointless round trip.
+      for (const [name, value] of [["quotedPrice", payload.quotedPrice], ["finalPrice", payload.finalPrice]]) {
+        if (value !== null && (!Number.isFinite(value) || value < 0)) {
+          msg.textContent = `${name === "quotedPrice" ? "Quoted price" : "Final price"} must be a non-negative number.`;
+          return;
+        }
+      }
+
       btn.disabled = true;
       msg.textContent = "Saving…";
 

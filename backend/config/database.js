@@ -4,6 +4,13 @@ const env = require("./env");
 
 const isLocalHost = /localhost|127\.0\.0\.1/.test(env.databaseUrl);
 
+// Matches DUMMY_HASH's cost factor in controllers/authController.js — they
+// must stay equal, or a nonexistent-email login attempt (compared against
+// the dummy hash) would finish measurably faster/slower than a real one
+// (compared against a hash made with this cost), reopening the timing
+// side-channel that dummy hash exists to close.
+const BCRYPT_COST = 12;
+
 const pool = new Pool({
   connectionString: env.databaseUrl,
   // Supabase (and most hosted Postgres) requires SSL; local dev Postgres
@@ -123,7 +130,7 @@ async function init() {
   );
 
   if (rows.length === 0) {
-    const passwordHash = bcrypt.hashSync(env.adminPassword, 10);
+    const passwordHash = bcrypt.hashSync(env.adminPassword, BCRYPT_COST);
     await pool.query(
       "INSERT INTO users (email, password_hash, role) VALUES ($1, $2, 'admin')",
       [env.adminEmail, passwordHash]
@@ -135,7 +142,7 @@ async function init() {
     const passwordChanged = !bcrypt.compareSync(env.adminPassword, admin.password_hash);
 
     if (emailChanged || passwordChanged) {
-      const passwordHash = passwordChanged ? bcrypt.hashSync(env.adminPassword, 10) : admin.password_hash;
+      const passwordHash = passwordChanged ? bcrypt.hashSync(env.adminPassword, BCRYPT_COST) : admin.password_hash;
       await pool.query("UPDATE users SET email = $1, password_hash = $2 WHERE id = $3", [
         env.adminEmail,
         passwordHash,

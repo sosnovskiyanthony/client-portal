@@ -28,7 +28,9 @@ async function submitContact(req, res) {
 
   // Fire-and-forget — the submission already succeeded and was returned
   // above; a slow or failed email must never affect the response.
-  notifyNewSubmission(submission).catch(() => {});
+  // notifyNewSubmission already catches and logs its own errors internally
+  // (services/email.js), so nothing needs to be caught here.
+  notifyNewSubmission(submission);
 }
 
 module.exports = { submitContact };

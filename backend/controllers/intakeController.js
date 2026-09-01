@@ -90,7 +90,9 @@ function makeIntakeHandler(type) {
 
     // Fire-and-forget — the submission already succeeded and was returned
     // above; a slow or failed email must never affect the response.
-    notifyNewSubmission(submission).catch(() => {});
+    // notifyNewSubmission already catches and logs its own errors
+    // internally (services/email.js), so nothing needs to be caught here.
+    notifyNewSubmission(submission);
 
     // AI analysis is deliberately NOT triggered here. It only ever runs when
     // an authenticated admin clicks "Analyze with AI" (or "Re-analyze") in
