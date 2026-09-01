@@ -290,6 +290,7 @@
       ${renderReviewSection()}
       ${renderGenerationSection()}
       ${renderPdfSection()}
+      ${renderEmailSection()}
     `;
 
     wireClientSection();
@@ -304,6 +305,7 @@
     wireReviewSection();
     wireGenerationSection();
     wirePdfSection();
+    wireEmailSection();
     loadVersionHistory();
   }
 
@@ -945,6 +947,67 @@
       } catch (err) {
         if (tab) tab.close();
         els.builderSub.textContent = err.message;
+      }
+    });
+  }
+
+  // ---- Email ----
+  function renderEmailSection() {
+    return sectionCard(
+      "Send to Client",
+      `
+      <p class="contract-section-footnote">The email never changes the contract itself — the PDF attached is exactly what you generated above. Review before sending; it can't be recalled once sent.</p>
+      <button class="btn btn-ghost" id="btn-draft-email" type="button">Draft Email</button>
+      <div id="email-draft-container"></div>
+    `
+    );
+  }
+
+  function renderEmailDraftForm(draft) {
+    return `
+      <div class="contract-field-grid" style="margin-top:14px">
+        <label class="contract-field"><span>To</span><input type="email" id="email-to" value="${escapeHtml(draft.to || "")}" /></label>
+        <label class="contract-field contract-field-wide"><span>Subject</span><input type="text" id="email-subject" value="${escapeHtml(draft.subject || "")}" /></label>
+        <label class="contract-field contract-field-wide"><span>Message</span><textarea id="email-body" rows="8" class="contract-textarea-wide">${escapeHtml(draft.body || "")}</textarea></label>
+      </div>
+      <button class="btn btn-primary" id="btn-send-email" type="button">Send to Client</button>
+    `;
+  }
+
+  function wireEmailSection() {
+    document.getElementById("btn-draft-email").addEventListener("click", async (e) => {
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      try {
+        const draft = await draftContractEmail(activeContract.id);
+        document.getElementById("email-draft-container").innerHTML = renderEmailDraftForm(draft);
+        wireSendButton();
+      } catch (err) {
+        els.builderSub.textContent = err.message;
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  }
+
+  function wireSendButton() {
+    document.getElementById("btn-send-email").addEventListener("click", async (e) => {
+      const to = document.getElementById("email-to").value.trim();
+      const subject = document.getElementById("email-subject").value.trim();
+      const body = document.getElementById("email-body").value.trim();
+      if (!window.confirm(`Send this email (with the contract PDF attached) to ${to}? This can't be undone.`)) return;
+
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      btn.textContent = "Sending…";
+      try {
+        activeContract = await sendContractEmail(activeContract.id, { to, subject, body });
+        renderBuilderHeader();
+        btn.textContent = "Sent";
+      } catch (err) {
+        els.builderSub.textContent = err.message;
+        btn.disabled = false;
+        btn.textContent = "Send to Client";
       }
     });
   }

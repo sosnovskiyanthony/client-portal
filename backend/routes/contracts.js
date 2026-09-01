@@ -36,6 +36,8 @@ router.get("/contracts/:id/pdf", asyncHandler(contractController.getContractPdfU
 router.post("/contracts/:id/approve", asyncHandler(contractController.approveContract));
 router.post("/contracts/:id/finalize", asyncHandler(contractController.finalizeContract));
 router.post("/contracts/:id/status", asyncHandler(contractController.setContractStatus));
+router.post("/contracts/:id/email/draft", asyncHandler(contractController.draftContractEmail));
+router.post("/contracts/:id/email/send", asyncHandler(contractController.sendContractEmailHandler));
 
 router.get("/contract-features", asyncHandler(contractFeatureController.listFeatures));
 router.post("/contract-features", asyncHandler(contractFeatureController.createFeature));

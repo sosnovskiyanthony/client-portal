@@ -1038,6 +1038,23 @@ async function setContractStatus(id, status) {
   return data.contract;
 }
 
+// Computed fresh, never persisted — returns { subject, body, to } for the
+// admin to review/edit in the UI before calling sendContractEmail below.
+async function draftContractEmail(id) {
+  return contractFetch(`/api/admin/contracts/${id}/email/draft`, { errorFallback: "Couldn't draft the email." });
+}
+
+// Sends exactly the { to, subject, body } given — this function never
+// regenerates them, so what the admin reviewed is exactly what's sent.
+async function sendContractEmail(id, { to, subject, body }) {
+  const data = await contractFetch(`/api/admin/contracts/${id}/email/send`, {
+    method: "POST",
+    body: { to, subject, body },
+    errorFallback: "Couldn't send the email.",
+  });
+  return data.contract;
+}
+
 // ---------- Account menu ----------
 
 function initMenu() {

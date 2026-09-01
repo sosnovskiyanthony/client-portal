@@ -48,6 +48,32 @@ async function notifyNewSubmission(submission) {
   }
 }
 
+// Distinct from notifyNewSubmission on purpose: that one is a fire-and-
+// forget internal notification where a failure must never block the
+// caller. This is a real, admin-initiated action (contractController.js's
+// send-contract-email endpoint) — the admin needs to know definitively
+// whether it worked, so this throws on both a rejected send (same
+// check-.error-not-just-try/catch fix as notifyNewSubmission above needed)
+// and an unconfigured Resend setup, rather than silently no-op-ing.
+async function sendContractEmail({ to, subject, html, pdfBuffer, pdfFilename }) {
+  if (!resend) {
+    throw new Error("Email sending is not configured on this server (RESEND_API_KEY not set).");
+  }
+
+  const attachments = pdfBuffer ? [{ filename: pdfFilename || "contract.pdf", content: pdfBuffer, contentType: "application/pdf" }] : undefined;
+
+  const { error } = await resend.emails.send({
+    from: env.notifyFromEmail,
+    to,
+    subject,
+    html,
+    attachments,
+  });
+  if (error) {
+    throw new Error(`Resend rejected the email (${error.name}): ${error.message}`);
+  }
+}
+
 function buildEmailHtml(submission, typeLabel) {
   const rows = Object.entries(submission.projectDetails || {})
     .filter(([, value]) => value !== null && value !== undefined && value !== "")
@@ -82,4 +108,4 @@ function escapeHtml(str) {
     .replace(/"/g, "&quot;");
 }
 
-module.exports = { notifyNewSubmission, buildEmailHtml };
+module.exports = { notifyNewSubmission, sendContractEmail, buildEmailHtml };

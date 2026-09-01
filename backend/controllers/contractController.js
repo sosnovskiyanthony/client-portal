@@ -14,7 +14,10 @@ const { logAction } = require("../services/contractAudit");
 const { runContractReview } = require("../services/runContractReview");
 const { runContractGeneration } = require("../services/runContractGeneration");
 const { generateContractPdf } = require("../services/contractPdf");
+const { buildContractEmailDraft } = require("../services/contractEmail");
+const { sendContractEmail } = require("../services/email");
 const storage = require("../services/storage");
+const { EMAIL_RE } = require("../lib/validators");
 const { AiAnalysisError } = require("../ai/errors");
 const analysisProgress = require("../lib/analysisProgress");
 const env = require("../config/env");
@@ -531,6 +534,87 @@ async function setContractStatus(req, res) {
   res.json({ contract: updated });
 }
 
+// Computed fresh every call, never persisted — the admin reviews/edits the
+// returned subject/body directly in the builder UI before sending (see
+// frontend/js/contracts.js), so there's nothing server-side that needs to
+// remember a draft between requests. Never touches contract content itself.
+async function draftContractEmail(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) {
+    return res.status(400).json({ error: "Invalid contract id." });
+  }
+  const contract = await Contract.findById(id);
+  if (!contract) {
+    return res.status(404).json({ error: "Contract not found." });
+  }
+
+  const { subject, body } = buildContractEmailDraft(contract);
+  res.json({ subject, body, to: contract.clientEmail || "" });
+}
+
+// Sends whatever subject/body/to the admin has reviewed and approved in
+// the UI — this endpoint does not regenerate them, so what was reviewed is
+// exactly what's sent. Generates a fresh PDF for the attachment (preferring
+// final_content once it exists, same precedence as generateContractPdfHandler)
+// rather than requiring one to already exist in storage, since an admin
+// sending a contract for the first time may not have generated+uploaded a
+// PDF yet. On success, advances status to 'sent' and records sent_at.
+async function sendContractEmailHandler(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) {
+    return res.status(400).json({ error: "Invalid contract id." });
+  }
+  const contract = await Contract.findById(id);
+  if (!contract) {
+    return res.status(404).json({ error: "Contract not found." });
+  }
+
+  const { to, subject, body } = req.body || {};
+  if (!to || !EMAIL_RE.test(to)) {
+    return res.status(400).json({ error: "A valid recipient email is required." });
+  }
+  if (!subject || typeof subject !== "string" || !subject.trim()) {
+    return res.status(400).json({ error: "A subject is required." });
+  }
+  if (!body || typeof body !== "string" || !body.trim()) {
+    return res.status(400).json({ error: "A message body is required." });
+  }
+
+  const content = contract.finalContent || contract.generatedContent;
+  if (!content) {
+    return res.status(400).json({ error: "Generate a contract draft before sending it to the client." });
+  }
+
+  const html = `<div style="font-family:sans-serif;max-width:480px;white-space:pre-wrap;">${body
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\n/g, "<br>")}</div>`;
+
+  let pdfBuffer;
+  try {
+    pdfBuffer = await generateContractPdf(contract, content);
+  } catch (err) {
+    return res.status(500).json({ error: "Failed to generate the contract PDF for this email." });
+  }
+
+  try {
+    await sendContractEmail({
+      to,
+      subject,
+      html,
+      pdfBuffer,
+      pdfFilename: `${contract.contractNumber}.pdf`,
+    });
+  } catch (err) {
+    return res.status(502).json({ error: err.message });
+  }
+
+  const updated = await Contract.markSent(id);
+  await logAction(id, "contract_emailed", req.user.sub, { to });
+  res.json({ contract: updated });
+}
+
 module.exports = {
   listContracts,
   getContract,
@@ -552,4 +636,6 @@ module.exports = {
   approveContract,
   finalizeContract,
   setContractStatus,
+  draftContractEmail,
+  sendContractEmailHandler,
 };
