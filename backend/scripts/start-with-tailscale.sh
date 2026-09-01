@@ -72,22 +72,40 @@ if [ -n "$TAILSCALE_AUTHKEY" ]; then
       export TAILSCALE_HTTP_PROXY="http://localhost:1055"
       echo "[tailscale] Connected. Ollama requests will route through the local proxy at $TAILSCALE_HTTP_PROXY."
 
-      # Diagnostics, not guesswork: real analysis requests have twice now
-      # timed out with zero response even through the DERP relay fallback
-      # (see ai/README.md's "Known flakiness" section) — this shows, on
-      # every boot, whether that's still true at the Tailscale layer itself
-      # (direct path vs. relay-only, latency, packet loss) rather than
-      # inferring it after the fact from a failed request's own logs.
-      # `|| true`/`|| echo` on each so a failed diagnostic (the actual thing
-      # being tested for) never aborts the script under `set -e` — worth
-      # removing once the underlying connectivity issue is resolved.
-      if [ -n "$OLLAMA_BASE_URL" ]; then
-        OLLAMA_HOST_IP=$(echo "$OLLAMA_BASE_URL" | sed -E 's#^https?://##; s#:[0-9]+$##')
-        echo "[tailscale] Pinging Ollama host ($OLLAMA_HOST_IP) at the Tailscale layer..."
-        tailscale --socket=/tmp/tailscaled.sock ping --c=3 "$OLLAMA_HOST_IP" || echo "[tailscale] ping did not complete — see output above."
-      fi
+      # One-time diagnostic, not guesswork: shows, on every boot, this
+      # container's real NAT/DERP characteristics (direct path vs.
+      # relay-only, latency, packet loss) rather than inferring it after the
+      # fact from a failed request's own logs. `|| echo` so a failed
+      # diagnostic (the actual thing being tested for) never aborts the
+      # script under `set -e`.
       echo "[tailscale] Network condition report:"
       tailscale --socket=/tmp/tailscaled.sock netcheck || echo "[tailscale] netcheck failed to complete."
+
+      # Confirmed via a real deploy: a `tailscale ping` right after boot
+      # gets clean pongs via the DERP relay in well under 100ms — the relay
+      # path itself works fine when it's actually being used. But Ollama
+      # requests are infrequent by design (only when an admin clicks
+      # Analyze), and Tailscale's own relay connection idles out and gets
+      # torn down after ~60s of silence — so by the time a real request
+      # happens, the connection is almost always cold and has to renegotiate
+      # from scratch, which is what's been causing the timeouts/502s in
+      # ai/README.md's "Known flakiness" section. A lightweight ping to the
+      # Ollama host every 45s (comfortably under that idle window) for as
+      # long as the container is up keeps the connection warm, so a real
+      # request is never the thing that has to cold-start it. Runs detached
+      # in the background — deliberately not logged per-ping (would just be
+      # noise every 45s for the life of the deploy); only a failure to even
+      # start it is worth surfacing.
+      if [ -n "$OLLAMA_BASE_URL" ]; then
+        OLLAMA_HOST_IP=$(echo "$OLLAMA_BASE_URL" | sed -E 's#^https?://##; s#:[0-9]+$##')
+        (
+          while true; do
+            sleep 45
+            tailscale --socket=/tmp/tailscaled.sock ping --c=1 --timeout=5s "$OLLAMA_HOST_IP" >/dev/null 2>&1 || true
+          done
+        ) &
+        echo "[tailscale] Started a background keep-alive ping to $OLLAMA_HOST_IP every 45s, to keep the connection warm between Analyze clicks."
+      fi
     else
       echo "[tailscale] WARNING: tailscale up failed — continuing without it. Ollama analysis will fail until this is fixed, but the rest of the app is unaffected."
     fi
