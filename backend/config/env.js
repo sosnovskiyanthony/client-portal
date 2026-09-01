@@ -28,8 +28,8 @@ if (!adminEmail || !adminPassword) {
     throw new Error("ADMIN_EMAIL and ADMIN_PASSWORD must both be set in production — refusing to start with an insecure default.");
   }
   console.warn("[env] ADMIN_EMAIL/ADMIN_PASSWORD not set — using an insecure default. This is only OK for local dev.");
-  adminEmail = adminEmail || "admin@studio.dev";
-  adminPassword = adminPassword || "studio-admin";
+  adminEmail = adminEmail || "admin@brindleaf.dev";
+  adminPassword = adminPassword || "brindleaf-admin";
 }
 
 module.exports = {

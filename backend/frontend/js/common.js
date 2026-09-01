@@ -913,7 +913,7 @@ function renderLoginModal() {
     <div class="modal-form">
       <label class="field">
         <span class="field-label">Email</span>
-        <input class="field-input" type="email" id="login-email" placeholder="admin@studio.dev" autocomplete="username" />
+        <input class="field-input" type="email" id="login-email" placeholder="admin@brindleaf.dev" autocomplete="username" />
       </label>
       <label class="field">
         <span class="field-label">Password</span>

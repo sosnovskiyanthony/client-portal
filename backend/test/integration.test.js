@@ -62,7 +62,7 @@ async function adminToken() {
   const res = await fetch(`${BASE_URL}/api/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email: "admin@studio.dev", password: "studio-admin" }),
+    body: JSON.stringify({ email: "admin@brindleaf.dev", password: "brindleaf-admin" }),
   });
   if (!res.ok) {
     throw new Error(`Test setup failed: admin login returned ${res.status}`);
