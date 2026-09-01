@@ -947,14 +947,22 @@
         } else {
           await startOllamaRemote();
         }
-        await refreshOllamaStatus();
       } catch (err) {
         els.adminSub.textContent = err.message;
         if (!isAdminLoggedIn()) render();
       } finally {
+        // Cleared before the follow-up status check below, not after —
+        // refreshOllamaStatus() itself bails out early while
+        // ollamaActionInFlight is true (see its guard clause), so clearing
+        // it only in a later .finally() here would make that check a
+        // permanent no-op and leave the button stuck on "Starting…" /
+        // "Stopping…" forever, even after a successful start/stop. Caught
+        // by a real live test against the actual Mac control helper, not
+        // by inspection.
         ollamaActionInFlight = false;
         els.ollamaToggleBtn.disabled = false;
       }
+      await refreshOllamaStatus();
     });
   }
 
