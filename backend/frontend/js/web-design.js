@@ -201,13 +201,22 @@
   function initTextInputs() {
     TEXT_BINDINGS.forEach(([id, field]) => {
       const el = document.getElementById(id);
-      el.addEventListener("input", () => {
+      const onChange = () => {
         state.data[field] = el.value;
         renderSummary();
         updateTabs();
         updateSubmitState();
         saveDraft(DRAFT_KEY, state.data);
-      });
+      };
+      // Both "input" and "change" — iOS Safari's QuickType autofill bar
+      // (name/email fields both use autocomplete=) has a real, documented
+      // history of not reliably firing "input" alone in every iOS version.
+      // "change" fires on blur regardless, so this closes that gap for the
+      // live UI (tab dots, hint text) — see submitProject()'s own
+      // syncTextInputsFromDom() call for the actual safety net at submit
+      // time, which is what fixes this even if both events somehow miss.
+      el.addEventListener("input", onChange);
+      el.addEventListener("change", onChange);
     });
   }
 
@@ -333,7 +342,29 @@
 
   function initSubmit() {
     els.btnSubmit.addEventListener("click", () => {
-      if (!isAllComplete()) return;
+      // Re-sync from the actual DOM values first — see
+      // syncTextInputsFromDom's own comment in common.js. Without this, a
+      // client whose browser filled a field via autofill without firing
+      // "input"/"change" (a real iOS Safari QuickType quirk) would look at
+      // a fully-filled-in form and have nothing happen when they click
+      // Submit, with no indication why. This makes what's on screen the
+      // actual source of truth at the one moment it matters most.
+      syncTextInputsFromDom(TEXT_BINDINGS, state.data);
+      renderSummary();
+      updateTabs();
+      updateSubmitState();
+
+      if (!isAllComplete()) {
+        // Never silently no-op on a click — if it's still incomplete after
+        // re-syncing, make that visible and take them to it, rather than
+        // leaving a visitor staring at a button that just doesn't respond.
+        const firstIncomplete = getIncompleteSections()[0];
+        goToSection(firstIncomplete);
+        els.submitHint.classList.remove("hint-flash");
+        void els.submitHint.offsetWidth; // restart the CSS animation on repeat clicks
+        els.submitHint.classList.add("hint-flash");
+        return;
+      }
       submitProject();
     });
   }

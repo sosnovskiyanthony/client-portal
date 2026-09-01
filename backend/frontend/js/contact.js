@@ -64,11 +64,18 @@
   function initTextInputs() {
     TEXT_BINDINGS.forEach(([id, field]) => {
       const el = document.getElementById(id);
-      el.addEventListener("input", () => {
+      const onChange = () => {
         state.data[field] = el.value;
         updateSubmitState();
         saveDraft(DRAFT_KEY, state.data);
-      });
+      };
+      // Both "input" and "change" — iOS Safari's QuickType autofill bar
+      // (name/email fields both use autocomplete=) has a real, documented
+      // history of not reliably firing "input" alone in every iOS version.
+      // See initSubmit()'s own syncTextInputsFromDom() call for the actual
+      // safety net at submit time.
+      el.addEventListener("input", onChange);
+      el.addEventListener("change", onChange);
     });
   }
 
@@ -90,7 +97,20 @@
 
   function initSubmit() {
     els.btnSubmit.addEventListener("click", () => {
-      if (!isComplete()) return;
+      // Re-sync from the actual DOM values first — see
+      // syncTextInputsFromDom's own comment in common.js.
+      syncTextInputsFromDom(TEXT_BINDINGS, state.data);
+      updateSubmitState();
+
+      if (!isComplete()) {
+        // Never silently no-op on a click — this form has no sections to
+        // jump to, so flash the hint text itself (it already names what's
+        // missing) instead of leaving an unresponsive button.
+        els.submitHint.classList.remove("hint-flash");
+        void els.submitHint.offsetWidth;
+        els.submitHint.classList.add("hint-flash");
+        return;
+      }
       submitMessage();
     });
   }

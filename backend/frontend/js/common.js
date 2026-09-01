@@ -339,6 +339,27 @@ function hydrateTextInputs(bindings, data) {
   });
 }
 
+// The opposite direction of hydrateTextInputs — reads the CURRENT DOM
+// value into the state object, rather than relying on the field's own
+// "input" event having already kept state in sync. Call this right before
+// validating/submitting a form, as a safety net: iOS Safari's QuickType
+// autofill bar (triggered by autocomplete="name"/"email"/etc. — see
+// web-design.html/seo.html/contact.html's contact fields) has a real,
+// documented history of filling a field's visible value without reliably
+// firing a standard "input" event in every iOS version. Without this, a
+// client tapping an autofill suggestion sees the field fill in correctly
+// on screen while the page's own JS state silently stays empty — the
+// submit button then stays disabled (or, worse, a stale click handler
+// silently no-ops) with no error a non-technical visitor would connect to
+// "the name field I can see is filled in." A real lost-lead bug, not
+// hypothetical — caught from a live client report.
+function syncTextInputsFromDom(bindings, data) {
+  bindings.forEach(([id, field]) => {
+    const el = document.getElementById(id);
+    if (el) data[field] = el.value;
+  });
+}
+
 // The animated section-to-section transition (measure the incoming panel,
 // resize the container, crossfade the panels) — was a ~45-line byte-
 // identical block in both web-design.js and seo.js. This was the single

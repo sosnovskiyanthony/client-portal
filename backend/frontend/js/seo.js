@@ -93,13 +93,20 @@
   function initTextInputs() {
     TEXT_BINDINGS.forEach(([id, field]) => {
       const el = document.getElementById(id);
-      el.addEventListener("input", () => {
+      const onChange = () => {
         state.data[field] = el.value;
         renderSummary();
         updateTabs();
         updateSubmitState();
         saveDraft(DRAFT_KEY, state.data);
-      });
+      };
+      // Both "input" and "change" — iOS Safari's QuickType autofill bar
+      // (name/email fields both use autocomplete=) has a real, documented
+      // history of not reliably firing "input" alone in every iOS version.
+      // See initSubmit()'s own syncTextInputsFromDom() call for the actual
+      // safety net at submit time.
+      el.addEventListener("input", onChange);
+      el.addEventListener("change", onChange);
     });
   }
 
@@ -212,7 +219,21 @@
 
   function initSubmit() {
     els.btnSubmit.addEventListener("click", () => {
-      if (!isAllComplete()) return;
+      // Re-sync from the actual DOM values first — see
+      // syncTextInputsFromDom's own comment in common.js.
+      syncTextInputsFromDom(TEXT_BINDINGS, state.data);
+      renderSummary();
+      updateTabs();
+      updateSubmitState();
+
+      if (!isAllComplete()) {
+        const firstIncomplete = getIncompleteSections()[0];
+        goToSection(firstIncomplete);
+        els.submitHint.classList.remove("hint-flash");
+        void els.submitHint.offsetWidth;
+        els.submitHint.classList.add("hint-flash");
+        return;
+      }
       submitReview();
     });
   }

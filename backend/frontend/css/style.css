@@ -1490,6 +1490,19 @@ a:focus-visible {
   text-decoration: underline;
 }
 
+/* Draws attention to the submit hint when a click on the (disabled-looking)
+   submit action needs to visibly tell the visitor why nothing happened,
+   instead of silently doing nothing. */
+.submit-hint.hint-flash {
+  color: var(--accent-1);
+  animation: hint-flash-pulse 1.2s ease;
+}
+
+@keyframes hint-flash-pulse {
+  0%, 100% { opacity: 1; }
+  25%, 75% { opacity: 0.35; }
+}
+
 /* ---------- Live summary drawer ---------- */
 .summary-drawer {
   position: sticky;
