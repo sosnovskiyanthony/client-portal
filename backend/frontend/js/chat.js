@@ -48,7 +48,7 @@
   let progressPollHandle = null;
   let thinkingEl = null;
   // Fetched once at init — whether the "Research & Send" button should
-  // ever be shown at all (server-side: BRAVE_API_KEY configured and
+  // ever be shown at all (server-side: TAVILY_API_KEY configured and
   // AI_PROVIDER=ollama). Not per-submission, so one check covers every
   // time the drawer opens.
   let researchAvailable = false;

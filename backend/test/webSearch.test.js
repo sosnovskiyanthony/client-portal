@@ -1,4 +1,4 @@
-// Unit tests for services/webSearch.js — the Brave Search API wrapper
+// Unit tests for services/webSearch.js — the Tavily Search API wrapper
 // backing the AI chat feature's "Research this" action. Mocked fetch, same
 // pattern as test/ollamaProvider.test.js.
 const test = require("node:test");
@@ -13,51 +13,51 @@ function withMockedFetch(impl, fn) {
   });
 }
 
-// env.braveApiKey is read once at require-time by config/env.js from
+// env.tavilyApiKey is read once at require-time by config/env.js from
 // process.env — set it before requiring services/webSearch.js so the
 // module under test actually sees a key configured.
-function withBraveKey(key, fn) {
-  const original = process.env.BRAVE_API_KEY;
-  process.env.BRAVE_API_KEY = key;
+function withTavilyKey(key, fn) {
+  const original = process.env.TAVILY_API_KEY;
+  process.env.TAVILY_API_KEY = key;
   delete require.cache[require.resolve("../config/env")];
   delete require.cache[require.resolve("../services/webSearch")];
   const webSearch = require("../services/webSearch");
   return fn(webSearch).finally(() => {
-    if (original === undefined) delete process.env.BRAVE_API_KEY;
-    else process.env.BRAVE_API_KEY = original;
+    if (original === undefined) delete process.env.TAVILY_API_KEY;
+    else process.env.TAVILY_API_KEY = original;
     delete require.cache[require.resolve("../config/env")];
     delete require.cache[require.resolve("../services/webSearch")];
   });
 }
 
-test("braveSearch throws missing_api_key when BRAVE_API_KEY is unset", async () => {
-  await withBraveKey("", async (webSearch) => {
+test("tavilySearch throws missing_api_key when TAVILY_API_KEY is unset", async () => {
+  await withTavilyKey("", async (webSearch) => {
     await assert.rejects(
-      () => webSearch.braveSearch("vegan bakery seo"),
+      () => webSearch.tavilySearch("vegan bakery seo"),
       (err) => err instanceof AiAnalysisError && err.code === "missing_api_key"
     );
   });
 });
 
-test("isConfigured reflects whether BRAVE_API_KEY is set", async () => {
-  await withBraveKey("test-key", async (webSearch) => {
+test("isConfigured reflects whether TAVILY_API_KEY is set", async () => {
+  await withTavilyKey("test-key", async (webSearch) => {
     assert.equal(webSearch.isConfigured(), true);
   });
-  await withBraveKey("", async (webSearch) => {
+  await withTavilyKey("", async (webSearch) => {
     assert.equal(webSearch.isConfigured(), false);
   });
 });
 
-test("braveSearch returns an empty array for a blank query without making a request", async () => {
-  await withBraveKey("test-key", async (webSearch) => {
+test("tavilySearch returns an empty array for a blank query without making a request", async () => {
+  await withTavilyKey("test-key", async (webSearch) => {
     let called = false;
     await withMockedFetch(
       async () => {
         called = true;
-        return { ok: true, status: 200, json: async () => ({ web: { results: [] } }) };
+        return { ok: true, status: 200, json: async () => ({ results: [] }) };
       },
       async () => {
-        const results = await webSearch.braveSearch("   ");
+        const results = await webSearch.tavilySearch("   ");
         assert.deepEqual(results, []);
       }
     );
@@ -65,61 +65,62 @@ test("braveSearch returns an empty array for a blank query without making a requ
   });
 });
 
-test("braveSearch maps a well-formed response to title/url/snippet, passing the API key as a header", async () => {
-  await withBraveKey("test-key", async (webSearch) => {
-    let capturedHeaders;
+test("tavilySearch maps a well-formed response to title/url/snippet, sending the key as a Bearer token and a POST body", async () => {
+  await withTavilyKey("tvly-test-key", async (webSearch) => {
+    let capturedUrl, capturedOpts, capturedBody;
     await withMockedFetch(
       async (url, opts) => {
-        capturedHeaders = opts.headers;
+        capturedUrl = url;
+        capturedOpts = opts;
+        capturedBody = JSON.parse(opts.body);
         return {
           ok: true,
           status: 200,
           json: async () => ({
-            web: {
-              results: [
-                { title: "Local SEO Guide", url: "https://example.com/seo", description: "A guide to local SEO." },
-              ],
-            },
+            results: [{ title: "Local SEO Guide", url: "https://example.com/seo", content: "A guide to local SEO." }],
           }),
         };
       },
       async () => {
-        const results = await webSearch.braveSearch("local seo for bakeries");
+        const results = await webSearch.tavilySearch("local seo for bakeries");
         assert.equal(results.length, 1);
         assert.equal(results[0].title, "Local SEO Guide");
         assert.equal(results[0].url, "https://example.com/seo");
         assert.equal(results[0].snippet, "A guide to local SEO.");
       }
     );
-    assert.equal(capturedHeaders["X-Subscription-Token"], "test-key");
+    assert.equal(capturedUrl, "https://api.tavily.com/search");
+    assert.equal(capturedOpts.method, "POST");
+    assert.equal(capturedOpts.headers.Authorization, "Bearer tvly-test-key");
+    assert.equal(capturedBody.query, "local seo for bakeries");
   });
 });
 
-test("braveSearch truncates an oversized snippet", async () => {
-  await withBraveKey("test-key", async (webSearch) => {
-    const longDescription = "x".repeat(1000);
+test("tavilySearch truncates an oversized snippet", async () => {
+  await withTavilyKey("test-key", async (webSearch) => {
+    const longContent = "x".repeat(1000);
     await withMockedFetch(
       async () => ({
         ok: true,
         status: 200,
-        json: async () => ({ web: { results: [{ title: "T", url: "https://example.com", description: longDescription }] } }),
+        json: async () => ({ results: [{ title: "T", url: "https://example.com", content: longContent }] }),
       }),
       async () => {
-        const results = await webSearch.braveSearch("query");
-        assert.ok(results[0].snippet.length < longDescription.length);
+        const results = await webSearch.tavilySearch("query");
+        assert.ok(results[0].snippet.length < longContent.length);
         assert.ok(results[0].snippet.endsWith("…"));
       }
     );
   });
 });
 
-test("braveSearch classifies a 401/403 as invalid_api_key", async () => {
-  await withBraveKey("bad-key", async (webSearch) => {
+test("tavilySearch classifies a 401/403 as invalid_api_key", async () => {
+  await withTavilyKey("bad-key", async (webSearch) => {
     await withMockedFetch(
       async () => ({ ok: false, status: 401 }),
       async () => {
         await assert.rejects(
-          () => webSearch.braveSearch("query"),
+          () => webSearch.tavilySearch("query"),
           (err) => err instanceof AiAnalysisError && err.code === "invalid_api_key"
         );
       }
@@ -127,13 +128,13 @@ test("braveSearch classifies a 401/403 as invalid_api_key", async () => {
   });
 });
 
-test("braveSearch classifies a 429 as rate_limited", async () => {
-  await withBraveKey("test-key", async (webSearch) => {
+test("tavilySearch classifies a 429 as rate_limited", async () => {
+  await withTavilyKey("test-key", async (webSearch) => {
     await withMockedFetch(
       async () => ({ ok: false, status: 429 }),
       async () => {
         await assert.rejects(
-          () => webSearch.braveSearch("query"),
+          () => webSearch.tavilySearch("query"),
           (err) => err instanceof AiAnalysisError && err.code === "rate_limited"
         );
       }
@@ -141,13 +142,13 @@ test("braveSearch classifies a 429 as rate_limited", async () => {
   });
 });
 
-test("braveSearch classifies any other non-ok status as provider_error", async () => {
-  await withBraveKey("test-key", async (webSearch) => {
+test("tavilySearch classifies any other non-ok status as provider_error", async () => {
+  await withTavilyKey("test-key", async (webSearch) => {
     await withMockedFetch(
       async () => ({ ok: false, status: 500 }),
       async () => {
         await assert.rejects(
-          () => webSearch.braveSearch("query"),
+          () => webSearch.tavilySearch("query"),
           (err) => err instanceof AiAnalysisError && err.code === "provider_error"
         );
       }
@@ -155,13 +156,13 @@ test("braveSearch classifies any other non-ok status as provider_error", async (
   });
 });
 
-test("braveSearch caps results at maxResults even if the API returns more", async () => {
-  await withBraveKey("test-key", async (webSearch) => {
-    const manyResults = Array.from({ length: 10 }, (_, i) => ({ title: `T${i}`, url: `https://example.com/${i}`, description: "d" }));
+test("tavilySearch caps results at maxResults even if the API returns more", async () => {
+  await withTavilyKey("test-key", async (webSearch) => {
+    const manyResults = Array.from({ length: 10 }, (_, i) => ({ title: `T${i}`, url: `https://example.com/${i}`, content: "d" }));
     await withMockedFetch(
-      async () => ({ ok: true, status: 200, json: async () => ({ web: { results: manyResults } }) }),
+      async () => ({ ok: true, status: 200, json: async () => ({ results: manyResults }) }),
       async () => {
-        const results = await webSearch.braveSearch("query", { maxResults: 3 });
+        const results = await webSearch.tavilySearch("query", { maxResults: 3 });
         assert.equal(results.length, 3);
       }
     );

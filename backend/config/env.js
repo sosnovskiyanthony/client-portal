@@ -99,7 +99,7 @@ module.exports = {
   // paired with the Ollama provider — see ai/aiService.js's
   // chatReplyWithResearch for why this doesn't apply when
   // AI_PROVIDER=anthropic.
-  braveApiKey: process.env.BRAVE_API_KEY || null,
+  tavilyApiKey: process.env.TAVILY_API_KEY || null,
 
   // Brand-asset file uploads on the web-design intake form (see
   // services/storage.js). Optional — when either is unset, upload/view

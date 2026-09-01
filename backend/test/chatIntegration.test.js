@@ -211,11 +211,11 @@ test("unauthorized (no token) cannot check research availability", async () => {
   assert.equal(res.status, 401);
 });
 
-test("research-status reports unavailable when BRAVE_API_KEY/AI_PROVIDER aren't both configured for it", async () => {
+test("research-status reports unavailable when TAVILY_API_KEY/AI_PROVIDER aren't both configured for it", async () => {
   // This whole suite runs with AI_PROVIDER deliberately set to an invalid
   // provider (not "ollama") — research requires AI_PROVIDER=ollama, so
   // this should always read as unavailable in this test environment
-  // regardless of whether BRAVE_API_KEY happens to be set locally.
+  // regardless of whether TAVILY_API_KEY happens to be set locally.
   const res = await authed(`/api/admin/chat/research-status`);
   assert.equal(res.status, 200);
   const body = await res.json();

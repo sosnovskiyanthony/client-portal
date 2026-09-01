@@ -77,7 +77,7 @@ async function sendChatMessage(req, res) {
   }
 }
 
-// Whether the "Research & Send" action is even available (BRAVE_API_KEY
+// Whether the "Research & Send" action is even available (TAVILY_API_KEY
 // configured, AI_PROVIDER=ollama) — checked once when the drawer opens, so
 // the frontend never shows a button that's guaranteed to fail.
 function getResearchStatus(req, res) {

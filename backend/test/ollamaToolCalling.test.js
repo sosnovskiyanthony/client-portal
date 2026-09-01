@@ -184,7 +184,7 @@ test("a failing tool execution doesn't crash the whole reply — the model gets 
         model: "qwen2.5:7b",
         tools: TOOLS,
         executeTool: async () => {
-          throw new Error("Brave is down");
+          throw new Error("Tavily is down");
         },
       });
       assert.equal(result.text, "Answering without the failed search.");

@@ -251,12 +251,12 @@ async function chatReply({ sanitizedIntake, analysisResult, history, userMessage
 }
 
 // Research only ever pairs with Ollama (see ai/researchTool.js's module
-// comment and config/env.js's braveApiKey) — the tool-calling loop lives on
+// comment and config/env.js's tavilyApiKey) — the tool-calling loop lives on
 // ollamaProvider.js specifically, not behind the generic PROVIDERS
 // dispatch every other function here uses. Exported so the controller can
 // show/hide the "Research this" action without duplicating this check.
 function isResearchAvailable() {
-  return env.aiProvider === "ollama" && Boolean(env.braveApiKey);
+  return env.aiProvider === "ollama" && Boolean(env.tavilyApiKey);
 }
 
 // The AI chat feature's manual "Research this" action — same shape as
@@ -271,7 +271,7 @@ async function chatReplyWithResearch({ sanitizedIntake, analysisResult, history,
   if (!isResearchAvailable()) {
     throw new AiAnalysisError(
       "research_unavailable",
-      "Online research isn't configured — set BRAVE_API_KEY and use AI_PROVIDER=ollama to enable it."
+      "Online research isn't configured — set TAVILY_API_KEY and use AI_PROVIDER=ollama to enable it."
     );
   }
 
