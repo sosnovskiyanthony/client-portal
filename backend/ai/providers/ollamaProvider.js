@@ -275,15 +275,30 @@ async function generateChatReply({ systemPrompt, messages, model, onProgress, te
   return { text: content.trim(), raw: body };
 }
 
-// A single call's timeout, not the whole loop's — matches the per-request
-// budget every other function here uses; a multi-turn tool loop naturally
-// takes longer overall, but there's no reason a single web_search-bearing
-// turn should get a smaller budget than a single plain chat turn.
-const TOOL_CALL_TIMEOUT_MS = REQUEST_TIMEOUT_MS;
+// A single call's timeout, not the whole loop's. Deliberately larger than
+// REQUEST_TIMEOUT_MS, not just equal to it — verified directly against a
+// real local qwen2.5:7b instance that simply including a `tools` array in
+// the request measurably slows generation even when the model ends up not
+// calling the tool at all (~3 minutes for an 8-token "no search needed"
+// answer, vs. well under a minute for the identical question with no
+// tools offered). A real search-and-continue round trip needs more room
+// than that on constrained hardware, and research is already a
+// deliberate, occasional, manually-triggered action — there's little cost
+// to giving a single attempt more time to actually finish.
+const TOOL_CALL_TIMEOUT_MS = 8 * 60 * 1000;
 
-async function ollamaChatRequest(body) {
+// Logs at each step, same style/verbosity as generateStructuredAnalysis/
+// generateChatReply above — this loop can make several of these calls in a
+// row for one admin click, and without per-call visibility a failure or a
+// long stall is a black box (this is what was missing when a real research
+// request returned "Could not reach Ollama" after several minutes with
+// nothing in the logs to say which of the loop's several requests that
+// even happened on).
+async function ollamaChatRequest(body, { attemptLabel } = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TOOL_CALL_TIMEOUT_MS);
+  const startedAt = Date.now();
+  console.log(`[ollamaProvider] [tools] Sending ${attemptLabel || "request"} to Ollama at ${env.ollamaBaseUrl} (model=${body.model}, tools=${body.tools ? "yes" : "no"})...`);
   let res;
   try {
     res = await fetch(`${env.ollamaBaseUrl}/api/chat`, {
@@ -294,13 +309,17 @@ async function ollamaChatRequest(body) {
       dispatcher: tailscaleDispatcher,
     });
   } catch (err) {
+    const elapsedMs = Date.now() - startedAt;
     if (err.name === "AbortError") {
+      console.error(`[ollamaProvider] [tools] ${attemptLabel || "request"} timed out after ${elapsedMs}ms waiting on Ollama.`);
       throw new AiAnalysisError("timeout", `Ollama request timed out after ${TOOL_CALL_TIMEOUT_MS}ms.`, err);
     }
+    console.error(`[ollamaProvider] [tools] Could not reach Ollama after ${elapsedMs}ms on ${attemptLabel || "request"}:`, err.message);
     throw new AiAnalysisError("ollama_unavailable", `Could not reach Ollama at ${env.ollamaBaseUrl}. Is it running?`, err);
   } finally {
     clearTimeout(timer);
   }
+  console.log(`[ollamaProvider] [tools] Ollama responded to ${attemptLabel || "request"} after ${Date.now() - startedAt}ms (HTTP ${res.status}).`);
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
@@ -335,13 +354,17 @@ async function generateChatReplyWithTools({ systemPrompt, messages, model, onPro
 
   for (let attempt = 0; attempt <= maxToolCalls; attempt++) {
     const includeTools = attempt < maxToolCalls;
-    const body = await ollamaChatRequest({
-      model,
-      messages: workingMessages,
-      ...(includeTools ? { tools } : {}),
-      stream: false,
-      options: { temperature: 0.4, num_predict: MAX_OUTPUT_TOKENS },
-    });
+    const attemptLabel = includeTools ? `tool-loop attempt ${attempt + 1}/${maxToolCalls}` : "tool-loop final (forced) attempt";
+    const body = await ollamaChatRequest(
+      {
+        model,
+        messages: workingMessages,
+        ...(includeTools ? { tools } : {}),
+        stream: false,
+        options: { temperature: 0.4, num_predict: MAX_OUTPUT_TOKENS },
+      },
+      { attemptLabel }
+    );
 
     const message = body?.message || {};
     const toolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
@@ -351,8 +374,11 @@ async function generateChatReplyWithTools({ systemPrompt, messages, model, onPro
       if (!content) {
         throw new AiAnalysisError("invalid_json", "Ollama returned an empty chat response.");
       }
+      console.log(`[ollamaProvider] [tools] Model answered directly on ${attemptLabel}, no search used.`);
       return { text: content, sources, raw: body };
     }
+
+    console.log(`[ollamaProvider] [tools] Model requested ${toolCalls.length} tool call(s) on ${attemptLabel}: ${toolCalls.map((c) => c?.function?.name).join(", ")}`);
 
     // The assistant's own tool-call request has to become part of the
     // conversation before the tool result does, or the next request has no
