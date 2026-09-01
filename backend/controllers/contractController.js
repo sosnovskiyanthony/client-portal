@@ -175,6 +175,86 @@ async function getContractAuditLog(req, res) {
   res.json({ auditLog });
 }
 
+function validateFeatureItem(f) {
+  if (!f || typeof f !== "object") return "Each feature must be an object.";
+  if (typeof f.category !== "string" || !f.category.trim()) return "Each feature needs a category.";
+  if (typeof f.name !== "string" || !f.name.trim()) return "Each feature needs a name.";
+  if ("price" in f && f.price !== null && (typeof f.price !== "number" || !Number.isFinite(f.price) || f.price < 0)) {
+    return "A feature's price must be a non-negative number.";
+  }
+  return null;
+}
+
+// Replaces the entire "Scope of Work" checklist for this contract in one
+// call — the builder saves the whole selection each time (check/uncheck
+// any box, Save), not incrementally. Every item is explicitly represented
+// here (name/category/wording/price snapshotted at save time) — this is
+// what makes the eventual generated contract's scope section an explicit
+// list rather than the vague "includes all requested features" wording
+// the spec calls out as unacceptable.
+async function setContractFeatures(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) {
+    return res.status(400).json({ error: "Invalid contract id." });
+  }
+  const existing = await Contract.findById(id);
+  if (!existing) {
+    return res.status(404).json({ error: "Contract not found." });
+  }
+
+  const features = (req.body || {}).features;
+  if (!Array.isArray(features)) {
+    return res.status(400).json({ error: "features must be an array." });
+  }
+  for (const f of features) {
+    const validationError = validateFeatureItem(f);
+    if (validationError) {
+      return res.status(400).json({ error: validationError });
+    }
+  }
+
+  const selectedFeatures = await ContractSelectedFeature.replaceAll(id, features);
+  await logAction(id, "contract_features_updated", req.user.sub, { count: selectedFeatures.length });
+  res.json({ selectedFeatures });
+}
+
+async function addCustomFeature(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) {
+    return res.status(400).json({ error: "Invalid contract id." });
+  }
+  const existing = await Contract.findById(id);
+  if (!existing) {
+    return res.status(404).json({ error: "Contract not found." });
+  }
+
+  const body = req.body || {};
+  const validationError = validateFeatureItem(body);
+  if (validationError) {
+    return res.status(400).json({ error: validationError });
+  }
+
+  const feature = await ContractSelectedFeature.addOne(id, { ...body, isCustom: true });
+  await logAction(id, "contract_custom_feature_added", req.user.sub, { name: body.name });
+  res.status(201).json({ feature });
+}
+
+async function removeContractFeature(req, res) {
+  const id = Number(req.params.id);
+  const rowId = Number(req.params.featureRowId);
+  if (!Number.isInteger(id) || !Number.isInteger(rowId)) {
+    return res.status(400).json({ error: "Invalid id." });
+  }
+  const existing = await Contract.findById(id);
+  if (!existing) {
+    return res.status(404).json({ error: "Contract not found." });
+  }
+
+  await ContractSelectedFeature.removeOne(id, rowId);
+  await logAction(id, "contract_feature_removed", req.user.sub, { rowId });
+  res.status(204).end();
+}
+
 module.exports = {
   listContracts,
   getContract,
@@ -182,4 +262,7 @@ module.exports = {
   updateContract,
   deleteContract,
   getContractAuditLog,
+  setContractFeatures,
+  addCustomFeature,
+  removeContractFeature,
 };

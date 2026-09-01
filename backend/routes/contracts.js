@@ -6,6 +6,8 @@
 // regardless of what the UI shows or hides.
 const express = require("express");
 const contractController = require("../controllers/contractController");
+const contractFeatureController = require("../controllers/contractFeatureController");
+const contractTemplateController = require("../controllers/contractTemplateController");
 const { authenticate, requireAdmin } = require("../middleware/auth");
 const asyncHandler = require("../middleware/asyncHandler");
 
@@ -19,5 +21,19 @@ router.post("/contracts/from-submission/:submissionId", asyncHandler(contractCon
 router.patch("/contracts/:id", asyncHandler(contractController.updateContract));
 router.delete("/contracts/:id", asyncHandler(contractController.deleteContract));
 router.get("/contracts/:id/audit-log", asyncHandler(contractController.getContractAuditLog));
+router.patch("/contracts/:id/features", asyncHandler(contractController.setContractFeatures));
+router.post("/contracts/:id/features/custom", asyncHandler(contractController.addCustomFeature));
+router.delete("/contracts/:id/features/:featureRowId", asyncHandler(contractController.removeContractFeature));
+
+router.get("/contract-features", asyncHandler(contractFeatureController.listFeatures));
+router.post("/contract-features", asyncHandler(contractFeatureController.createFeature));
+router.patch("/contract-features/:id", asyncHandler(contractFeatureController.updateFeature));
+router.delete("/contract-features/:id", asyncHandler(contractFeatureController.deactivateFeature));
+
+router.get("/contract-templates", asyncHandler(contractTemplateController.listTemplates));
+router.get("/contract-templates/:id", asyncHandler(contractTemplateController.getTemplate));
+router.post("/contract-templates", asyncHandler(contractTemplateController.createTemplate));
+router.patch("/contract-templates/:id", asyncHandler(contractTemplateController.updateTemplate));
+router.post("/contract-templates/:id/activate", asyncHandler(contractTemplateController.activateTemplate));
 
 module.exports = router;
