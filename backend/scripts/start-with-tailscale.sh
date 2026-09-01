@@ -27,6 +27,24 @@
 # it's wired up for the one thing that needs it.
 set -e
 
+# /tmp is wiped on every redeploy — if that's where tailscaled's --state
+# lives, every redeploy registers as a brand-new Tailscale device and has to
+# renegotiate its network path (direct P2P vs. DERP relay) to the Ollama
+# host from scratch. Confirmed directly: 8 separate "brindleaf-backend"-ish
+# device identities piled up in one day of iterating on this app, and
+# connectivity got flakier the more that churned. If a Railway Volume is
+# mounted at /data (see ai/README.md's "Persisting Tailscale's identity"
+# section for how to add one), state survives redeploys and the container
+# keeps the same identity — falls back to /tmp (today's behavior) if no
+# volume is mounted, so this script still works without one, just with the
+# same churn as before.
+if [ -d /data ]; then
+  TAILSCALE_STATE_DIR=/data
+else
+  echo "[tailscale] WARNING: /data is not mounted (no Railway Volume) — falling back to /tmp, so this container's Tailscale identity will NOT survive the next redeploy."
+  TAILSCALE_STATE_DIR=/tmp
+fi
+
 if [ -n "$TAILSCALE_AUTHKEY" ]; then
   if ! command -v tailscale >/dev/null 2>&1; then
     echo "[tailscale] Installing tailscale..."
@@ -36,9 +54,9 @@ if [ -n "$TAILSCALE_AUTHKEY" ]; then
   fi
 
   if command -v tailscaled >/dev/null 2>&1; then
-    echo "[tailscale] Starting tailscaled (userspace networking)..."
+    echo "[tailscale] Starting tailscaled (userspace networking, state dir: $TAILSCALE_STATE_DIR)..."
     tailscaled \
-      --state=/tmp/tailscaled.state \
+      --state="$TAILSCALE_STATE_DIR/tailscaled.state" \
       --socket=/tmp/tailscaled.sock \
       --tun=userspace-networking \
       --outbound-http-proxy-listen=localhost:1055 &
