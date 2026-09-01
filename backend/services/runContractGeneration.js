@@ -4,10 +4,15 @@
 // this directly. On success: saves the draft to contracts.generated_content,
 // records a new 'ai_generated' contract_versions row (version history is
 // never overwritten — see models/ContractVersion.js), snapshots the scope
-// that was actually sent, and advances status to 'ready_for_approval' — a
-// completed AI draft is exactly the point at which an admin needs to
-// review it, not before and not automatically further than that (approval
-// itself is always a separate, explicit admin action — see phase 8).
+// that was actually sent, and ALWAYS sets status to 'ready_for_approval' —
+// not just the first time. Caught in review: an earlier version only did
+// this when status was still 'draft', which meant regenerating a NEW draft
+// after an admin had already approved an earlier one left status stuck at
+// 'approved' with content nobody had actually reviewed — finalize would
+// then snapshot that unreviewed draft as authoritative, silently bypassing
+// the human-approval-before-finalization requirement the whole feature is
+// built around. Every successful generation now requires fresh approval,
+// regardless of what state the contract was in before.
 const Contract = require("../models/Contract");
 const ContractVersion = require("../models/ContractVersion");
 const ContractTemplate = require("../models/ContractTemplate");
@@ -30,14 +35,14 @@ async function runContractGeneration(contract, selectedFeatures, actorUserId) {
     });
 
     await Contract.setScopeSnapshot(contract.id, approvedData.scope_of_work);
-    const updated = await Contract.setGeneratedContent(contract.id, outcome.result);
+    await Contract.setGeneratedContent(contract.id, outcome.result);
     await ContractVersion.create({
       contractId: contract.id,
       source: "ai_generated",
       content: outcome.result,
       createdBy: actorUserId,
     });
-    return updated.status === "draft" ? await Contract.updateStatus(contract.id, "ready_for_approval") : updated;
+    return Contract.updateStatus(contract.id, "ready_for_approval");
   } finally {
     analysisProgress.finish("contract-generate", contract.id);
   }

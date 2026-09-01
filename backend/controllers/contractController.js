@@ -283,6 +283,18 @@ async function reviewContract(req, res) {
     return res.status(404).json({ error: "Contract not found." });
   }
 
+  // Unlike analyzeSubmission's STALE_PROCESSING_MS dedup (which checks a
+  // persisted DB status column analysis has and review doesn't), this
+  // reuses the same in-memory progress tracker already used for live
+  // polling as the dedup guard — a double-click (or a raw API replay)
+  // before the button disables client-side would otherwise fire two
+  // concurrent AI calls against the same contract, with whichever finishes
+  // last silently overwriting the other's review_result. Caught in review,
+  // not by a live bug report.
+  if (analysisProgress.get("contract-review", id)) {
+    return res.status(409).json({ error: "A review is already in progress for this contract." });
+  }
+
   const selectedFeatures = await ContractSelectedFeature.findAllByContractId(id);
 
   try {
@@ -318,6 +330,11 @@ async function generateContract(req, res) {
   const contract = await Contract.findById(id);
   if (!contract) {
     return res.status(404).json({ error: "Contract not found." });
+  }
+
+  // Same reasoning as reviewContract's dedup guard above.
+  if (analysisProgress.get("contract-generate", id)) {
+    return res.status(409).json({ error: "A draft is already being generated for this contract." });
   }
 
   const selectedFeatures = await ContractSelectedFeature.findAllByContractId(id);
@@ -365,8 +382,16 @@ async function saveContractContent(req, res) {
   }
 
   const content = { sections };
-  const updated = await Contract.setGeneratedContent(id, content);
+  await Contract.setGeneratedContent(id, content);
   await ContractVersion.create({ contractId: id, source: "admin_edited", content, createdBy: req.user.sub });
+  // Same reasoning as the fix in services/runContractGeneration.js: an
+  // edit made after the contract was already approved means the approved
+  // content and the current content have diverged — the approval no
+  // longer describes what's actually here, so it must be re-confirmed
+  // before this can be finalized. Only resets from 'approved' specifically
+  // (an edit while still in 'draft'/'ready_for_approval'/'needs_review' is
+  // the normal, expected pre-approval editing flow and needs no reset).
+  const updated = contract.status === "approved" ? await Contract.updateStatus(id, "ready_for_approval") : await Contract.findById(id);
   await logAction(id, "contract_edited", req.user.sub, {});
   res.json({ contract: updated });
 }
@@ -585,10 +610,15 @@ async function sendContractEmailHandler(req, res) {
     return res.status(400).json({ error: "Generate a contract draft before sending it to the client." });
   }
 
+  // Same escape set as services/contractEmail.js's own draft builder and
+  // services/email.js's buildEmailHtml — order matters: escape first, then
+  // inject the trusted <br> tags, so the tags we just added don't get
+  // escaped themselves on a later pass.
   const html = `<div style="font-family:sans-serif;max-width:480px;white-space:pre-wrap;">${body
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
     .replace(/\n/g, "<br>")}</div>`;
 
   let pdfBuffer;

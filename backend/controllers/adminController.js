@@ -194,6 +194,21 @@ async function deleteSubmission(req, res) {
     return res.status(404).json({ error: "Submission not found." });
   }
 
+  // contracts.submission_id is ON DELETE CASCADE (see config/database.js) —
+  // without this check, deleting a submission would silently destroy any
+  // finalized contracts through the DB relationship, completely bypassing
+  // contractController.deleteContract's own "a finalized contract can
+  // never be deleted" protection. Caught in review, not a live incident —
+  // a finalized contract is meant to be the authoritative record of an
+  // agreement; it must never be destroyable through a side door. Draft-
+  // stage (non-finalized) contracts are still fine to cascade-delete, same
+  // as the direct endpoint allows.
+  const existingContracts = await Contract.findAllBySubmissionIds([id]);
+  const hasFinalizedContract = (existingContracts[id] || []).some((c) => c.finalizedAt);
+  if (hasFinalizedContract) {
+    return res.status(400).json({ error: "This submission has a finalized contract and cannot be deleted. Delete or reassign the contract first." });
+  }
+
   const assets = (submission.projectDetails && submission.projectDetails.brandAssets) || [];
   if (Array.isArray(assets) && assets.length > 0 && storage.isConfigured()) {
     try {
