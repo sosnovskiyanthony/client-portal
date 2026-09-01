@@ -3,7 +3,7 @@
   "provider": "node",
   "deploy": {
     "inputs": ["..."],
-    "aptPackages": ["curl"],
+    "aptPackages": ["curl", "libatomic1"],
     "startCommand": "sh scripts/start-with-tailscale.sh"
   }
 }
