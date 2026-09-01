@@ -1,6 +1,8 @@
 {
   "$schema": "https://schema.railpack.com",
+  "provider": "node",
   "deploy": {
+    "inputs": ["..."],
     "startCommand": "sh scripts/start-with-tailscale.sh"
   }
 }
