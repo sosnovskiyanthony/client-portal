@@ -229,6 +229,7 @@
       ${renderResponsibilitiesSection()}
       ${renderCustomTermsSection()}
       ${renderReviewSection()}
+      ${renderGenerationSection()}
     `;
 
     wireClientSection();
@@ -241,6 +242,8 @@
     wireResponsibilitiesSection();
     wireCustomTermsSection();
     wireReviewSection();
+    wireGenerationSection();
+    loadVersionHistory();
   }
 
   function sectionCard(title, bodyHtml, { footnote } = {}) {
@@ -726,6 +729,116 @@
         btn.textContent = "Run AI Review";
       }
     });
+  }
+
+  // ---- AI Generation (Task 2), editing, version history ----
+  let generateInFlight = false;
+  let generateTickHandle = null;
+
+  function renderGeneratedSections(content) {
+    if (!content || !Array.isArray(content.sections) || content.sections.length === 0) {
+      return `<p class="contract-section-footnote">No draft yet — run AI Review first (recommended), then Generate Draft.</p>`;
+    }
+    return content.sections
+      .map(
+        (s, i) => `
+        <div class="draft-section">
+          <label class="contract-field"><span>${escapeHtml(s.title)}</span>
+            <textarea class="draft-section-content" data-key="${escapeHtml(s.key)}" data-title="${escapeHtml(s.title)}" rows="4">${escapeHtml(s.content)}</textarea>
+          </label>
+        </div>`
+      )
+      .join("");
+  }
+
+  function renderGenerationSection() {
+    return sectionCard(
+      "Contract Draft",
+      `
+      <p class="contract-section-footnote">AI-generated content must be reviewed and approved before use — this is a draft, not a finished contract, until you explicitly approve it.</p>
+      <div class="draft-actions">
+        <button class="btn btn-primary" id="btn-generate-draft" type="button">${activeContract.generatedContent ? "Regenerate Draft" : "Generate Draft"}</button>
+        <button class="btn btn-ghost" id="btn-save-draft-edits" type="button" ${activeContract.generatedContent ? "" : "disabled"}>Save Edits</button>
+      </div>
+      <div id="draft-sections-container">${renderGeneratedSections(activeContract.generatedContent)}</div>
+      <h3 class="scope-category-title" style="margin-top:20px">Version History</h3>
+      <div id="version-history-container"><p class="contract-section-footnote">Loading…</p></div>
+    `
+    );
+  }
+
+  function wireGenerationSection() {
+    document.getElementById("btn-generate-draft").addEventListener("click", async (e) => {
+      if (generateInFlight) return;
+      const btn = e.currentTarget;
+      generateInFlight = true;
+      const startTime = Date.now();
+      btn.disabled = true;
+      const label = activeContract.generatedContent ? "Regenerate Draft" : "Generate Draft";
+      btn.textContent = "Generating… 0:00";
+
+      generateTickHandle = setInterval(() => {
+        const s = Math.floor((Date.now() - startTime) / 1000);
+        btn.textContent = `Generating… ${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+      }, 1000);
+
+      try {
+        activeContract = await generateContractWithAi(activeContract.id);
+        document.getElementById("draft-sections-container").innerHTML = renderGeneratedSections(activeContract.generatedContent);
+        document.getElementById("btn-save-draft-edits").disabled = false;
+        renderBuilderHeader();
+        loadVersionHistory();
+      } catch (err) {
+        els.builderSub.textContent = err.message;
+      } finally {
+        clearInterval(generateTickHandle);
+        generateInFlight = false;
+        btn.disabled = false;
+        btn.textContent = activeContract.generatedContent ? "Regenerate Draft" : "Generate Draft";
+      }
+    });
+
+    document.getElementById("btn-save-draft-edits").addEventListener("click", async (e) => {
+      const btn = e.currentTarget;
+      const sections = Array.from(document.querySelectorAll(".draft-section-content")).map((el) => ({
+        key: el.dataset.key,
+        title: el.dataset.title,
+        content: el.value,
+      }));
+      try {
+        activeContract = await saveContractContent(activeContract.id, sections);
+        flashSaved(btn, "Save Edits");
+        loadVersionHistory();
+      } catch (err) {
+        els.builderSub.textContent = err.message;
+      }
+    });
+  }
+
+  const VERSION_SOURCE_LABELS = { ai_generated: "AI Generated", admin_edited: "Edited by Admin", final: "Final" };
+
+  async function loadVersionHistory() {
+    const container = document.getElementById("version-history-container");
+    if (!container) return;
+    try {
+      const versions = await getContractVersions(activeContract.id);
+      if (versions.length === 0) {
+        container.innerHTML = `<p class="contract-section-footnote">No versions yet.</p>`;
+        return;
+      }
+      container.innerHTML = versions
+        .map(
+          (v) => `
+        <div class="version-item">
+          <span class="version-number">Version ${v.versionNumber}</span>
+          <span class="version-source">${escapeHtml(VERSION_SOURCE_LABELS[v.source] || v.source)}</span>
+          <span class="version-date">${escapeHtml(formatDate(v.createdAt))}</span>
+        </div>`
+        )
+        .join("");
+    } catch (err) {
+      container.innerHTML = `<p class="contract-section-footnote">${escapeHtml(err.message)}</p>`;
+    }
   }
 
   function init() {

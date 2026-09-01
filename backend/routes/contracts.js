@@ -27,6 +27,10 @@ router.post("/contracts/:id/features/custom", asyncHandler(contractController.ad
 router.delete("/contracts/:id/features/:featureRowId", asyncHandler(contractController.removeContractFeature));
 router.post("/contracts/:id/review", analysisLimiter, asyncHandler(contractController.reviewContract));
 router.get("/contracts/:id/review/progress", asyncHandler(contractController.getContractReviewProgress));
+router.post("/contracts/:id/generate", analysisLimiter, asyncHandler(contractController.generateContract));
+router.get("/contracts/:id/generate/progress", asyncHandler(contractController.getContractGenerationProgress));
+router.patch("/contracts/:id/content", asyncHandler(contractController.saveContractContent));
+router.get("/contracts/:id/versions", asyncHandler(contractController.getContractVersions));
 
 router.get("/contract-features", asyncHandler(contractFeatureController.listFeatures));
 router.post("/contract-features", asyncHandler(contractFeatureController.createFeature));

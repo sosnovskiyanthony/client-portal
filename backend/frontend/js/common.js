@@ -969,6 +969,41 @@ async function getContractReviewProgress(id) {
   }
 }
 
+// AI Task 2 — same contract as reviewContractWithAi above.
+async function generateContractWithAi(id) {
+  const data = await contractFetch(`/api/admin/contracts/${id}/generate`, {
+    method: "POST",
+    errorFallback: "AI draft generation failed.",
+  });
+  return data.contract;
+}
+
+async function getContractGenerationProgress(id) {
+  try {
+    const res = await fetch(`/api/admin/contracts/${id}/generate/progress`, {
+      headers: { Authorization: `Bearer ${getAdminToken()}` },
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (err) {
+    return null;
+  }
+}
+
+async function saveContractContent(id, sections) {
+  const data = await contractFetch(`/api/admin/contracts/${id}/content`, {
+    method: "PATCH",
+    body: { sections },
+    errorFallback: "Couldn't save your edits.",
+  });
+  return data.contract;
+}
+
+async function getContractVersions(id) {
+  const data = await contractFetch(`/api/admin/contracts/${id}/versions`, { errorFallback: "Couldn't load version history." });
+  return data.versions;
+}
+
 // ---------- Account menu ----------
 
 function initMenu() {

@@ -12,6 +12,7 @@ const Submission = require("../models/Submission");
 const { getNextContractNumber } = require("../services/contractNumbering");
 const { logAction } = require("../services/contractAudit");
 const { runContractReview } = require("../services/runContractReview");
+const { runContractGeneration } = require("../services/runContractGeneration");
 const { AiAnalysisError } = require("../ai/errors");
 const analysisProgress = require("../lib/analysisProgress");
 
@@ -299,6 +300,83 @@ async function getContractReviewProgress(req, res) {
   res.json({ active: true, ...progress });
 }
 
+// AI Task 2 — see services/runContractGeneration.js and ai/contractPrompt.js.
+// Same error-mapping reasoning as reviewContract above: a real AI call,
+// classified failures become 502, never a silently-fabricated draft.
+async function generateContract(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) {
+    return res.status(400).json({ error: "Invalid contract id." });
+  }
+  const contract = await Contract.findById(id);
+  if (!contract) {
+    return res.status(404).json({ error: "Contract not found." });
+  }
+
+  const selectedFeatures = await ContractSelectedFeature.findAllByContractId(id);
+
+  try {
+    const updated = await runContractGeneration(contract, selectedFeatures, req.user.sub);
+    await logAction(id, "contract_draft_generated", req.user.sub, {});
+    res.json({ contract: updated });
+  } catch (err) {
+    if (err instanceof AiAnalysisError) {
+      return res.status(502).json({ error: err.message, code: err.code });
+    }
+    throw err;
+  }
+}
+
+async function getContractGenerationProgress(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) {
+    return res.status(400).json({ error: "Invalid contract id." });
+  }
+  const progress = analysisProgress.get("contract-generate", id);
+  if (!progress) return res.json({ active: false });
+  res.json({ active: true, ...progress });
+}
+
+// Saves an admin's edits to the contract content (whatever the current
+// generated_content/final_content shape is — {sections:[{key,title,content}]})
+// as a new 'admin_edited' version. Deliberately separate from
+// updateContract's whitelisted-field PATCH above — this is structured
+// contract prose, not a builder form field.
+async function saveContractContent(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) {
+    return res.status(400).json({ error: "Invalid contract id." });
+  }
+  const contract = await Contract.findById(id);
+  if (!contract) {
+    return res.status(404).json({ error: "Contract not found." });
+  }
+
+  const { sections } = req.body || {};
+  if (!Array.isArray(sections) || sections.some((s) => !s || typeof s.key !== "string" || typeof s.title !== "string" || typeof s.content !== "string")) {
+    return res.status(400).json({ error: "sections must be an array of { key, title, content }." });
+  }
+
+  const content = { sections };
+  const updated = await Contract.setGeneratedContent(id, content);
+  await ContractVersion.create({ contractId: id, source: "admin_edited", content, createdBy: req.user.sub });
+  await logAction(id, "contract_edited", req.user.sub, {});
+  res.json({ contract: updated });
+}
+
+async function getContractVersions(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) {
+    return res.status(400).json({ error: "Invalid contract id." });
+  }
+  const contract = await Contract.findById(id);
+  if (!contract) {
+    return res.status(404).json({ error: "Contract not found." });
+  }
+  const versions = await ContractVersion.findAllByContractId(id);
+  res.json({ versions });
+}
+
 module.exports = {
   listContracts,
   getContract,
@@ -311,4 +389,8 @@ module.exports = {
   removeContractFeature,
   reviewContract,
   getContractReviewProgress,
+  generateContract,
+  getContractGenerationProgress,
+  saveContractContent,
+  getContractVersions,
 };

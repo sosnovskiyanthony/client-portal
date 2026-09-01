@@ -2941,3 +2941,43 @@ a:focus-visible {
 .review-severity-error .review-severity-badge { background: rgba(248, 113, 113, 0.15); color: #f87171; }
 .review-severity-warning .review-severity-badge { background: rgba(251, 191, 36, 0.15); color: #fbbf24; }
 .review-severity-info .review-severity-badge { background: rgba(255, 255, 255, 0.08); color: var(--text-tertiary); }
+
+.draft-actions {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.draft-section {
+  margin-bottom: 14px;
+}
+.draft-section textarea {
+  min-height: 90px;
+}
+
+.version-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-secondary);
+}
+.version-item:last-child { border-bottom: none; }
+
+.version-number {
+  font-weight: 600;
+  color: var(--text-primary);
+  min-width: 90px;
+}
+
+.version-source {
+  color: var(--text-tertiary);
+  flex: 1;
+}
+
+.version-date {
+  color: var(--text-tertiary);
+  font-size: 12px;
+}

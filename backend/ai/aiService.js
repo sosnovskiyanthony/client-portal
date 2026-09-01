@@ -27,6 +27,12 @@ const {
   CONTRACT_REVIEW_PROMPT_VERSION,
   buildContractReviewUserMessage,
 } = require("./contractReviewPrompt");
+const { ContractDraftSchema } = require("./contractSchema");
+const {
+  CONTRACT_SYSTEM_PROMPT,
+  CONTRACT_PROMPT_VERSION,
+  buildContractUserMessage,
+} = require("./contractPrompt");
 const { AiAnalysisError } = require("./errors");
 const ollamaProvider = require("./providers/ollamaProvider");
 const anthropicProvider = require("./providers/anthropicProvider");
@@ -208,6 +214,52 @@ async function reviewContract(approvedData, { client, onProgress } = {}) {
   };
 }
 
+// AI Task 2 (see ai/contractPrompt.js) — turns admin-approved contract data
+// into actual contract prose, one section per template section.
+// `templateSections` is the active ContractTemplate's `sections` array
+// (key/title/body_template) — never hardcoded here, so an admin editing
+// the template changes what gets drafted without a code change.
+async function generateContract(approvedData, templateSections, { client, onProgress } = {}) {
+  const providerName = env.aiProvider;
+  const provider = PROVIDERS[providerName];
+  if (!provider) {
+    throw new AiAnalysisError(
+      "unknown_provider",
+      `AI_PROVIDER "${providerName}" is not recognized. Expected one of: ${Object.keys(PROVIDERS).join(", ")}.`
+    );
+  }
+
+  onProgress?.("preparing");
+  const userMessage = buildContractUserMessage(approvedData, templateSections);
+  const model = provider.model();
+
+  onProgress?.("sending");
+  const { parsed } = await provider.impl.generateStructuredAnalysis({
+    systemPrompt: CONTRACT_SYSTEM_PROMPT,
+    userMessage,
+    zodSchema: ContractDraftSchema,
+    model,
+    client,
+    onProgress,
+  });
+  onProgress?.("validating");
+
+  const validation = ContractDraftSchema.safeParse(parsed);
+  if (!validation.success) {
+    throw new AiAnalysisError(
+      "invalid_schema",
+      `AI response did not match the required contract-draft schema: ${validation.error.issues.map((i) => i.path.join(".") + " " + i.message).join("; ")}`
+    );
+  }
+
+  return {
+    result: validation.data,
+    model,
+    provider: providerName,
+    promptVersion: CONTRACT_PROMPT_VERSION,
+  };
+}
+
 // Synchronous — lets callers record which provider/model an attempt is
 // about to use (or used, on failure) without needing to complete a request.
 function getActiveProviderInfo() {
@@ -216,4 +268,4 @@ function getActiveProviderInfo() {
   return { provider, model: entry ? entry.model() : null };
 }
 
-module.exports = { analyzeSubmission, draftEmail, reviewContract, getActiveProviderInfo, AiAnalysisError };
+module.exports = { analyzeSubmission, draftEmail, reviewContract, generateContract, getActiveProviderInfo, AiAnalysisError };
