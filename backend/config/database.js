@@ -121,6 +121,154 @@ async function init() {
     );
   `);
 
+  // Contracts feature — see ai/README.md's "Contracts" section (once
+  // written) for the full workflow. Deliberately separate from
+  // submission_analyses/email_drafts' 1:1-per-submission pattern: a
+  // re-negotiated deal can produce more than one contract for the same
+  // submission, so submission_id is NOT unique here.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS contract_number_counters (
+      year INTEGER PRIMARY KEY,
+      next_number INTEGER NOT NULL DEFAULT 1
+    );
+  `);
+
+  // Admin-editable master template — the legal section skeleton is owned by
+  // the business (and should be reviewed by real legal counsel), never
+  // invented by the AI. body_template is guidance text describing what each
+  // section should cover, fed to the AI generation prompt alongside the
+  // admin-approved contract data — not literal boilerplate injected verbatim.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS contract_templates (
+      id SERIAL PRIMARY KEY,
+      name TEXT NOT NULL,
+      is_active BOOLEAN NOT NULL DEFAULT false,
+      sections JSONB NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+
+  // Admin-managed feature/service catalog — deliberately NOT hardcoded into
+  // the AI generation prompt (see ai/contractPrompt.js). "active = false" is
+  // how a feature is retired, never a hard DELETE, so a past contract's
+  // contract_selected_features snapshot (which copies name/description/
+  // wording at selection time) is never affected by a later catalog edit.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS contract_features (
+      id SERIAL PRIMARY KEY,
+      category TEXT NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT,
+      default_wording TEXT,
+      default_price NUMERIC,
+      active BOOLEAN NOT NULL DEFAULT true,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS contracts (
+      id SERIAL PRIMARY KEY,
+      contract_number TEXT NOT NULL UNIQUE,
+      submission_id INTEGER NOT NULL REFERENCES submissions(id) ON DELETE CASCADE,
+      template_id INTEGER REFERENCES contract_templates(id),
+      client_name TEXT,
+      client_email TEXT,
+      client_company TEXT,
+      client_phone TEXT,
+      client_address TEXT,
+      project_name TEXT,
+      project_type TEXT,
+      project_description TEXT,
+      status TEXT NOT NULL DEFAULT 'draft',
+      price NUMERIC,
+      currency TEXT NOT NULL DEFAULT 'USD',
+      deposit_amount NUMERIC,
+      deposit_percentage NUMERIC,
+      remaining_balance NUMERIC,
+      payment_terms JSONB,
+      start_date DATE,
+      estimated_completion_date DATE,
+      included_revisions INTEGER,
+      additional_revision_rate NUMERIC,
+      additional_work_rate NUMERIC,
+      client_responsibilities JSONB,
+      custom_terms TEXT,
+      scope_snapshot JSONB,
+      generated_content JSONB,
+      final_content JSONB,
+      pdf_storage_path TEXT,
+      created_by INTEGER REFERENCES users(id),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      approved_at TIMESTAMPTZ,
+      finalized_at TIMESTAMPTZ,
+      sent_at TIMESTAMPTZ,
+      viewed_at TIMESTAMPTZ,
+      signed_at TIMESTAMPTZ
+    );
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS contracts_submission_id_idx ON contracts (submission_id);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS contracts_status_idx ON contracts (status);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS contracts_created_at_idx ON contracts (created_at DESC);`);
+
+  // name/category/description/wording are snapshotted here at selection
+  // time (not just a bare feature_id reference) so a later edit to the
+  // catalog row never retroactively changes what a past contract's scope
+  // actually said.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS contract_selected_features (
+      id SERIAL PRIMARY KEY,
+      contract_id INTEGER NOT NULL REFERENCES contracts(id) ON DELETE CASCADE,
+      feature_id INTEGER REFERENCES contract_features(id) ON DELETE SET NULL,
+      is_custom BOOLEAN NOT NULL DEFAULT false,
+      category TEXT NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT,
+      wording TEXT,
+      price NUMERIC,
+      notes TEXT,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS contract_selected_features_contract_id_idx ON contract_selected_features (contract_id);`);
+
+  // A 'final' version is never overwritten — finalizing a contract always
+  // inserts a new row rather than mutating an existing one.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS contract_versions (
+      id SERIAL PRIMARY KEY,
+      contract_id INTEGER NOT NULL REFERENCES contracts(id) ON DELETE CASCADE,
+      version_number INTEGER NOT NULL,
+      source TEXT NOT NULL,
+      content JSONB NOT NULL,
+      change_note TEXT,
+      created_by INTEGER REFERENCES users(id),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      UNIQUE (contract_id, version_number)
+    );
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS contract_versions_contract_id_idx ON contract_versions (contract_id);`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS contract_audit_log (
+      id SERIAL PRIMARY KEY,
+      contract_id INTEGER REFERENCES contracts(id) ON DELETE CASCADE,
+      action TEXT NOT NULL,
+      actor_user_id INTEGER REFERENCES users(id),
+      details JSONB,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS contract_audit_log_contract_id_idx ON contract_audit_log (contract_id);`);
+
+  await seedContractTemplate();
+  await seedContractFeatures();
+
   // The admin account is fully driven by ADMIN_EMAIL/ADMIN_PASSWORD — there's
   // no in-app "change password" flow, so on every startup we reconcile the
   // stored admin to match those env vars, not just seed it once. That way
@@ -152,6 +300,74 @@ async function init() {
       console.log(`Synced admin user (${changed} changed): ${env.adminEmail}`);
     }
   }
+}
+
+// The ~20 standard legal sections a real contract needs, as guidance for
+// the AI drafting prompt (ai/contractPrompt.js) — never literal boilerplate
+// injected verbatim. Owned by the business, editable by the admin via the
+// template CRUD endpoints; this seed only ever runs once (skipped if any
+// template row already exists), so an admin's later edits are never
+// silently reverted by a redeploy.
+const DEFAULT_TEMPLATE_SECTIONS = [
+  { key: "parties", title: "Parties", body_template: "Identify the two parties to this agreement: the service provider (the business) and the client (name, company, and contact details from the approved client information)." },
+  { key: "project_description", title: "Project Description", body_template: "Describe the project in professional terms, grounded only in the approved project name/type/description — do not add scope details not present elsewhere in the approved data." },
+  { key: "scope_of_work", title: "Scope of Work", body_template: "List, explicitly and individually, every approved included feature/service by name. State clearly that anything not explicitly listed here is out of scope and requires a separate change order — never a vague phrase like 'includes all requested features.'" },
+  { key: "deliverables", title: "Deliverables", body_template: "State the concrete deliverables implied directly by the approved scope of work — do not invent deliverables beyond what the selected features establish." },
+  { key: "client_responsibilities", title: "Client Responsibilities", body_template: "List the approved client responsibilities (e.g. providing content, credentials, timely feedback) exactly as approved — do not add responsibilities not present in the approved data." },
+  { key: "timeline", title: "Timeline", body_template: "State the approved start date and estimated completion date. Make clear these are estimates, not guaranteed deadlines, and note that client delays (e.g. late content/feedback) can shift them." },
+  { key: "pricing", title: "Pricing", body_template: "State the approved total price and currency exactly as approved. Never state a different figure than the approved price." },
+  { key: "payment_terms", title: "Payment Terms", body_template: "State the approved deposit amount/percentage, remaining balance, payment schedule, due dates, and payment method exactly as approved." },
+  { key: "revisions", title: "Revisions", body_template: "State the approved number of included revisions and the approved additional-revision rate. Do not invent a revision count or rate not present in the approved data." },
+  { key: "additional_work", title: "Additional Work", body_template: "State the approved additional-work rate and that work outside the defined scope of work is billed separately at that rate." },
+  { key: "hosting", title: "Hosting", body_template: "Describe hosting-related terms only if a hosting-related feature was approved in the scope of work; otherwise state hosting is not included in this agreement." },
+  { key: "maintenance", title: "Maintenance", body_template: "Describe maintenance-related terms only if a maintenance-related feature was approved in the scope of work; otherwise state maintenance is not included in this agreement." },
+  { key: "third_party_services", title: "Third-Party Services", body_template: "List any approved third-party integrations (e.g. payment processors, analytics, scheduling tools) from the scope of work, and note the client is responsible for that service's own terms/costs unless stated otherwise in the approved data." },
+  { key: "intellectual_property", title: "Intellectual Property", body_template: "State IP ownership terms only as given in the approved custom terms — do not invent an IP transfer/licensing arrangement not present in the approved data." },
+  { key: "confidentiality", title: "Confidentiality", body_template: "State confidentiality terms only as given in the approved custom terms — do not invent obligations not present in the approved data." },
+  { key: "cancellation_termination", title: "Cancellation/Termination", body_template: "State cancellation/termination terms only as given in the approved custom terms — do not invent conditions not present in the approved data." },
+  { key: "limitation_of_liability", title: "Limitation of Liability", body_template: "State liability terms only as given in the approved custom terms — do not invent a liability cap or disclaimer not present in the approved data." },
+  { key: "dispute_resolution", title: "Dispute Resolution", body_template: "State dispute-resolution terms only as given in the approved custom terms — do not invent an arbitration/mediation process not present in the approved data." },
+  { key: "governing_law", title: "Governing Law", body_template: "State the governing jurisdiction only as given in the approved custom terms or client address — do not invent a jurisdiction not present in the approved data." },
+  { key: "acceptance", title: "Acceptance", body_template: "A short statement that by signing below, both parties agree to the terms of this agreement as stated above." },
+  { key: "signatures", title: "Signatures", body_template: "A signature block for both the service provider and the client, with name, title, and date fields for each." },
+];
+
+async function seedContractTemplate() {
+  const { rows } = await pool.query("SELECT id FROM contract_templates LIMIT 1");
+  if (rows.length > 0) return;
+  await pool.query(
+    "INSERT INTO contract_templates (name, is_active, sections) VALUES ($1, true, $2)",
+    ["Standard Web Design Contract", JSON.stringify(DEFAULT_TEMPLATE_SECTIONS)]
+  );
+  console.log("Seeded default contract template.");
+}
+
+// Starter catalog from the feature spec — deliberately admin-editable
+// afterward (see contractFeatureController.js), never hardcoded into the AI
+// prompt. "Other" isn't seeded as a real row on purpose: it's the cue for
+// the admin to add a custom feature instead, not a selectable catalog item.
+const DEFAULT_CONTRACT_FEATURES = [
+  ["Website Pages", ["Homepage", "About", "Services", "Contact", "FAQ", "Blog", "Portfolio", "Pricing", "Landing Pages"]],
+  ["Functionality", ["Contact Form", "Booking System", "Newsletter", "User Accounts", "Customer Portal", "Search", "Reviews/Testimonials", "E-commerce", "Payment Processing", "Membership System", "File Uploads"]],
+  ["Integrations", ["Google Analytics", "Google Search Console", "Stripe", "PayPal", "Calendly", "Mailchimp", "HubSpot", "Social Media"]],
+  ["SEO", ["Basic On-Page SEO", "Metadata", "Sitemap", "Robots.txt", "Google Search Console Setup", "Schema Markup", "Keyword Research"]],
+  ["Hosting & Maintenance", ["Domain Setup", "Hosting", "SSL", "Backups", "Security Monitoring", "Maintenance"]],
+];
+
+async function seedContractFeatures() {
+  const { rows } = await pool.query("SELECT id FROM contract_features LIMIT 1");
+  if (rows.length > 0) return;
+  let sortOrder = 0;
+  for (const [category, names] of DEFAULT_CONTRACT_FEATURES) {
+    for (const name of names) {
+      await pool.query(
+        "INSERT INTO contract_features (category, name, active, sort_order) VALUES ($1, $2, true, $3)",
+        [category, name, sortOrder]
+      );
+      sortOrder += 1;
+    }
+  }
+  console.log(`Seeded ${sortOrder} default contract features.`);
 }
 
 module.exports = { pool, init };
