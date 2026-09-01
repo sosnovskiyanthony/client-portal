@@ -39,7 +39,15 @@ function buildEmailHtml(submission, typeLabel) {
   const rows = Object.entries(submission.projectDetails || {})
     .filter(([, value]) => value !== null && value !== undefined && value !== "")
     .map(([key, value]) => {
-      const display = Array.isArray(value) ? value.join(", ") : String(value);
+      // brandAssets is an array of {path, filename, ...} objects, not
+      // strings — the generic Array.isArray(value).join(", ") branch below
+      // would otherwise render it as literal "[object Object]" text.
+      const display =
+        key === "brandAssets" && Array.isArray(value)
+          ? value.map((a) => (a && typeof a === "object" ? a.filename || a.path : String(a))).join(", ")
+          : Array.isArray(value)
+            ? value.join(", ")
+            : String(value);
       return `<tr><td style="padding:4px 12px 4px 0;color:#71717a;font-size:13px;white-space:nowrap;">${escapeHtml(key)}</td><td style="padding:4px 0;font-size:13px;color:#18181b;">${escapeHtml(display)}</td></tr>`;
     })
     .join("");
@@ -61,4 +69,4 @@ function escapeHtml(str) {
     .replace(/"/g, "&quot;");
 }
 
-module.exports = { notifyNewSubmission };
+module.exports = { notifyNewSubmission, buildEmailHtml };

@@ -302,3 +302,64 @@ test("seo/contact submissions are not analyzed (feature scoped to web-design onl
   assert.ok(filterBody.submissions.length > 0, "the contact submission just created must appear in the filtered results");
   assert.ok(filterBody.submissions.every((s) => s.type === "contact"), "every returned row must match the requested type filter");
 });
+
+// PUT .../outcome isn't rate-limited (admin-only, low-frequency data entry —
+// see routes/admin.js), so these reuse the contact submission created above
+// rather than needing a fresh POST against the shared submissionLimiter budget.
+test("upsertOutcome rejects a non-numeric quotedPrice with a clear 400, not a raw DB error", async () => {
+  const token = await adminToken();
+  const listRes = await fetch(`${BASE_URL}/api/admin/submissions?type=contact&page=1`, { headers: { Authorization: `Bearer ${token}` } });
+  const { submissions } = await listRes.json();
+  const submissionId = submissions[0].id;
+
+  const res = await fetch(`${BASE_URL}/api/admin/submissions/${submissionId}/outcome`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ quotedPrice: "not-a-number" }),
+  });
+  const body = await res.json();
+  assert.equal(res.status, 400);
+  assert.ok(body.error.includes("quotedPrice"));
+});
+
+test("upsertOutcome rejects a negative finalPrice with a clear 400", async () => {
+  const token = await adminToken();
+  const listRes = await fetch(`${BASE_URL}/api/admin/submissions?type=contact&page=1`, { headers: { Authorization: `Bearer ${token}` } });
+  const { submissions } = await listRes.json();
+  const submissionId = submissions[0].id;
+
+  const res = await fetch(`${BASE_URL}/api/admin/submissions/${submissionId}/outcome`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ finalPrice: -500 }),
+  });
+  const body = await res.json();
+  assert.equal(res.status, 400);
+  assert.ok(body.error.includes("finalPrice"));
+});
+
+test("upsertOutcome accepts a valid non-negative price, and accepts clearing a price via empty string", async () => {
+  const token = await adminToken();
+  const listRes = await fetch(`${BASE_URL}/api/admin/submissions?type=contact&page=1`, { headers: { Authorization: `Bearer ${token}` } });
+  const { submissions } = await listRes.json();
+  const submissionId = submissions[0].id;
+
+  const okRes = await fetch(`${BASE_URL}/api/admin/submissions/${submissionId}/outcome`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ quotedPrice: 1500, finalPrice: 1500 }),
+  });
+  const okBody = await okRes.json();
+  assert.equal(okRes.status, 200);
+  assert.equal(okBody.outcome.quotedPrice, 1500);
+
+  const clearRes = await fetch(`${BASE_URL}/api/admin/submissions/${submissionId}/outcome`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ quotedPrice: "", finalPrice: null }),
+  });
+  const clearBody = await clearRes.json();
+  assert.equal(clearRes.status, 200);
+  assert.equal(clearBody.outcome.quotedPrice, null);
+  assert.equal(clearBody.outcome.finalPrice, null);
+});

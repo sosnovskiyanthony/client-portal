@@ -24,6 +24,41 @@ test("csvField renders null/undefined as an empty field", () => {
   assert.equal(csvField(undefined), "");
 });
 
+// CSV/Excel formula injection (CWE-1236) — every field here can originate
+// from an anonymous public form submission, and a value starting with one
+// of these characters is interpreted as a formula by spreadsheet apps
+// regardless of CSV quoting. A leading single quote forces plain-text.
+test("csvField neutralizes a leading = (formula injection)", () => {
+  // Also contains commas and quotes, so it's both prefixed and
+  // RFC4180-quoted (with internal quotes doubled) — that's correct.
+  assert.equal(
+    csvField('=HYPERLINK("http://evil.example","click")'),
+    '"\'=HYPERLINK(""http://evil.example"",""click"")"'
+  );
+  // A plain leading = with nothing else special in it — prefixed, not quoted.
+  assert.equal(csvField("=cmd"), "'=cmd");
+});
+
+test("csvField neutralizes a leading +, -, and @", () => {
+  assert.equal(csvField("+1+1"), "'+1+1");
+  assert.equal(csvField("-2+3"), "'-2+3");
+  // Contains a comma too, so this one is both prefixed and RFC4180-quoted —
+  // that's correct, not a bug.
+  assert.equal(csvField("@SUM(1,2)"), '"\'@SUM(1,2)"');
+});
+
+test("csvField neutralizes a leading tab or carriage return used to smuggle a formula prefix", () => {
+  assert.equal(csvField("\t=cmd"), "'\t=cmd");
+  // \r also triggers the separate RFC4180 quoting rule, so this one is both
+  // prefixed and quoted — that's correct, not a bug.
+  assert.equal(csvField("\r=cmd"), '"\'\r=cmd"');
+});
+
+test("csvField does not touch a value that merely contains, but doesn't start with, a formula character", () => {
+  assert.equal(csvField("price = $5"), "price = $5");
+  assert.equal(csvField("email@example.com"), "email@example.com");
+});
+
 test("toCsv produces a header row plus one row per input, CRLF-terminated", () => {
   const csv = toCsv(
     [

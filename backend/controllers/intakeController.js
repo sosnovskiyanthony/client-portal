@@ -1,7 +1,7 @@
 const { randomUUID } = require("crypto");
 const Submission = require("../models/Submission");
 const { notifyNewSubmission } = require("../services/email");
-const { EMAIL_RE } = require("../lib/validators");
+const { EMAIL_RE, BRAND_ASSET_PATH_RE } = require("../lib/validators");
 const storage = require("../services/storage");
 
 // Mirrors each form's own client-side "isComplete" gating on its submit
@@ -24,9 +24,14 @@ function isMissing(value) {
 // submitted projectDetails. This is the server's defense-in-depth check on
 // that reference list for a submission arriving via a direct API call, not
 // the real form — it can't verify a path was genuinely issued by
-// uploadBrandAssets, but it does confine the shape and prefix to what that
-// endpoint could ever have produced.
-const ALLOWED_ASSET_CONTENT_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml", "application/pdf"];
+// uploadBrandAssets, but BRAND_ASSET_PATH_RE confines it to exactly the
+// shape that endpoint could ever have produced (see lib/validators.js).
+// SVG is deliberately excluded — it's an active format (can embed
+// <script>), and an uploaded file gets served back to the admin via direct
+// navigation on "View" (frontend/js/admin.js), not a sandboxed <img>. A
+// malicious SVG uploaded through this public endpoint would execute in the
+// admin's browser the moment they view it.
+const ALLOWED_ASSET_CONTENT_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp", "application/pdf"];
 const MAX_BRAND_ASSETS = 5;
 
 function sanitizeBrandAssets(value) {
@@ -37,7 +42,7 @@ function sanitizeBrandAssets(value) {
         a &&
         typeof a === "object" &&
         typeof a.path === "string" &&
-        a.path.startsWith("brand-assets/") &&
+        BRAND_ASSET_PATH_RE.test(a.path) &&
         ALLOWED_ASSET_CONTENT_TYPES.includes(a.contentType)
     )
     .slice(0, MAX_BRAND_ASSETS)

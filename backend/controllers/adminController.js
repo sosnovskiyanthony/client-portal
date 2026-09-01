@@ -6,6 +6,7 @@ const { runAnalysis } = require("../services/runAnalysis");
 const { runDraftEmail } = require("../services/draftEmail");
 const { toCsv } = require("../utils/csv");
 const storage = require("../services/storage");
+const { BRAND_ASSET_PATH_RE } = require("../lib/validators");
 
 async function listSubmissions(req, res) {
   const type = typeof req.query.type === "string" ? req.query.type : "all";
@@ -50,6 +51,18 @@ async function upsertOutcome(req, res) {
   }
 
   const { outcome, finalScope, actualTimeline, quotedPrice, finalPrice, featuresDelivered, notes } = req.body || {};
+
+  // ProjectOutcome.upsert treats undefined/null/"" as "clear this field" —
+  // anything else must be a real, non-negative number. Without this, a
+  // non-numeric value (e.g. a stray string) reaches the NUMERIC column as a
+  // raw, unclassified Postgres error (a generic 500, not a clear 400), and a
+  // negative price would otherwise be stored silently.
+  for (const [field, value] of [["quotedPrice", quotedPrice], ["finalPrice", finalPrice]]) {
+    const isEmpty = value === undefined || value === null || value === "";
+    if (!isEmpty && (typeof value !== "number" || !Number.isFinite(value) || value < 0)) {
+      return res.status(400).json({ error: `${field} must be a non-negative number.` });
+    }
+  }
 
   let outcomeRow;
   try {
@@ -127,13 +140,16 @@ async function exportSubmissions(req, res) {
 
 // Admin-only. The bucket is private (see services/storage.js), so viewing a
 // brand asset uploaded on the web-design intake means generating a
-// short-lived signed URL on demand rather than storing a permanent one. The
-// prefix check is defense-in-depth against this endpoint being used as a
-// generic Supabase Storage proxy — every path this app itself ever writes
-// starts with "brand-assets/" (see intakeController.uploadBrandAssets).
+// short-lived signed URL on demand rather than storing a permanent one.
+// BRAND_ASSET_PATH_RE is defense-in-depth against this endpoint being used
+// as a generic Supabase Storage proxy — it matches only the exact shape
+// every path this app itself ever writes has (see lib/validators.js; a bare
+// prefix check here was previously bypassable with a path like
+// "brand-assets/../../../etc/passwd", which also starts with
+// "brand-assets/").
 async function getAssetSignedUrl(req, res) {
   const { path } = req.body || {};
-  if (typeof path !== "string" || !path.startsWith("brand-assets/")) {
+  if (typeof path !== "string" || !BRAND_ASSET_PATH_RE.test(path)) {
     return res.status(400).json({ error: "Invalid asset path." });
   }
   if (!storage.isConfigured()) {

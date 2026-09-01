@@ -26,10 +26,32 @@ app.disable("x-powered-by");
 // /api/auth/login (and every other endpoint) cross-origin for no reason —
 // removing it restores the browser's default same-origin restriction.
 
+// No 'unsafe-inline' anywhere — every page in frontend/ loads CSS/JS from
+// real files (no inline <script>/<style>, no onclick= attributes), so this
+// doesn't need the escape hatches most CSPs end up needing. The GA snippet
+// specifically was rewritten (see renderGaSnippet() below and
+// frontend/js/analytics.js) from an inline <script> to a dynamically-created
+// one precisely so this could stay strict. The JWT lives in localStorage
+// (see frontend/js/common.js), not an httpOnly cookie, so this is real
+// defense against a same-origin XSS turning into full session theft, not
+// just a hardening checkbox.
+const CSP =
+  "default-src 'self'; " +
+  "script-src 'self' https://www.googletagmanager.com; " +
+  "style-src 'self' https://fonts.googleapis.com; " +
+  "font-src 'self' https://fonts.gstatic.com; " +
+  "img-src 'self' data:; " +
+  "connect-src 'self' https://www.google-analytics.com https://*.google-analytics.com https://www.googletagmanager.com; " +
+  "object-src 'none'; " +
+  "base-uri 'self'; " +
+  "form-action 'self'; " +
+  "frame-ancestors 'none'";
+
 app.use((req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "DENY");
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("Content-Security-Policy", CSP);
   // No-op over plain HTTP (local dev); takes effect once served over HTTPS.
   res.setHeader("Strict-Transport-Security", "max-age=63072000; includeSubDomains");
   next();
@@ -65,16 +87,16 @@ function contentTypeFor(reqPath) {
   return "text/html";
 }
 
+// Emits a <meta> tag carrying the measurement ID, not an inline <script> —
+// frontend/js/analytics.js reads it and only actually loads GA (dynamically,
+// via document.createElement) after the visitor accepts the consent banner.
+// This is also what keeps the site compatible with a strict
+// script-src 'self' https://www.googletagmanager.com CSP with no
+// 'unsafe-inline' exception (see the Content-Security-Policy header below).
 function renderGaSnippet() {
   if (!env.gaMeasurementId) return "";
-  const id = env.gaMeasurementId;
-  return `<script async src="https://www.googletagmanager.com/gtag/js?id=${id}"></script>
-<script>
-  window.dataLayer = window.dataLayer || [];
-  function gtag(){dataLayer.push(arguments);}
-  gtag('js', new Date());
-  gtag('config', '${id}');
-</script>`;
+  const id = env.gaMeasurementId.replace(/"/g, "&quot;");
+  return `<meta name="ga-measurement-id" content="${id}" />`;
 }
 
 function templateFileContents(contents) {

@@ -69,7 +69,11 @@
 
   const MAX_BRAND_ASSETS = 5;
   const MAX_ASSET_BYTES = 15 * 1024 * 1024;
-  const ALLOWED_ASSET_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml", "application/pdf"];
+  // SVG deliberately excluded — it's an active format (can embed <script>),
+  // and this file gets served back to the admin via direct navigation on
+  // "View", not a sandboxed <img>. See controllers/intakeController.js's
+  // matching allowlist.
+  const ALLOWED_ASSET_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp", "application/pdf"];
 
   function renderAssetList() {
     els.assetList.innerHTML = state.data.brandAssets

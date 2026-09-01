@@ -237,9 +237,9 @@
           <div class="field-group">
             <span class="field-group-label">Brand assets <span class="field-optional">(optional — logo, style guide, etc.)</span></span>
             <label class="asset-upload-dropzone" for="input-brand-assets">
-              <input class="sr-only" type="file" id="input-brand-assets" multiple accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml,application/pdf" />
+              <input class="sr-only" type="file" id="input-brand-assets" multiple accept="image/png,image/jpeg,image/gif,image/webp,application/pdf" />
               <span class="asset-upload-label">Click to attach files</span>
-              <span class="asset-upload-hint">PNG, JPG, GIF, WEBP, SVG, or PDF — up to 15MB each, 5 files max.</span>
+              <span class="asset-upload-hint">PNG, JPG, GIF, WEBP, or PDF — up to 15MB each, 5 files max.</span>
             </label>
             <ul class="asset-list" id="asset-list"></ul>
             <p class="asset-upload-status" id="asset-upload-status" aria-live="polite"></p>
@@ -319,7 +319,16 @@
   <p>&copy; 2026 Studio. <a href="contact.html">Contact</a></p>
 </footer>
 
+<div class="consent-banner" id="consent-banner" role="region" aria-label="Cookie consent" hidden>
+  <p class="consent-banner-text">This site uses Google Analytics to understand traffic. No analytics data is collected unless you accept.</p>
+  <div class="consent-banner-actions">
+    <button class="btn btn-ghost" id="consent-decline-btn" type="button">Decline</button>
+    <button class="btn btn-primary" id="consent-accept-btn" type="button">Accept</button>
+  </div>
+</div>
+
 <script src="js/common.js"></script>
+<script src="js/analytics.js"></script>
 <script src="js/web-design.js"></script>
 </body>
 </html>

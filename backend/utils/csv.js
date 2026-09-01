@@ -2,7 +2,17 @@
 // when it actually needs it (contains a comma, quote, or newline); internal
 // quotes are doubled per the RFC.
 function csvField(value) {
-  const s = value === null || value === undefined ? "" : String(value);
+  let s = value === null || value === undefined ? "" : String(value);
+
+  // Every field here can originate from an anonymous public form submission
+  // (name, email, project details) — a value starting with =, +, -, @, or a
+  // tab/CR is interpreted as a formula by Excel/Sheets/Numbers regardless of
+  // CSV quoting (CSV/Excel formula injection, CWE-1236). Prefixing with a
+  // single quote forces it to be read as plain text instead of executed.
+  if (/^[=+\-@\t\r]/.test(s)) {
+    s = "'" + s;
+  }
+
   if (/[",\n\r]/.test(s)) {
     return `"${s.replace(/"/g, '""')}"`;
   }

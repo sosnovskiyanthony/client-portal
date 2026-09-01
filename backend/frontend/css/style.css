@@ -716,6 +716,18 @@ button, input, textarea {
   background: var(--surface-hover);
 }
 
+/* The actual <input type="file"> inside this label is visually hidden via
+   .sr-only (not display:none, so it stays focusable/operable) — without
+   this, a keyboard user tabbing to it has no visible indication of where
+   focus is at all. :focus-within (not :focus-visible on the input itself)
+   so the visible label element is what gets the ring, matching how this
+   control actually looks to a sighted user. */
+.asset-upload-dropzone:focus-within {
+  border-color: var(--border-selected);
+  background: var(--surface-hover);
+  box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.45);
+}
+
 .asset-upload-label {
   font-size: 13.5px;
   font-weight: 600;
@@ -797,6 +809,40 @@ button, input, textarea {
 }
 
 .draft-banner-actions {
+  display: flex;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+/* ---------- Cookie/analytics consent banner ---------- */
+.consent-banner {
+  position: fixed;
+  left: 16px;
+  right: 16px;
+  bottom: 16px;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 16px 20px;
+  border-radius: var(--radius-md);
+  background: var(--surface-selected);
+  border: 1px solid var(--border-hover);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+}
+
+.consent-banner-text {
+  font-size: 13.5px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.consent-banner-actions {
   display: flex;
   gap: 10px;
   flex-shrink: 0;
@@ -1044,8 +1090,18 @@ button, input, textarea {
 }
 
 .btn-ghost:disabled {
-  opacity: 0;
+  opacity: 0.45;
   pointer-events: none;
+}
+
+/* Pagination's Prev/Next specifically want to vanish rather than just dim
+   when there's no other page — this is what keeps the pagination bar's
+   width stable instead of a dimmed dead button sitting there. Every other
+   disabled .btn-ghost (the several async "Loading…"/"Saving…" states added
+   since) should stay visible and dimmed — a login button that opacity:0'd on
+   click looked like nothing was happening. */
+.btn-ghost-collapse:disabled {
+  opacity: 0;
 }
 
 .btn-large {
@@ -1102,6 +1158,22 @@ button, input, textarea {
   align-items: center;
   gap: 10px;
   margin: 0 auto 32px;
+}
+
+/* Narrower, tighter-spaced variants used on the SEO/web-design-services
+   pages — previously inline style="" on the element; pulled into real
+   classes so the site can run under a CSP with no style-src
+   'unsafe-inline' exception. */
+.home-highlights-narrow {
+  max-width: 820px;
+}
+
+.home-highlights-narrow.home-highlights-tight {
+  margin-bottom: 8px;
+}
+
+.home-highlights-narrow:not(.home-highlights-tight) {
+  margin-bottom: 0;
 }
 
 .home-highlight {
@@ -2174,6 +2246,20 @@ a:focus-visible {
   margin-top: 14px;
 }
 
+/* Centered, narrower variant used under the SEO/web-design-services intake
+   teasers — previously an inline style="" on the element; pulled into a
+   real class so the site can run under a CSP with no style-src
+   'unsafe-inline' exception. */
+.section-copy-centered {
+  text-align: center;
+  margin-top: 20px;
+}
+
+.section-copy-wide {
+  max-width: 720px;
+  text-align: center;
+}
+
 /* ---------- Info grid (informational cards, e.g. "what's included") ---------- */
 .info-grid {
   display: grid;
@@ -2190,6 +2276,10 @@ a:focus-visible {
   grid-template-columns: repeat(2, 1fr);
   max-width: 820px;
   margin: 0 auto;
+}
+
+.info-grid-spaced {
+  margin-top: 24px;
 }
 
 /* ---------- Process steps ---------- */

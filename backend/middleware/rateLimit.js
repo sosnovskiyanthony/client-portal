@@ -31,4 +31,20 @@ const analysisLimiter = rateLimit({
   message: { error: "Too many analysis requests. Please try again later." },
 });
 
-module.exports = { loginLimiter, submissionLimiter, analysisLimiter };
+// Brand-asset uploads (web-design intake only) — public and unauthenticated,
+// so this stays deliberately separate from submissionLimiter: a legitimate
+// visitor attaching several files across multiple selections shouldn't burn
+// through the same budget their final form submit (or a later contact-form
+// visit, since submissionLimiter is shared across all of /api/intake/* +
+// /api/contact) needs. Still bounded — each request can carry up to 5 files
+// x 15MB (see routes/intake.js), so this caps a single IP at roughly
+// 1.5GB/hour of attempted uploads, not unlimited.
+const uploadLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many upload requests. Please try again later." },
+});
+
+module.exports = { loginLimiter, submissionLimiter, analysisLimiter, uploadLimiter };

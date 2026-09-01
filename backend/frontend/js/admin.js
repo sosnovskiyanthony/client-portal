@@ -585,9 +585,9 @@
     const end = Math.min(currentPage * pageSize, total);
 
     els.pagination.innerHTML = `
-      <button class="btn btn-ghost" id="pagination-prev" type="button" ${currentPage <= 1 ? "disabled" : ""}>Previous</button>
+      <button class="btn btn-ghost btn-ghost-collapse" id="pagination-prev" type="button" ${currentPage <= 1 ? "disabled" : ""}>Previous</button>
       <span class="pagination-status">Showing ${start}–${end} of ${total} (page ${currentPage} of ${totalPages})</span>
-      <button class="btn btn-ghost" id="pagination-next" type="button" ${currentPage >= totalPages ? "disabled" : ""}>Next</button>
+      <button class="btn btn-ghost btn-ghost-collapse" id="pagination-next" type="button" ${currentPage >= totalPages ? "disabled" : ""}>Next</button>
     `;
   }
 
@@ -737,10 +737,22 @@
       btn.disabled = true;
       btn.textContent = "Loading…";
 
+      // Most browsers only allow window.open() to succeed when it's called
+      // synchronously within the original click — once anything is awaited
+      // first, it's silently blocked as a popup (returns null, doesn't
+      // throw). Opening a blank tab right here, then redirecting it once the
+      // signed URL resolves, keeps this inside the trusted-gesture window.
+      const win = window.open("", "_blank", "noopener");
+
       try {
         const url = await getAssetSignedUrl(path);
-        window.open(url, "_blank", "noopener");
+        if (win) {
+          win.location = url;
+        } else {
+          els.adminSub.textContent = "Your browser blocked the new tab — allow pop-ups for this site and try again.";
+        }
       } catch (err) {
+        if (win) win.close();
         els.adminSub.textContent = err.message;
         if (!isAdminLoggedIn()) render();
       } finally {

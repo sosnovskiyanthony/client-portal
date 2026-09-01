@@ -1,15 +1,16 @@
 const express = require("express");
 const multer = require("multer");
 const intakeController = require("../controllers/intakeController");
-const { submissionLimiter } = require("../middleware/rateLimit");
+const { submissionLimiter, uploadLimiter } = require("../middleware/rateLimit");
 const asyncHandler = require("../middleware/asyncHandler");
 
 const router = express.Router();
 
-router.use(submissionLimiter);
-
-router.post("/web-design", asyncHandler(intakeController.webDesign));
-router.post("/seo", asyncHandler(intakeController.seo));
+// submissionLimiter applies only to the actual form-submit endpoints now —
+// /web-design/assets has its own uploadLimiter below (see
+// middleware/rateLimit.js for why they're kept separate).
+router.post("/web-design", submissionLimiter, asyncHandler(intakeController.webDesign));
+router.post("/seo", submissionLimiter, asyncHandler(intakeController.seo));
 
 // Brand-asset uploads on the web-design intake form (see
 // intakeController.uploadBrandAssets / services/storage.js). Buffered in
@@ -37,6 +38,6 @@ function handleUpload(req, res, next) {
   });
 }
 
-router.post("/web-design/assets", handleUpload, asyncHandler(intakeController.uploadBrandAssets));
+router.post("/web-design/assets", uploadLimiter, handleUpload, asyncHandler(intakeController.uploadBrandAssets));
 
 module.exports = router;

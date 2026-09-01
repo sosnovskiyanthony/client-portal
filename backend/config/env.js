@@ -16,12 +16,28 @@ if (!jwtSecret) {
   jwtSecret = INSECURE_JWT_FALLBACK;
 }
 
+// Same reasoning as JWT_SECRET above: the fallback values here are printed
+// in .env.example and README.md, so a silent fallback in production would
+// mean anyone who's ever seen this repo can log into the live admin
+// dashboard — which now holds every lead's PII plus uploaded files. Fail
+// loud in production; only fall back (with a visible warning) for local dev.
+let adminEmail = process.env.ADMIN_EMAIL;
+let adminPassword = process.env.ADMIN_PASSWORD;
+if (!adminEmail || !adminPassword) {
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("ADMIN_EMAIL and ADMIN_PASSWORD must both be set in production — refusing to start with an insecure default.");
+  }
+  console.warn("[env] ADMIN_EMAIL/ADMIN_PASSWORD not set — using an insecure default. This is only OK for local dev.");
+  adminEmail = adminEmail || "admin@studio.dev";
+  adminPassword = adminPassword || "studio-admin";
+}
+
 module.exports = {
   port: Number(process.env.PORT) || 8743,
   jwtSecret,
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || "12h",
-  adminEmail: (process.env.ADMIN_EMAIL || "admin@studio.dev").toLowerCase(),
-  adminPassword: process.env.ADMIN_PASSWORD || "studio-admin",
+  adminEmail: adminEmail.toLowerCase(),
+  adminPassword,
 
   // Postgres connection string. Get this from Supabase: Project Settings →
   // Database → Connection string (use the "Session pooler" or direct URI).
@@ -49,7 +65,14 @@ module.exports = {
   // not hardcoded per file — so it can be swapped or unset from one place.
   // Deliberately left off admin.html (no reason to track the owner's own
   // dashboard visits).
-  gaMeasurementId: process.env.GA_MEASUREMENT_ID || "G-GZ4Y4JKWLR",
+  //
+  // Opt-in by default (empty, not a real ID): a hardcoded fallback here
+  // would mean a deployment that forgets to set this env var silently
+  // starts reporting its real traffic to whatever GA property that fallback
+  // ID belongs to — someone else's, in a template/demo repo. GA also only
+  // ever actually loads after the visitor accepts the consent banner (see
+  // frontend/js/analytics.js) regardless of whether this is set.
+  gaMeasurementId: process.env.GA_MEASUREMENT_ID || "",
 
   // AI project analysis (see ai/aiService.js). "ollama" is the default —
   // free, local inference, no API key, $0 per request. "anthropic" is built
