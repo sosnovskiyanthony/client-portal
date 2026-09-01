@@ -71,6 +71,23 @@ if [ -n "$TAILSCALE_AUTHKEY" ]; then
       # ai/providers/ollamaProvider.js, nowhere else.
       export TAILSCALE_HTTP_PROXY="http://localhost:1055"
       echo "[tailscale] Connected. Ollama requests will route through the local proxy at $TAILSCALE_HTTP_PROXY."
+
+      # Diagnostics, not guesswork: real analysis requests have twice now
+      # timed out with zero response even through the DERP relay fallback
+      # (see ai/README.md's "Known flakiness" section) — this shows, on
+      # every boot, whether that's still true at the Tailscale layer itself
+      # (direct path vs. relay-only, latency, packet loss) rather than
+      # inferring it after the fact from a failed request's own logs.
+      # `|| true`/`|| echo` on each so a failed diagnostic (the actual thing
+      # being tested for) never aborts the script under `set -e` — worth
+      # removing once the underlying connectivity issue is resolved.
+      if [ -n "$OLLAMA_BASE_URL" ]; then
+        OLLAMA_HOST_IP=$(echo "$OLLAMA_BASE_URL" | sed -E 's#^https?://##; s#:[0-9]+$##')
+        echo "[tailscale] Pinging Ollama host ($OLLAMA_HOST_IP) at the Tailscale layer..."
+        tailscale --socket=/tmp/tailscaled.sock ping --c=3 "$OLLAMA_HOST_IP" || echo "[tailscale] ping did not complete — see output above."
+      fi
+      echo "[tailscale] Network condition report:"
+      tailscale --socket=/tmp/tailscaled.sock netcheck || echo "[tailscale] netcheck failed to complete."
     else
       echo "[tailscale] WARNING: tailscale up failed — continuing without it. Ollama analysis will fail until this is fixed, but the rest of the app is unaffected."
     fi
