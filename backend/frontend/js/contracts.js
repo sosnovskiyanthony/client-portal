@@ -228,6 +228,7 @@
       ${renderRevisionsSection()}
       ${renderResponsibilitiesSection()}
       ${renderCustomTermsSection()}
+      ${renderReviewSection()}
     `;
 
     wireClientSection();
@@ -239,6 +240,7 @@
     wireRevisionsSection();
     wireResponsibilitiesSection();
     wireCustomTermsSection();
+    wireReviewSection();
   }
 
   function sectionCard(title, bodyHtml, { footnote } = {}) {
@@ -653,6 +655,75 @@
         flashSaved(btn, "Save Additional Terms");
       } catch (err) {
         els.builderSub.textContent = err.message;
+      }
+    });
+  }
+
+  // ---- AI Review (Task 1) ----
+  const SEVERITY_ORDER = { error: 0, warning: 1, info: 2 };
+  let reviewInFlight = false;
+  let reviewTickHandle = null;
+
+  function renderReviewWarnings(reviewResult) {
+    if (!reviewResult) return "";
+    const sorted = [...reviewResult.warnings].sort((a, b) => (SEVERITY_ORDER[a.severity] ?? 3) - (SEVERITY_ORDER[b.severity] ?? 3));
+    const warningsHtml = sorted.length
+      ? `<ul class="review-warning-list">${sorted
+          .map((w) => `<li class="review-warning review-severity-${escapeHtml(w.severity)}"><span class="review-severity-badge">${escapeHtml(w.severity)}</span> ${escapeHtml(w.message)}</li>`)
+          .join("")}</ul>`
+      : `<p class="contract-section-footnote">No gaps found.</p>`;
+    const conflictsHtml = reviewResult.conflicts.length
+      ? `<h3 class="scope-category-title">Conflicts</h3><ul class="review-warning-list">${reviewResult.conflicts
+          .map((c) => `<li class="review-warning review-severity-error"><span class="review-severity-badge">conflict</span> ${escapeHtml(c.field)}: ${escapeHtml(c.description)}</li>`)
+          .join("")}</ul>`
+      : "";
+    return `
+      <div class="review-result ${reviewResult.ready ? "review-ready" : "review-not-ready"}">
+        <p class="review-ready-line">${reviewResult.ready ? "✓ Ready to draft" : "✗ Not ready — resolve the items below first"}</p>
+        ${warningsHtml}
+        ${conflictsHtml}
+      </div>
+    `;
+  }
+
+  function renderReviewSection() {
+    const reviewedNote = activeContract.reviewedAt ? `Last reviewed ${formatDate(activeContract.reviewedAt)}` : "Not yet reviewed.";
+    return sectionCard(
+      "AI Review",
+      `
+      <p class="contract-section-footnote">Checks the data above for missing information and conflicts before drafting — it never changes anything itself. AI-generated content must be reviewed and approved before use.</p>
+      <p class="contract-section-footnote" id="review-meta">${escapeHtml(reviewedNote)}</p>
+      <button class="btn btn-primary" id="btn-run-review" type="button">Run AI Review</button>
+      <div id="review-result-container">${renderReviewWarnings(activeContract.reviewResult)}</div>
+    `
+    );
+  }
+
+  function wireReviewSection() {
+    document.getElementById("btn-run-review").addEventListener("click", async (e) => {
+      if (reviewInFlight) return;
+      const btn = e.currentTarget;
+      reviewInFlight = true;
+      const startTime = Date.now();
+      btn.disabled = true;
+      btn.textContent = "Reviewing… 0:00";
+
+      reviewTickHandle = setInterval(() => {
+        const s = Math.floor((Date.now() - startTime) / 1000);
+        btn.textContent = `Reviewing… ${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+      }, 1000);
+
+      try {
+        activeContract = await reviewContractWithAi(activeContract.id);
+        document.getElementById("review-result-container").innerHTML = renderReviewWarnings(activeContract.reviewResult);
+        document.getElementById("review-meta").textContent = `Last reviewed ${formatDate(activeContract.reviewedAt)}`;
+      } catch (err) {
+        els.builderSub.textContent = err.message;
+      } finally {
+        clearInterval(reviewTickHandle);
+        reviewInFlight = false;
+        btn.disabled = false;
+        btn.textContent = "Run AI Review";
       }
     });
   }

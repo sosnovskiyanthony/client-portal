@@ -167,6 +167,14 @@ async function updateStatus(id, status) {
   return rows[0] ? serialize(rows[0]) : null;
 }
 
+async function setReviewResult(id, result) {
+  const { rows } = await pool.query(
+    "UPDATE contracts SET review_result = $2, reviewed_at = now(), updated_at = now() WHERE id = $1 RETURNING *",
+    [id, JSON.stringify(result)]
+  );
+  return rows[0] ? serialize(rows[0]) : null;
+}
+
 async function setScopeSnapshot(id, scopeSnapshot) {
   const { rows } = await pool.query(
     "UPDATE contracts SET scope_snapshot = $2, updated_at = now() WHERE id = $1 RETURNING *",
@@ -256,6 +264,8 @@ function serialize(row) {
     clientResponsibilities: row.client_responsibilities,
     customTerms: row.custom_terms,
     scopeSnapshot: row.scope_snapshot,
+    reviewResult: row.review_result,
+    reviewedAt: row.reviewed_at,
     generatedContent: row.generated_content,
     finalContent: row.final_content,
     pdfStoragePath: row.pdf_storage_path,
@@ -280,6 +290,7 @@ module.exports = {
   count,
   update,
   updateStatus,
+  setReviewResult,
   setScopeSnapshot,
   setGeneratedContent,
   setFinalContent,

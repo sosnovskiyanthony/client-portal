@@ -941,6 +941,34 @@ async function listContractFeatureCatalog() {
   return data;
 }
 
+// AI Task 1 — a real AI call (can take a couple of minutes against a local
+// model), so returns the whole contract (with the new reviewResult) on
+// success and throws with a clear message on failure — same contract as
+// analyzeSubmission above.
+async function reviewContractWithAi(id) {
+  const data = await contractFetch(`/api/admin/contracts/${id}/review`, {
+    method: "POST",
+    errorFallback: "AI review failed.",
+  });
+  return data.contract;
+}
+
+// Fails soft (returns null instead of throwing) — same reasoning as
+// getAnalysisProgress: a missed poll during a live review shouldn't force
+// a logout or an error message, just leave the UI showing its last-known
+// stage until the next tick.
+async function getContractReviewProgress(id) {
+  try {
+    const res = await fetch(`/api/admin/contracts/${id}/review/progress`, {
+      headers: { Authorization: `Bearer ${getAdminToken()}` },
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (err) {
+    return null;
+  }
+}
+
 // ---------- Account menu ----------
 
 function initMenu() {

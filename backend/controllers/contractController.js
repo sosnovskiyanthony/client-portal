@@ -11,6 +11,9 @@ const ContractTemplate = require("../models/ContractTemplate");
 const Submission = require("../models/Submission");
 const { getNextContractNumber } = require("../services/contractNumbering");
 const { logAction } = require("../services/contractAudit");
+const { runContractReview } = require("../services/runContractReview");
+const { AiAnalysisError } = require("../ai/errors");
+const analysisProgress = require("../lib/analysisProgress");
 
 async function listContracts(req, res) {
   const status = typeof req.query.status === "string" ? req.query.status : "all";
@@ -255,6 +258,47 @@ async function removeContractFeature(req, res) {
   res.status(204).end();
 }
 
+// AI Task 1 — see services/runContractReview.js and ai/contractReviewPrompt.js.
+// A real AI call (rate-limited, see routes/contracts.js), so failures are
+// mapped to a specific status rather than a generic 500: 503 when Ollama
+// itself isn't configured/reachable in a way the admin can't do anything
+// about from here, 502 for every other classified AI-provider failure
+// (timeout, invalid response, etc.) — never silently succeeds with a
+// fabricated result.
+async function reviewContract(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) {
+    return res.status(400).json({ error: "Invalid contract id." });
+  }
+  const contract = await Contract.findById(id);
+  if (!contract) {
+    return res.status(404).json({ error: "Contract not found." });
+  }
+
+  const selectedFeatures = await ContractSelectedFeature.findAllByContractId(id);
+
+  try {
+    const updated = await runContractReview(contract, selectedFeatures);
+    await logAction(id, "contract_reviewed", req.user.sub, { ready: updated.reviewResult && updated.reviewResult.ready });
+    res.json({ contract: updated });
+  } catch (err) {
+    if (err instanceof AiAnalysisError) {
+      return res.status(502).json({ error: err.message, code: err.code });
+    }
+    throw err;
+  }
+}
+
+async function getContractReviewProgress(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) {
+    return res.status(400).json({ error: "Invalid contract id." });
+  }
+  const progress = analysisProgress.get("contract-review", id);
+  if (!progress) return res.json({ active: false });
+  res.json({ active: true, ...progress });
+}
+
 module.exports = {
   listContracts,
   getContract,
@@ -265,4 +309,6 @@ module.exports = {
   setContractFeatures,
   addCustomFeature,
   removeContractFeature,
+  reviewContract,
+  getContractReviewProgress,
 };

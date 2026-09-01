@@ -198,6 +198,8 @@ async function init() {
       client_responsibilities JSONB,
       custom_terms TEXT,
       scope_snapshot JSONB,
+      review_result JSONB,
+      reviewed_at TIMESTAMPTZ,
       generated_content JSONB,
       final_content JSONB,
       pdf_storage_path TEXT,
@@ -214,6 +216,13 @@ async function init() {
   await pool.query(`CREATE INDEX IF NOT EXISTS contracts_submission_id_idx ON contracts (submission_id);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS contracts_status_idx ON contracts (status);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS contracts_created_at_idx ON contracts (created_at DESC);`);
+  // ADD COLUMN IF NOT EXISTS, not just the CREATE TABLE above — that only
+  // applies to a brand-new database. review_result/reviewed_at were added
+  // after contracts already existed in dev (same reasoning as
+  // submissions.updated_at above), and this is what actually reaches an
+  // existing table.
+  await pool.query(`ALTER TABLE contracts ADD COLUMN IF NOT EXISTS review_result JSONB;`);
+  await pool.query(`ALTER TABLE contracts ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ;`);
 
   // name/category/description/wording are snapshotted here at selection
   // time (not just a bare feature_id reference) so a later edit to the

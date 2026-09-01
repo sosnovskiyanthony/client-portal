@@ -21,6 +21,12 @@ const {
   buildEmailContext,
   buildEmailUserMessage,
 } = require("./emailPrompt");
+const { ContractReviewSchema } = require("./contractReviewSchema");
+const {
+  CONTRACT_REVIEW_SYSTEM_PROMPT,
+  CONTRACT_REVIEW_PROMPT_VERSION,
+  buildContractReviewUserMessage,
+} = require("./contractReviewPrompt");
 const { AiAnalysisError } = require("./errors");
 const ollamaProvider = require("./providers/ollamaProvider");
 const anthropicProvider = require("./providers/anthropicProvider");
@@ -155,6 +161,53 @@ async function draftEmail(submission, analysis, { client, onProgress } = {}) {
   };
 }
 
+// AI Task 1 (see ai/contractReviewPrompt.js) — checks admin-approved
+// contract data for gaps/conflicts before it's ever drafted into contract
+// prose. `approvedData` is the shape ai/contractData.js's
+// buildApprovedContractData() produces; this function never touches the
+// database or knows what a "contract" is beyond that shape, matching
+// analyzeSubmission/draftEmail's own separation of concerns.
+async function reviewContract(approvedData, { client, onProgress } = {}) {
+  const providerName = env.aiProvider;
+  const provider = PROVIDERS[providerName];
+  if (!provider) {
+    throw new AiAnalysisError(
+      "unknown_provider",
+      `AI_PROVIDER "${providerName}" is not recognized. Expected one of: ${Object.keys(PROVIDERS).join(", ")}.`
+    );
+  }
+
+  onProgress?.("preparing");
+  const userMessage = buildContractReviewUserMessage(approvedData);
+  const model = provider.model();
+
+  onProgress?.("sending");
+  const { parsed } = await provider.impl.generateStructuredAnalysis({
+    systemPrompt: CONTRACT_REVIEW_SYSTEM_PROMPT,
+    userMessage,
+    zodSchema: ContractReviewSchema,
+    model,
+    client,
+    onProgress,
+  });
+  onProgress?.("validating");
+
+  const validation = ContractReviewSchema.safeParse(parsed);
+  if (!validation.success) {
+    throw new AiAnalysisError(
+      "invalid_schema",
+      `AI response did not match the required contract-review schema: ${validation.error.issues.map((i) => i.path.join(".") + " " + i.message).join("; ")}`
+    );
+  }
+
+  return {
+    result: validation.data,
+    model,
+    provider: providerName,
+    promptVersion: CONTRACT_REVIEW_PROMPT_VERSION,
+  };
+}
+
 // Synchronous — lets callers record which provider/model an attempt is
 // about to use (or used, on failure) without needing to complete a request.
 function getActiveProviderInfo() {
@@ -163,4 +216,4 @@ function getActiveProviderInfo() {
   return { provider, model: entry ? entry.model() : null };
 }
 
-module.exports = { analyzeSubmission, draftEmail, getActiveProviderInfo, AiAnalysisError };
+module.exports = { analyzeSubmission, draftEmail, reviewContract, getActiveProviderInfo, AiAnalysisError };

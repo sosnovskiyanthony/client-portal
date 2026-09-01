@@ -9,6 +9,7 @@ const contractController = require("../controllers/contractController");
 const contractFeatureController = require("../controllers/contractFeatureController");
 const contractTemplateController = require("../controllers/contractTemplateController");
 const { authenticate, requireAdmin } = require("../middleware/auth");
+const { analysisLimiter } = require("../middleware/rateLimit");
 const asyncHandler = require("../middleware/asyncHandler");
 
 const router = express.Router();
@@ -24,6 +25,8 @@ router.get("/contracts/:id/audit-log", asyncHandler(contractController.getContra
 router.patch("/contracts/:id/features", asyncHandler(contractController.setContractFeatures));
 router.post("/contracts/:id/features/custom", asyncHandler(contractController.addCustomFeature));
 router.delete("/contracts/:id/features/:featureRowId", asyncHandler(contractController.removeContractFeature));
+router.post("/contracts/:id/review", analysisLimiter, asyncHandler(contractController.reviewContract));
+router.get("/contracts/:id/review/progress", asyncHandler(contractController.getContractReviewProgress));
 
 router.get("/contract-features", asyncHandler(contractFeatureController.listFeatures));
 router.post("/contract-features", asyncHandler(contractFeatureController.createFeature));
