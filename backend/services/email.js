@@ -23,12 +23,25 @@ async function notifyNewSubmission(submission) {
   const typeLabel = TYPE_LABELS[submission.type] || submission.type;
 
   try {
-    await resend.emails.send({
+    // The Resend SDK does NOT throw on an API-level rejection (invalid
+    // from-address, unverified domain, quota exceeded, etc.) — it resolves
+    // normally with { data: null, error: {...} }, the same convention
+    // Supabase's SDK uses. Checking only for a thrown exception here would
+    // silently treat a rejected send as a success — which is exactly what
+    // this code used to do.
+    const { error } = await resend.emails.send({
       from: env.notifyFromEmail,
       to: env.notifyEmail,
       subject: `New ${typeLabel} submission — ${submission.clientName || "unknown"}`,
       html: buildEmailHtml(submission, typeLabel),
     });
+    if (error) {
+      console.error(
+        `[email] Resend rejected notification for submission #${submission.id} (${error.name}):`,
+        error.message
+      );
+      return;
+    }
     console.log(`[email] Notified ${env.notifyEmail} of submission #${submission.id}`);
   } catch (err) {
     console.error(`[email] Failed to send notification for submission #${submission.id}:`, err.message);
