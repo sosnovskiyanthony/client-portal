@@ -4,8 +4,28 @@
 // the frontend and is never reachable from the browser — see server.js and
 // routes/admin.js for where it's actually invoked from (server-side only).
 const { z } = require("zod");
+// Only ProxyAgent, deliberately not fetch — test/ollamaProvider.test.js
+// mocks network behavior by temporarily reassigning globalThis.fetch (see
+// withMockedFetch there). Capturing fetch as a module-level const from
+// undici at require-time would read a fixed reference once and never see
+// that reassignment again, silently breaking every one of those tests
+// (they'd fall through to a real network call instead of the mock — this
+// happened once already, caught by a real test run, not by inspection).
+// Calling the bare `fetch` identifier below (no local binding) always
+// resolves to whatever globalThis.fetch currently is.
+const { ProxyAgent } = require("undici");
 const env = require("../../config/env");
 const { AiAnalysisError } = require("../errors");
+
+// Set by scripts/start-with-tailscale.sh when Tailscale is running in
+// userspace-networking mode (no TUN device / no root available in the
+// deploy container — confirmed via a real deploy's logs, see
+// ai/README.md). In that mode there's no real network route to a tailnet
+// peer like Ollama's machine; tailscaled instead exposes a plain local HTTP
+// proxy that requests need to be routed through explicitly. Local dev never
+// sets this — Ollama is just reachable directly there — so this stays a
+// no-op dispatcher (undici's default) in that case.
+const proxyDispatcher = process.env.TAILSCALE_HTTP_PROXY ? new ProxyAgent(process.env.TAILSCALE_HTTP_PROXY) : undefined;
 
 // Local CPU inference on a 7B-class model generating a large structured JSON
 // object realistically takes much longer than a hosted API call — a fixed
@@ -49,6 +69,7 @@ async function generateStructuredAnalysis({ systemPrompt, userMessage, zodSchema
         options: { temperature: 0.2, num_predict: MAX_OUTPUT_TOKENS },
       }),
       signal: controller.signal,
+      dispatcher: proxyDispatcher,
     });
   } catch (err) {
     clearTimeout(timer);

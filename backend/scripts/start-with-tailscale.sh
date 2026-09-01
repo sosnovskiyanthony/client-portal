@@ -14,6 +14,17 @@
 # stages wasn't something that could be verified without a live deploy
 # attempt. This is slightly slower on a cold start (a real download +
 # install happens once at boot) but removes that whole class of uncertainty.
+#
+# Runs tailscaled in userspace-networking mode with an outbound HTTP proxy,
+# not the normal TUN-based mode — confirmed via a real deploy's logs that
+# this container has neither a TUN device nor root/NET_ADMIN (iptables
+# permission denied), so the default mode can never work here. Userspace
+# mode needs neither. The tradeoff: nothing on this container gets a real
+# network route to tailnet peers "for free" the way TUN mode provides — the
+# app has to explicitly route requests through the proxy this starts (see
+# ai/providers/ollamaProvider.js's TAILSCALE_HTTP_PROXY handling), which is
+# also why this can't transparently help any other network call in the app;
+# it's wired up for the one thing that needs it.
 set -e
 
 if [ -n "$TAILSCALE_AUTHKEY" ]; then
@@ -25,17 +36,26 @@ if [ -n "$TAILSCALE_AUTHKEY" ]; then
   fi
 
   if command -v tailscaled >/dev/null 2>&1; then
-    echo "[tailscale] Starting tailscaled..."
-    tailscaled --state=/tmp/tailscaled.state --socket=/tmp/tailscaled.sock &
+    echo "[tailscale] Starting tailscaled (userspace networking)..."
+    tailscaled \
+      --state=/tmp/tailscaled.state \
+      --socket=/tmp/tailscaled.sock \
+      --tun=userspace-networking \
+      --outbound-http-proxy-listen=localhost:1055 &
 
     # Give the daemon a moment to create its socket before the client tries
     # to talk to it.
     sleep 2
 
     echo "[tailscale] Connecting to tailnet..."
-    tailscale --socket=/tmp/tailscaled.sock up --authkey="$TAILSCALE_AUTHKEY" --hostname=brindleaf-backend --accept-routes || {
+    if tailscale --socket=/tmp/tailscaled.sock up --authkey="$TAILSCALE_AUTHKEY" --hostname=brindleaf-backend --accept-routes; then
+      # Only the app itself needs this — it's read in
+      # ai/providers/ollamaProvider.js, nowhere else.
+      export TAILSCALE_HTTP_PROXY="http://localhost:1055"
+      echo "[tailscale] Connected. Ollama requests will route through the local proxy at $TAILSCALE_HTTP_PROXY."
+    else
       echo "[tailscale] WARNING: tailscale up failed — continuing without it. Ollama analysis will fail until this is fixed, but the rest of the app is unaffected."
-    }
+    fi
   else
     echo "[tailscale] WARNING: tailscale binary not available after install attempt — continuing without it."
   fi
