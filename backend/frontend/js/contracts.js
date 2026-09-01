@@ -188,15 +188,74 @@
   }
 
   function renderBuilderHeader() {
-    els.builderNumber.textContent = activeContract.contractNumber;
-    els.builderSub.innerHTML = `<span class="contract-status-badge contract-status-${escapeHtml(activeContract.status)}">${escapeHtml(STATUS_LABELS[activeContract.status] || activeContract.status)}</span> · Updated ${escapeHtml(formatDate(activeContract.updatedAt))}`;
-    els.builderActions.innerHTML = `<button class="btn btn-ghost" id="btn-delete-contract" type="button" ${activeContract.finalizedAt ? "disabled" : ""}>Delete</button>`;
+    const c = activeContract;
+    els.builderNumber.textContent = c.contractNumber;
+    els.builderSub.innerHTML = `<span class="contract-status-badge contract-status-${escapeHtml(c.status)}">${escapeHtml(STATUS_LABELS[c.status] || c.status)}</span> · Updated ${escapeHtml(formatDate(c.updatedAt))}${c.finalizedAt ? ` · <strong>Finalized</strong> ${escapeHtml(formatDate(c.finalizedAt))}` : ""}`;
+
+    const statusOptions = Object.keys(STATUS_LABELS)
+      .map((s) => `<option value="${s}" ${s === c.status ? "selected" : ""}>${escapeHtml(STATUS_LABELS[s])}</option>`)
+      .join("");
+
+    els.builderActions.innerHTML = `
+      <select id="contract-status-select" class="contract-status-select">${statusOptions}</select>
+      <button class="btn btn-ghost" id="btn-approve-contract" type="button" ${c.status === "ready_for_approval" ? "" : "disabled"}>Approve</button>
+      <button class="btn btn-ghost" id="btn-finalize-contract" type="button" ${c.status === "approved" ? "" : "disabled"}>Finalize</button>
+      <button class="btn btn-ghost" id="btn-view-audit-log" type="button">Audit Log</button>
+      <button class="btn btn-ghost" id="btn-delete-contract" type="button" ${c.finalizedAt ? "disabled" : ""}>Delete</button>
+    `;
+
+    document.getElementById("contract-status-select").addEventListener("change", async (e) => {
+      const newStatus = e.target.value;
+      try {
+        activeContract = await setContractStatus(c.id, newStatus);
+        renderBuilderHeader();
+      } catch (err) {
+        els.builderSub.textContent = err.message;
+        e.target.value = c.status;
+      }
+    });
+
+    document.getElementById("btn-approve-contract").addEventListener("click", async (e) => {
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      try {
+        activeContract = await approveContract(c.id);
+        renderBuilderHeader();
+      } catch (err) {
+        els.builderSub.textContent = err.message;
+        btn.disabled = false;
+      }
+    });
+
+    document.getElementById("btn-finalize-contract").addEventListener("click", async (e) => {
+      if (!window.confirm(`Finalize ${c.contractNumber}? This locks in the current draft as the authoritative contract version.`)) return;
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      try {
+        activeContract = await finalizeContract(c.id);
+        renderBuilderHeader();
+      } catch (err) {
+        els.builderSub.textContent = err.message;
+        btn.disabled = false;
+      }
+    });
+
+    document.getElementById("btn-view-audit-log").addEventListener("click", async () => {
+      try {
+        const entries = await getContractAuditLog(c.id);
+        const lines = entries.map((e) => `${formatDate(e.createdAt)} — ${e.action}`).join("\n");
+        window.alert(entries.length ? lines : "No audit events yet.");
+      } catch (err) {
+        els.builderSub.textContent = err.message;
+      }
+    });
+
     const deleteBtn = document.getElementById("btn-delete-contract");
     if (deleteBtn) {
       deleteBtn.addEventListener("click", async () => {
-        if (!window.confirm(`Permanently delete ${activeContract.contractNumber}? This can't be undone.`)) return;
+        if (!window.confirm(`Permanently delete ${c.contractNumber}? This can't be undone.`)) return;
         try {
-          await deleteContract(activeContract.id);
+          await deleteContract(c.id);
           window.location.href = "admin-contracts.html";
         } catch (err) {
           els.builderSub.textContent = err.message;

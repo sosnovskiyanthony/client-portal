@@ -450,6 +450,87 @@ async function getContractPdfUrl(req, res) {
   }
 }
 
+// Explicit admin action — status never advances here on its own beyond
+// the one automatic transition already made when a draft is generated
+// (draft -> ready_for_approval, see services/runContractGeneration.js).
+// Requires a draft to actually exist; approving an empty contract makes
+// no sense.
+async function approveContract(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) {
+    return res.status(400).json({ error: "Invalid contract id." });
+  }
+  const contract = await Contract.findById(id);
+  if (!contract) {
+    return res.status(404).json({ error: "Contract not found." });
+  }
+  if (!contract.generatedContent) {
+    return res.status(400).json({ error: "Generate a contract draft before approving it." });
+  }
+
+  const updated = await Contract.markApproved(id);
+  await logAction(id, "contract_approved", req.user.sub, {});
+  res.json({ contract: updated });
+}
+
+// Snapshots the CURRENT generated_content (whatever the admin has
+// approved and possibly edited by this point) into final_content and
+// records a new 'final' contract_versions row — never overwrites an
+// existing final_content in place, since contract_versions is
+// append-only and this always inserts a fresh row, so a prior finalized
+// version is never lost even if the contract is finalized again later
+// after further changes. Requires the contract to already be approved —
+// finalizing something nobody has actually approved defeats the point of
+// having an approval step at all.
+async function finalizeContract(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) {
+    return res.status(400).json({ error: "Invalid contract id." });
+  }
+  const contract = await Contract.findById(id);
+  if (!contract) {
+    return res.status(404).json({ error: "Contract not found." });
+  }
+  if (contract.status !== "approved") {
+    return res.status(400).json({ error: "A contract must be approved before it can be finalized." });
+  }
+  if (!contract.generatedContent) {
+    return res.status(400).json({ error: "No draft content to finalize." });
+  }
+
+  const finalContent = contract.generatedContent;
+  // Sequential, not parallel — markFinalized's RETURNING * needs to see
+  // final_content already written by the first query.
+  await Contract.setFinalContent(id, finalContent);
+  const finalized = await Contract.markFinalized(id);
+  await ContractVersion.create({ contractId: id, source: "final", content: finalContent, createdBy: req.user.sub });
+  await logAction(id, "contract_finalized", req.user.sub, {});
+  res.json({ contract: finalized });
+}
+
+// Manual status transitions the automatic flow doesn't cover (sent is set
+// by the email-send action in a later phase; signed/completed/cancelled
+// are always the admin's own call, not something this app can infer).
+async function setContractStatus(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) {
+    return res.status(400).json({ error: "Invalid contract id." });
+  }
+  const { status } = req.body || {};
+  if (!Contract.VALID_STATUSES.includes(status)) {
+    return res.status(400).json({ error: `status must be one of: ${Contract.VALID_STATUSES.join(", ")}` });
+  }
+
+  const contract = await Contract.findById(id);
+  if (!contract) {
+    return res.status(404).json({ error: "Contract not found." });
+  }
+
+  const updated = await Contract.updateStatus(id, status);
+  await logAction(id, "contract_status_changed", req.user.sub, { from: contract.status, to: status });
+  res.json({ contract: updated });
+}
+
 module.exports = {
   listContracts,
   getContract,
@@ -468,4 +549,7 @@ module.exports = {
   getContractVersions,
   generateContractPdfHandler,
   getContractPdfUrl,
+  approveContract,
+  finalizeContract,
+  setContractStatus,
 };

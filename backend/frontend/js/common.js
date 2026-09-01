@@ -1019,6 +1019,25 @@ async function getContractPdfUrl(id) {
   return data.signedUrl;
 }
 
+async function approveContract(id) {
+  const data = await contractFetch(`/api/admin/contracts/${id}/approve`, { method: "POST", errorFallback: "Couldn't approve this contract." });
+  return data.contract;
+}
+
+async function finalizeContract(id) {
+  const data = await contractFetch(`/api/admin/contracts/${id}/finalize`, { method: "POST", errorFallback: "Couldn't finalize this contract." });
+  return data.contract;
+}
+
+async function setContractStatus(id, status) {
+  const data = await contractFetch(`/api/admin/contracts/${id}/status`, {
+    method: "POST",
+    body: { status },
+    errorFallback: "Couldn't change the contract status.",
+  });
+  return data.contract;
+}
+
 // ---------- Account menu ----------
 
 function initMenu() {
