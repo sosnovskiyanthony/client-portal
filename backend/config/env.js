@@ -102,4 +102,12 @@ module.exports = {
   supabaseUrl: process.env.SUPABASE_URL || null,
   supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || null,
   supabaseBucket: process.env.SUPABASE_BUCKET || "brand-assets",
+
+  // Lets an admin start/stop Ollama remotely from the dashboard — talks to
+  // a small always-on control helper running on whichever machine hosts
+  // Ollama (see ai/README.md's "Remote Ollama control" section), over the
+  // same Tailscale connection used for AI analysis itself. Optional — the
+  // toggle just shows "not configured" until both are set.
+  ollamaControlUrl: process.env.OLLAMA_CONTROL_URL || null,
+  ollamaControlSecret: process.env.OLLAMA_CONTROL_SECRET || null,
 };

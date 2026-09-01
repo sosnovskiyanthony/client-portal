@@ -8,6 +8,8 @@ const { toCsv } = require("../utils/csv");
 const storage = require("../services/storage");
 const { BRAND_ASSET_PATH_RE } = require("../lib/validators");
 const { cleanupOrphanedAssets } = require("../services/orphanCleanup");
+const { tailscaleDispatcher } = require("../lib/tailscaleDispatcher");
+const env = require("../config/env");
 
 async function listSubmissions(req, res) {
   const type = typeof req.query.type === "string" ? req.query.type : "all";
@@ -350,6 +352,43 @@ async function updateSubmissionStatus(req, res) {
   res.json({ submission });
 }
 
+// Lets an admin start/stop Ollama remotely from the dashboard — talks to a
+// small always-on control helper running on whichever machine hosts Ollama
+// (see ai/README.md's "Remote Ollama control" section for the full setup),
+// over the same Tailscale connection used for AI analysis itself. Optional:
+// responds 503 until both OLLAMA_CONTROL_URL and OLLAMA_CONTROL_SECRET are
+// set. 502 covers everything else that can go wrong reaching it (the
+// machine is off, asleep, not connected to the tailnet, etc.) — there's no
+// way to tell those apart from here, and the admin dashboard doesn't need
+// to; "can't reach it" is the actionable message either way.
+function makeOllamaControlHandler(path, method) {
+  return async function handler(req, res) {
+    if (!env.ollamaControlUrl || !env.ollamaControlSecret) {
+      return res.status(503).json({ error: "Ollama remote control is not configured on this server." });
+    }
+
+    let result;
+    try {
+      const controlRes = await fetch(`${env.ollamaControlUrl}${path}`, {
+        method,
+        headers: { Authorization: `Bearer ${env.ollamaControlSecret}` },
+        dispatcher: tailscaleDispatcher,
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!controlRes.ok) throw new Error(`control helper returned HTTP ${controlRes.status}`);
+      result = await controlRes.json();
+    } catch (err) {
+      return res.status(502).json({ error: "Could not reach the Ollama control helper. Is the machine on and connected?" });
+    }
+
+    res.json(result);
+  };
+}
+
+const getOllamaStatus = makeOllamaControlHandler("/status", "GET");
+const startOllamaRemote = makeOllamaControlHandler("/start", "POST");
+const stopOllamaRemote = makeOllamaControlHandler("/stop", "POST");
+
 module.exports = {
   listSubmissions,
   updateSubmissionStatus,
@@ -361,4 +400,7 @@ module.exports = {
   deleteSubmission,
   removeAsset,
   cleanupAssets,
+  getOllamaStatus,
+  startOllamaRemote,
+  stopOllamaRemote,
 };

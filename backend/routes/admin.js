@@ -18,5 +18,8 @@ router.delete("/submissions/:id", asyncHandler(adminController.deleteSubmission)
 router.post("/storage/signed-url", asyncHandler(adminController.getAssetSignedUrl));
 router.delete("/submissions/:id/assets", asyncHandler(adminController.removeAsset));
 router.post("/storage/cleanup-orphans", asyncHandler(adminController.cleanupAssets));
+router.get("/ollama/status", asyncHandler(adminController.getOllamaStatus));
+router.post("/ollama/start", asyncHandler(adminController.startOllamaRemote));
+router.post("/ollama/stop", asyncHandler(adminController.stopOllamaRemote));
 
 module.exports = router;
