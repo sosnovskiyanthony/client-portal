@@ -748,6 +748,70 @@ async function cleanupOrphanedAssets() {
   return body;
 }
 
+// Checks whether the remote Ollama host is currently running, via the
+// control helper proxied through routes/admin.js's ollama/status route.
+// Returns { running } normally; a 503 (control helper not configured on
+// this server) is reported as a message rather than thrown, since that's
+// an expected, non-error state for any deployment that hasn't set up
+// remote control — see admin.js's renderOllamaControl().
+async function getOllamaStatus() {
+  let res;
+  try {
+    res = await fetch("/api/admin/ollama/status", {
+      headers: { Authorization: `Bearer ${getAdminToken()}` },
+    });
+  } catch (err) {
+    throw new Error("Can't reach the server. Is the backend running?");
+  }
+
+  if (res.status === 401 || res.status === 403) {
+    logoutAdmin();
+    throw new Error("Your session expired. Please log in again.");
+  }
+  if (res.status === 503) {
+    return { configured: false };
+  }
+
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(body.error || "Couldn't reach the Ollama host.");
+  }
+  return { configured: true, running: body.running };
+}
+
+// Shared by startOllamaRemote/stopOllamaRemote below — same request shape,
+// just a different path and result field.
+async function postOllamaControl(path) {
+  let res;
+  try {
+    res = await fetch(`/api/admin/ollama/${path}`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${getAdminToken()}` },
+    });
+  } catch (err) {
+    throw new Error("Can't reach the server. Is the backend running?");
+  }
+
+  if (res.status === 401 || res.status === 403) {
+    logoutAdmin();
+    throw new Error("Your session expired. Please log in again.");
+  }
+
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(body.error || `Couldn't reach the Ollama host.`);
+  }
+  return body;
+}
+
+async function startOllamaRemote() {
+  return postOllamaControl("start");
+}
+
+async function stopOllamaRemote() {
+  return postOllamaControl("stop");
+}
+
 // ---------- Account menu ----------
 
 function initMenu() {

@@ -68,6 +68,10 @@
     pagination: document.getElementById("admin-pagination"),
     exportBtn: document.getElementById("export-csv-btn"),
     cleanupBtn: document.getElementById("cleanup-orphans-btn"),
+    ollamaControl: document.getElementById("ollama-control"),
+    ollamaDot: document.getElementById("ollama-status-dot"),
+    ollamaText: document.getElementById("ollama-status-text"),
+    ollamaToggleBtn: document.getElementById("ollama-toggle-btn"),
   };
 
   // Filtering and pagination are both server-driven (see GET
@@ -100,6 +104,7 @@
     els.gate.hidden = true;
     els.dashboard.hidden = false;
     await loadSubmissions();
+    refreshOllamaStatus();
   }
 
   const ANALYSIS_STATUS_LABELS = {
@@ -878,6 +883,81 @@
     });
   }
 
+  // Tracks whether an Ollama start/stop request from this tab is in flight,
+  // same pattern as analyzingIds/draftingIds — prevents a second click from
+  // firing a duplicate request while one is still running.
+  let ollamaActionInFlight = false;
+  // Once a status check confirms the control helper isn't configured on
+  // this server (503 from routes/admin.js), there's no point re-checking on
+  // every render — the toggle just stays hidden for the rest of the session.
+  let ollamaControlUnavailable = false;
+
+  function setOllamaUi({ configured, running }) {
+    if (!els.ollamaControl) return;
+    if (!configured) {
+      els.ollamaControl.hidden = true;
+      return;
+    }
+    els.ollamaControl.hidden = false;
+    els.ollamaDot.classList.toggle("is-running", running);
+    els.ollamaDot.classList.toggle("is-stopped", !running);
+    els.ollamaText.textContent = `Ollama: ${running ? "running" : "stopped"}`;
+    els.ollamaToggleBtn.hidden = false;
+    els.ollamaToggleBtn.textContent = running ? "Stop" : "Start";
+    els.ollamaToggleBtn.dataset.running = running ? "true" : "false";
+  }
+
+  async function refreshOllamaStatus() {
+    if (ollamaControlUnavailable || !els.ollamaControl || ollamaActionInFlight) return;
+    try {
+      const result = await getOllamaStatus();
+      if (!result.configured) {
+        ollamaControlUnavailable = true;
+        setOllamaUi({ configured: false });
+        return;
+      }
+      setOllamaUi({ configured: true, running: result.running });
+    } catch (err) {
+      // A transient failure (host asleep, Tailscale hiccup) shouldn't hide
+      // the control or spam the admin — show it as an unknown/offline state
+      // and let the next status poll or manual retry recover.
+      if (els.ollamaControl) {
+        els.ollamaControl.hidden = false;
+        els.ollamaDot.classList.remove("is-running");
+        els.ollamaDot.classList.add("is-stopped");
+        els.ollamaText.textContent = "Ollama: unreachable";
+        els.ollamaToggleBtn.hidden = true;
+      }
+      if (!isAdminLoggedIn()) render();
+    }
+  }
+
+  function initOllamaControl() {
+    if (!els.ollamaToggleBtn) return;
+    els.ollamaToggleBtn.addEventListener("click", async () => {
+      if (ollamaActionInFlight) return;
+      const wasRunning = els.ollamaToggleBtn.dataset.running === "true";
+      ollamaActionInFlight = true;
+      els.ollamaToggleBtn.disabled = true;
+      els.ollamaToggleBtn.textContent = wasRunning ? "Stopping…" : "Starting…";
+
+      try {
+        if (wasRunning) {
+          await stopOllamaRemote();
+        } else {
+          await startOllamaRemote();
+        }
+        await refreshOllamaStatus();
+      } catch (err) {
+        els.adminSub.textContent = err.message;
+        if (!isAdminLoggedIn()) render();
+      } finally {
+        ollamaActionInFlight = false;
+        els.ollamaToggleBtn.disabled = false;
+      }
+    });
+  }
+
   function initCleanupOrphans() {
     if (!els.cleanupBtn) return;
     els.cleanupBtn.addEventListener("click", async () => {
@@ -943,6 +1023,7 @@
     initPagination();
     initExport();
     initCleanupOrphans();
+    initOllamaControl();
 
     els.btnLogin.addEventListener("click", () => openModal("login"));
     els.btnLogout.addEventListener("click", () => {

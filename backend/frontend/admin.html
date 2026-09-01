@@ -85,6 +85,11 @@
       <p class="admin-sub" id="admin-sub" aria-live="polite">Loading…</p>
     </div>
     <div class="admin-header-actions">
+      <div class="ollama-control" id="ollama-control" hidden>
+        <span class="ollama-status" id="ollama-status-dot" aria-hidden="true"></span>
+        <span id="ollama-status-text">Ollama: checking…</span>
+        <button class="btn btn-ghost" id="ollama-toggle-btn" type="button" hidden>Start</button>
+      </div>
       <button class="btn btn-ghost" id="cleanup-orphans-btn" type="button">Clean Up Files</button>
       <button class="btn btn-ghost" id="export-csv-btn" type="button">Export CSV</button>
       <button class="btn btn-ghost" id="btn-admin-logout" type="button">Log out</button>

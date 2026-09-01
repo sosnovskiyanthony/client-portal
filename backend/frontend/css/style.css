@@ -1693,6 +1693,34 @@ a:focus-visible {
   gap: 10px;
 }
 
+.ollama-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+}
+
+.ollama-status {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-tertiary);
+  flex-shrink: 0;
+}
+
+.ollama-status.is-running {
+  background: #4ade80;
+  box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.18);
+}
+
+.ollama-status.is-stopped {
+  background: #f87171;
+}
+
 .admin-title {
   font-size: 28px;
   font-weight: 700;
