@@ -14,7 +14,14 @@ const {
   AI_PROMPT_VERSION,
   sanitizeWebDesignSubmission,
   buildUserMessage,
+  buildRawTextUserMessage,
 } = require("./prompt");
+const {
+  AI_CHAT_PROMPT_VERSION,
+  CHAT_SYSTEM_PROMPT,
+  CONTEXT_ACK_MESSAGE,
+  buildChatContextMessage,
+} = require("./chatPrompt");
 const {
   EMAIL_SYSTEM_PROMPT,
   EMAIL_PROMPT_VERSION,
@@ -112,6 +119,113 @@ async function analyzeSubmission(submission, { client, onProgress } = {}) {
     model,
     provider: providerName,
     promptVersion: AI_PROMPT_VERSION,
+  };
+}
+
+// AI chat feature's "paste raw client info and analyze it" action — reuses
+// SYSTEM_PROMPT, AnalysisSchema, and AI_PROMPT_VERSION exactly as
+// analyzeSubmission() above (never a separate prompt/schema for this path),
+// so the result is provably indistinguishable in shape from an analysis
+// produced through the normal submission workflow. The only thing that
+// differs is buildRawTextUserMessage() in place of
+// sanitizeWebDesignSubmission()+buildUserMessage(), since there's no
+// structured form data to sanitize — just a blob of pasted text.
+async function analyzeRawText(rawText, { client, onProgress } = {}) {
+  const providerName = env.aiProvider;
+  const provider = PROVIDERS[providerName];
+  if (!provider) {
+    throw new AiAnalysisError(
+      "unknown_provider",
+      `AI_PROVIDER "${providerName}" is not recognized. Expected one of: ${Object.keys(PROVIDERS).join(", ")}.`
+    );
+  }
+
+  onProgress?.("preparing");
+  const userMessage = buildRawTextUserMessage(rawText);
+  const model = provider.model();
+
+  onProgress?.("sending");
+  const { parsed } = await provider.impl.generateStructuredAnalysis({
+    systemPrompt: SYSTEM_PROMPT,
+    userMessage,
+    zodSchema: AnalysisSchema,
+    model,
+    client,
+    onProgress,
+  });
+  onProgress?.("validating");
+
+  // Same defensive normalization as analyzeSubmission() — see that
+  // function's comment for why (a local model can return confidence as a
+  // 0-100 percentage instead of a 0-1 fraction).
+  if (typeof parsed?.confidence === "number" && parsed.confidence > 1) {
+    parsed.confidence = Math.max(0, Math.min(1, parsed.confidence / 100));
+  }
+
+  const validation = AnalysisSchema.safeParse(parsed);
+  if (!validation.success) {
+    throw new AiAnalysisError(
+      "invalid_schema",
+      `AI response did not match the required analysis schema: ${validation.error.issues.map((i) => i.path.join(".") + " " + i.message).join("; ")}`
+    );
+  }
+
+  return {
+    result: validation.data,
+    model,
+    provider: providerName,
+    promptVersion: AI_PROMPT_VERSION,
+  };
+}
+
+// One turn of the AI chat feature — a free-text, conversational reply, not
+// a schema-constrained one (see ai/providers/*.js's generateChatReply).
+// `sanitizedIntake`/`analysisResult` seed the context message every call
+// (stateless per request, like every other AI call in this app); `history`
+// is the conversation's prior turns as stored (see
+// models/SubmissionChat.js), each `{ role: "admin"|"assistant", content }`
+// — any "analysis" role entries (from a past paste-and-analyze action) are
+// filtered out here, since those are structured objects, not chat turns,
+// and would need their own formatting to be useful as conversation context;
+// a future enhancement could summarize them in, but that's not needed for
+// the fields already carried in `analysisResult` itself.
+async function chatReply({ sanitizedIntake, analysisResult, history, userMessage }, { client, onProgress } = {}) {
+  const providerName = env.aiProvider;
+  const provider = PROVIDERS[providerName];
+  if (!provider) {
+    throw new AiAnalysisError(
+      "unknown_provider",
+      `AI_PROVIDER "${providerName}" is not recognized. Expected one of: ${Object.keys(PROVIDERS).join(", ")}.`
+    );
+  }
+
+  onProgress?.("preparing");
+  const priorTurns = (history || [])
+    .filter((m) => m.role === "admin" || m.role === "assistant")
+    .map((m) => ({ role: m.role === "admin" ? "user" : "assistant", content: String(m.content || "") }));
+
+  const messages = [
+    { role: "user", content: buildChatContextMessage(sanitizedIntake, analysisResult) },
+    { role: "assistant", content: CONTEXT_ACK_MESSAGE },
+    ...priorTurns,
+    { role: "user", content: userMessage },
+  ];
+  const model = provider.model();
+
+  onProgress?.("sending");
+  const { text } = await provider.impl.generateChatReply({
+    systemPrompt: CHAT_SYSTEM_PROMPT,
+    messages,
+    model,
+    client,
+    onProgress,
+  });
+
+  return {
+    text,
+    model,
+    provider: providerName,
+    promptVersion: AI_CHAT_PROMPT_VERSION,
   };
 }
 
@@ -268,4 +382,13 @@ function getActiveProviderInfo() {
   return { provider, model: entry ? entry.model() : null };
 }
 
-module.exports = { analyzeSubmission, draftEmail, reviewContract, generateContract, getActiveProviderInfo, AiAnalysisError };
+module.exports = {
+  analyzeSubmission,
+  analyzeRawText,
+  chatReply,
+  draftEmail,
+  reviewContract,
+  generateContract,
+  getActiveProviderInfo,
+  AiAnalysisError,
+};

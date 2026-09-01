@@ -179,4 +179,100 @@ async function generateStructuredAnalysis({ systemPrompt, userMessage, zodSchema
   return { parsed, raw: body };
 }
 
-module.exports = { generateStructuredAnalysis, REQUEST_TIMEOUT_MS, MAX_OUTPUT_TOKENS };
+// Free-text, multi-turn variant of generateStructuredAnalysis() above, for
+// the AI chat feature (ai/aiService.js's chatReply). Same request/retry/
+// timeout handling — only two things differ: `messages` is a full
+// pre-built array (system prompt + however much conversation history the
+// caller wants replayed) rather than one fixed user message, and there's no
+// `format` field, since a conversational reply has no schema to constrain
+// generation to. Returns { text }, not { parsed } — nothing to validate
+// against a Zod schema here.
+async function generateChatReply({ systemPrompt, messages, model, onProgress }) {
+  const url = `${env.ollamaBaseUrl}/api/chat`;
+
+  const startedAt = Date.now();
+  const overallDeadline = startedAt + REQUEST_TIMEOUT_MS;
+  console.log(`[ollamaProvider] Sending chat request to Ollama at ${env.ollamaBaseUrl} (model=${model})...`);
+  onProgress?.("generating");
+
+  const requestBody = JSON.stringify({
+    model,
+    messages: [{ role: "system", content: systemPrompt }, ...messages],
+    stream: false,
+    options: { temperature: 0.4, num_predict: MAX_OUTPUT_TOKENS },
+  });
+
+  async function attempt(timeoutMs) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: requestBody,
+        signal: controller.signal,
+        dispatcher: tailscaleDispatcher,
+      });
+      return { res };
+    } catch (err) {
+      return { err };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  let { res, err } = await attempt(Math.min(FIRST_ATTEMPT_TIMEOUT_MS, REQUEST_TIMEOUT_MS));
+
+  if (err || (res && res.status === 502)) {
+    const reason = err ? (err.name === "AbortError" ? `no response within ${FIRST_ATTEMPT_TIMEOUT_MS}ms` : err.message) : "HTTP 502";
+    const remainingMs = Math.max(5000, overallDeadline - Date.now());
+    console.log(`[ollamaProvider] First chat attempt failed (${reason}) — retrying once with a fresh connection (${Math.round(remainingMs / 1000)}s left)...`);
+    ({ res, err } = await attempt(remainingMs));
+  }
+
+  if (err) {
+    const elapsedMs = Date.now() - startedAt;
+    if (err.name === "AbortError") {
+      console.error(`[ollamaProvider] Chat request timed out after ${elapsedMs}ms waiting on Ollama.`);
+      throw new AiAnalysisError("timeout", `Ollama chat request timed out after ${elapsedMs}ms.`, err);
+    }
+    console.error(`[ollamaProvider] Could not reach Ollama after ${elapsedMs}ms:`, err.message);
+    throw new AiAnalysisError(
+      "ollama_unavailable",
+      `Could not reach Ollama at ${env.ollamaBaseUrl}. Is it running?`,
+      err
+    );
+  }
+  console.log(`[ollamaProvider] Ollama chat responded after ${Date.now() - startedAt}ms (HTTP ${res.status}).`);
+
+  if (res.status === 404) {
+    throw new AiAnalysisError(
+      "model_unavailable",
+      `Ollama model "${model}" is not available. Run: ollama pull ${model}`,
+    );
+  }
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    if (res.status === 502) {
+      throw new AiAnalysisError(
+        "ollama_unavailable",
+        `Could not reach Ollama at ${env.ollamaBaseUrl} through the Tailscale connection (tried twice). Is it running, and is the connection stable?`,
+        body
+      );
+    }
+    throw new AiAnalysisError("provider_error", `Ollama returned HTTP ${res.status}.`, body);
+  }
+
+  const body = await res.json().catch((err) => {
+    throw new AiAnalysisError("invalid_json", "Ollama's response body was not valid JSON.", err);
+  });
+
+  const content = body?.message?.content;
+  if (typeof content !== "string" || !content.trim()) {
+    throw new AiAnalysisError("invalid_json", "Ollama returned an empty chat response.");
+  }
+
+  return { text: content.trim(), raw: body };
+}
+
+module.exports = { generateStructuredAnalysis, generateChatReply, REQUEST_TIMEOUT_MS, MAX_OUTPUT_TOKENS };

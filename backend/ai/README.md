@@ -2,9 +2,18 @@
 
 Structured, server-side-only AI analysis of `web-design.html` intake submissions. See `ai/aiService.js` for the entry point, `ai/providers/` for the swappable inference backends.
 
-Two features share this same provider abstraction:
+Several features share this same provider abstraction:
 - **Project analysis** (`ai/schema.js`, `ai/prompt.js`) — an internal-only synthesis of an intake submission. Client name/email are deliberately excluded from what's sent to the model (see `sanitizeWebDesignSubmission`).
 - **Outreach email drafting** (`ai/emailSchema.js`, `ai/emailPrompt.js`) — only available once analysis has completed, and the opposite privacy stance on purpose: the client's real name is included, because the output is meant to be sent to them. It's built from a narrow, client-safe subset of the analysis result — internal-only fields (`internal_notes`, `potential_risks`, `missing_information`, `confidence`, `priority`, `complexity`) are never forwarded (see `buildEmailContext`).
+- **AI chat** (`ai/chatPrompt.js`, `controllers/chatController.js`, `frontend/js/chat.js`) — see its own section below.
+
+## AI chat
+
+An interface to the same analysis pipeline above, not a second AI system. Opened from a submission's "Chat with AI" button (or standalone, via "New Analysis from Pasted Info" in the dashboard header — no submission required).
+
+- **Conversation** — free-text, multi-turn discussion about a submission and its analysis. `ai/aiService.js`'s `chatReply()` seeds every call with a context message (the same sanitized intake fields `sanitizeWebDesignSubmission` produces, plus the completed analysis if one exists — see `ai/chatPrompt.js`'s `buildChatContextMessage`), then replays prior turns and the new message. This is the one genuinely new piece of provider plumbing: `generateChatReply()` on both providers, free-text (no output schema), where `generateStructuredAnalysis()` is schema-constrained. Nothing here writes to `submission_analyses` — it's a sounding board, not an editor. History persists per-submission in `submission_chats` (`models/SubmissionChat.js`).
+- **Paste-and-analyze** — the "paste an email/notes and get a real analysis" action. `ai/aiService.js`'s `analyzeRawText()` reuses `SYSTEM_PROMPT` and `AnalysisSchema` from `ai/prompt.js`/`ai/schema.js` exactly as `analyzeSubmission()` does — the only new function is `buildRawTextUserMessage()`, a sibling to `buildUserMessage()` that wraps raw pasted text in the same `<CLIENT_INTAKE_DATA>` tag instead of a sanitized structured payload. The result is validated against the identical Zod schema, so it's provably the same shape as an analysis produced through the normal submission workflow. Never saved automatically — the admin has to click "Save as this submission's analysis" (overwrites `submission_analyses`, same as a normal re-analyze) or, in standalone mode, "Save as new submission" (creates a real `web-design` submission from the pasted text, then saves the analysis against it — indistinguishable afterward from any other submission).
+- **Rate limiting** — `chatLimiter` (60/hour), separate from `analysisLimiter` (20/hour): a real conversation makes far more calls than one analysis click.
 
 ## Local development
 

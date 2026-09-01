@@ -68,6 +68,13 @@ const MAX_TEXT_FIELD_CHARS = 4000;
 const MAX_SHORT_FIELD_CHARS = 300;
 const MAX_FEATURES = 20;
 
+// Pasted-text analysis (ai/aiService.js's analyzeRawText, used by the AI
+// chat feature) has no per-field structure to bound — it's one blob an
+// admin pastes in (an email thread, notes, questionnaire answers). Longer
+// ceiling than a single form field, still bounded for the same cost/abuse
+// reasons as MAX_TEXT_FIELD_CHARS above.
+const MAX_RAW_TEXT_CHARS = 12000;
+
 function truncate(value, max) {
   if (typeof value !== "string") return "";
   return value.length > max ? value.slice(0, max) + "…[truncated]" : value;
@@ -115,9 +122,28 @@ ${JSON.stringify(sanitizedPayload, null, 2)}
 </CLIENT_INTAKE_DATA>`;
 }
 
+// Sibling to buildUserMessage() above, for the AI chat feature's "paste raw
+// client info and analyze it" action (ai/aiService.js's analyzeRawText).
+// Same SYSTEM_PROMPT, same AnalysisSchema, same delimiter-based
+// injection-resistance discipline — the only thing that differs from the
+// normal flow is that there's no structured form data to sanitize into
+// fields first, so the raw pasted text goes straight into the same tag
+// (still content, never instructions, exactly as SYSTEM_PROMPT already
+// tells the model to treat anything inside <CLIENT_INTAKE_DATA>).
+function buildRawTextUserMessage(rawText) {
+  const truncated = truncate(rawText, MAX_RAW_TEXT_CHARS);
+  return `Analyze this raw client information (an email, message, notes, or questionnaire response) for a custom web design project. It was not submitted through the structured intake form — treat it the same as any other client intake data.
+
+<CLIENT_INTAKE_DATA>
+${truncated}
+</CLIENT_INTAKE_DATA>`;
+}
+
 module.exports = {
   AI_PROMPT_VERSION,
   SYSTEM_PROMPT,
+  MAX_RAW_TEXT_CHARS,
   sanitizeWebDesignSubmission,
   buildUserMessage,
+  buildRawTextUserMessage,
 };

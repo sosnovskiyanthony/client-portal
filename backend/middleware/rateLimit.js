@@ -47,4 +47,17 @@ const uploadLimiter = rateLimit({
   message: { error: "Too many upload requests. Please try again later." },
 });
 
-module.exports = { loginLimiter, submissionLimiter, analysisLimiter, uploadLimiter };
+// AI chat is also admin-only (defense-in-depth, same reasoning as
+// analysisLimiter), but a real back-and-forth conversation naturally makes
+// many more calls than one analysis click — 20/hour (analysisLimiter's cap)
+// would make a normal conversation likely to hit the ceiling mid-discussion.
+// Still bounded, just sized for how chat is actually used.
+const chatLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many chat requests. Please try again later." },
+});
+
+module.exports = { loginLimiter, submissionLimiter, analysisLimiter, uploadLimiter, chatLimiter };

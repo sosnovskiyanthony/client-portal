@@ -1,8 +1,9 @@
 const express = require("express");
 const adminController = require("../controllers/adminController");
+const chatController = require("../controllers/chatController");
 const { authenticate, requireAdmin } = require("../middleware/auth");
 const asyncHandler = require("../middleware/asyncHandler");
-const { analysisLimiter } = require("../middleware/rateLimit");
+const { analysisLimiter, chatLimiter } = require("../middleware/rateLimit");
 
 const router = express.Router();
 
@@ -23,5 +24,22 @@ router.post("/storage/cleanup-orphans", asyncHandler(adminController.cleanupAsse
 router.get("/ollama/status", asyncHandler(adminController.getOllamaStatus));
 router.post("/ollama/start", asyncHandler(adminController.startOllamaRemote));
 router.post("/ollama/stop", asyncHandler(adminController.stopOllamaRemote));
+
+// AI chat — an interface to the same analysis pipeline the routes above
+// already use (see ai/aiService.js's chatReply/analyzeRawText). The
+// standalone routes below (/chat/...) don't overlap with the :id-scoped
+// ones further down (/submissions/:id/chat/...) — different top-level path
+// segment, so route registration order between the two groups doesn't
+// matter here.
+router.post("/chat/analyze", chatLimiter, asyncHandler(chatController.analyzePastedTextStandalone));
+router.get("/chat/analyze/progress/:requestId", chatController.getAnalyzePastedProgressStandalone);
+router.post("/chat/analyze/save-as-submission", asyncHandler(chatController.saveStandaloneAnalysisAsSubmission));
+
+router.get("/submissions/:id/chat", asyncHandler(chatController.getChatHistory));
+router.post("/submissions/:id/chat", chatLimiter, asyncHandler(chatController.sendChatMessage));
+router.get("/submissions/:id/chat/progress", chatController.getChatProgress);
+router.post("/submissions/:id/chat/analyze", chatLimiter, asyncHandler(chatController.analyzePastedTextForSubmission));
+router.get("/submissions/:id/chat/analyze/progress", chatController.getAnalyzePastedProgressForSubmission);
+router.post("/submissions/:id/chat/analyze/save", asyncHandler(chatController.saveChatAnalysis));
 
 module.exports = router;

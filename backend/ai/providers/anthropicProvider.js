@@ -74,4 +74,39 @@ async function generateStructuredAnalysis({ systemPrompt, userMessage, zodSchema
   return { parsed: response.parsed_output, raw: response };
 }
 
-module.exports = { generateStructuredAnalysis, REQUEST_TIMEOUT_MS, MAX_OUTPUT_TOKENS };
+// Free-text, multi-turn variant of generateStructuredAnalysis() above, for
+// the AI chat feature. Uses messages.create (not .parse) since there's no
+// output schema to constrain a conversational reply to — see
+// ollamaProvider.js's generateChatReply for the matching Ollama-side
+// implementation and ai/aiService.js's chatReply for the shared caller.
+async function generateChatReply({ systemPrompt, messages, model, client, onProgress }) {
+  const activeClient = client || getClient();
+  if (!activeClient) {
+    throw new AiAnalysisError("missing_api_key", "ANTHROPIC_API_KEY is not configured.");
+  }
+
+  onProgress?.("generating");
+  let response;
+  try {
+    response = await activeClient.messages.create(
+      {
+        model,
+        max_tokens: MAX_OUTPUT_TOKENS,
+        system: systemPrompt,
+        messages,
+      },
+      { timeout: REQUEST_TIMEOUT_MS }
+    );
+  } catch (err) {
+    throw classifyError(err);
+  }
+
+  const textBlock = (response.content || []).find((block) => block.type === "text");
+  if (!textBlock || !textBlock.text || !textBlock.text.trim()) {
+    throw new AiAnalysisError("invalid_json", "Claude returned an empty chat response.");
+  }
+
+  return { text: textBlock.text.trim(), raw: response };
+}
+
+module.exports = { generateStructuredAnalysis, generateChatReply, REQUEST_TIMEOUT_MS, MAX_OUTPUT_TOKENS };

@@ -121,6 +121,26 @@ async function init() {
     );
   `);
 
+  // AI chat interface — lets the admin have a multi-turn conversation about
+  // a submission's analysis (see models/SubmissionChat.js, ai/chatPrompt.js).
+  // One row per submission (like submission_analyses/email_drafts), but
+  // holds a growing array rather than a single overwritten result — each
+  // element is { role: "admin"|"assistant"|"analysis", content, createdAt }.
+  // A "analysis" role entry's content is a full AnalysisSchema-shaped
+  // object (produced by pasting raw client text into the chat and asking
+  // for an analysis) — kept inline in the thread for context, but never
+  // written to submission_analyses until the admin explicitly saves it
+  // (see chatController.saveChatAnalysis).
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS submission_chats (
+      id SERIAL PRIMARY KEY,
+      submission_id INTEGER NOT NULL UNIQUE REFERENCES submissions(id) ON DELETE CASCADE,
+      messages JSONB NOT NULL DEFAULT '[]',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+
   // Contracts feature — see ai/README.md's "Contracts" section (once
   // written) for the full workflow. Deliberately separate from
   // submission_analyses/email_drafts' 1:1-per-submission pattern: a

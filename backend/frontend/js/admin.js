@@ -345,6 +345,7 @@
           </div>
           <p class="analysis-empty">Not yet analyzed. AI analysis only runs when you click below — it never runs automatically.</p>
           <button class="btn btn-ghost analysis-btn" data-analyze-id="${submission.id}" type="button">Analyze with AI</button>
+          <button class="btn btn-ghost chat-btn" data-chat-id="${submission.id}" data-chat-name="${escapeHtml(submission.clientName || 'this submission')}" type="button">Chat with AI</button>
         </div>
       `;
     }
@@ -471,6 +472,7 @@
 
         <p class="analysis-meta">${escapeHtml(a.provider || "")} · ${escapeHtml(a.model || "")} · prompt v${escapeHtml(a.promptVersion || "")}</p>
         <button class="btn btn-ghost analysis-btn" data-analyze-id="${submission.id}" type="button">${btnLabel}</button>
+        <button class="btn btn-ghost chat-btn" data-chat-id="${submission.id}" data-chat-name="${escapeHtml(submission.clientName || 'this submission')}" type="button">Chat with AI</button>
 
         ${renderEmailDraftSection(submission)}
       </div>
@@ -1281,6 +1283,12 @@
     });
 
     window.addEventListener("studio:admin-auth-change", render);
+    // Fired by js/chat.js after "Save as new submission" (the AI chat
+    // feature's standalone paste-and-analyze flow) — the new submission
+    // exists in the DB now, but this list's own cache has no way to know
+    // that on its own, since chat.js created it through a completely
+    // separate request this list never saw.
+    window.addEventListener("studio:submissions-changed", loadSubmissions);
 
     render();
   }
