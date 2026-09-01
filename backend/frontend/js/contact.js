@@ -138,6 +138,10 @@
       els.layout.hidden = true;
       renderSuccess();
       els.successState.hidden = false;
+      // A visitor who scrolled down to reach the fields keeps that scroll
+      // position when the much-shorter success screen swaps in — see
+      // web-design.js's submitProject() for the full explanation.
+      window.scrollTo({ top: 0, behavior: "instant" });
       // Move focus into the newly-revealed content so keyboard/screen-reader
       // users land on it instead of losing their place when the form
       // disappears — the heading has tabindex="-1" so it's focusable

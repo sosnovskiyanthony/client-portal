@@ -392,6 +392,15 @@
       els.layout.hidden = true;
       renderSuccess();
       els.successState.hidden = false;
+      // A visitor who scrolled down to reach the contact fields (the common
+      // case on mobile, where the form runs well past one screen) keeps that
+      // scroll position when the much-shorter success screen swaps in — with
+      // nothing to reset it, they're left looking at blank space past the
+      // end of the new page, which reads as "nothing happened." iOS Safari
+      // also doesn't reliably auto-scroll a tabindex="-1" element into view
+      // on focus() the way desktop browsers do, so this can't be left to
+      // that call alone.
+      window.scrollTo({ top: 0, behavior: "instant" });
       // Move focus into the newly-revealed content so keyboard/screen-reader
       // users land on it instead of losing their place when the form
       // disappears — the heading has tabindex="-1" so it's focusable
