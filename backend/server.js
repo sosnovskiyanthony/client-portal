@@ -12,6 +12,7 @@ const authRoutes = require("./routes/auth");
 const intakeRoutes = require("./routes/intake");
 const contactRoutes = require("./routes/contact");
 const adminRoutes = require("./routes/admin");
+const contractRoutes = require("./routes/contracts");
 
 const app = express();
 
@@ -83,6 +84,10 @@ app.use("/api/auth", authRoutes);
 app.use("/api/intake", intakeRoutes);
 app.use("/api/contact", contactRoutes);
 app.use("/api/admin", adminRoutes);
+// A second, separate router at the same prefix — routes/admin.js itself is
+// untouched. Same authorization gate (authenticate + requireAdmin, applied
+// inside routes/contracts.js), different concern.
+app.use("/api/admin", contractRoutes);
 
 app.use((req, res, next) => {
   if (req.path.startsWith("/api/")) {
