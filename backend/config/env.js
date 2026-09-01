@@ -103,6 +103,13 @@ module.exports = {
   supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || null,
   supabaseBucket: process.env.SUPABASE_BUCKET || "brand-assets",
 
+  // Separate private bucket for generated contract PDFs (see
+  // services/contractPdf.js, controllers/contractController.js) — reuses
+  // the same SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY above, just a
+  // different bucket, so contract documents and client brand-asset
+  // uploads never share storage. Same "unconfigured = clear 503" pattern.
+  supabaseContractsBucket: process.env.SUPABASE_CONTRACTS_BUCKET || "contracts",
+
   // Lets an admin start/stop Ollama remotely from the dashboard — talks to
   // a small always-on control helper running on whichever machine hosts
   // Ollama (see ai/README.md's "Remote Ollama control" section), over the

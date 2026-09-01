@@ -230,6 +230,7 @@
       ${renderCustomTermsSection()}
       ${renderReviewSection()}
       ${renderGenerationSection()}
+      ${renderPdfSection()}
     `;
 
     wireClientSection();
@@ -243,6 +244,7 @@
     wireCustomTermsSection();
     wireReviewSection();
     wireGenerationSection();
+    wirePdfSection();
     loadVersionHistory();
   }
 
@@ -839,6 +841,53 @@
     } catch (err) {
       container.innerHTML = `<p class="contract-section-footnote">${escapeHtml(err.message)}</p>`;
     }
+  }
+
+  // ---- PDF ----
+  function renderPdfSection() {
+    const hasContent = Boolean(activeContract.finalContent || activeContract.generatedContent);
+    return sectionCard(
+      "PDF",
+      `
+      <p class="contract-section-footnote">${activeContract.finalContent ? "Generates from the finalized content." : "Generates from the current draft — finalize the contract first for the authoritative version."}</p>
+      <div class="draft-actions">
+        <button class="btn btn-primary" id="btn-generate-pdf" type="button" ${hasContent ? "" : "disabled"}>Generate PDF</button>
+        <button class="btn btn-ghost" id="btn-view-pdf" type="button" ${activeContract.pdfStoragePath ? "" : "disabled"}>View / Download PDF</button>
+      </div>
+    `
+    );
+  }
+
+  function wirePdfSection() {
+    document.getElementById("btn-generate-pdf").addEventListener("click", async (e) => {
+      const btn = e.currentTarget;
+      const original = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = "Generating…";
+      try {
+        activeContract = await generateContractPdf(activeContract.id);
+        document.getElementById("btn-view-pdf").disabled = false;
+        flashSaved(btn, "Generate PDF");
+      } catch (err) {
+        els.builderSub.textContent = err.message;
+        btn.disabled = false;
+        btn.textContent = original;
+      }
+    });
+
+    document.getElementById("btn-view-pdf").addEventListener("click", async () => {
+      // Opened synchronously, before the await below, so popup blockers
+      // don't treat this as an unsolicited pop-up — same pattern used
+      // elsewhere in this app for exactly this reason.
+      const tab = window.open("", "_blank");
+      try {
+        const url = await getContractPdfUrl(activeContract.id);
+        if (tab) tab.location = url;
+      } catch (err) {
+        if (tab) tab.close();
+        els.builderSub.textContent = err.message;
+      }
+    });
   }
 
   function init() {

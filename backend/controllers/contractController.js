@@ -13,8 +13,12 @@ const { getNextContractNumber } = require("../services/contractNumbering");
 const { logAction } = require("../services/contractAudit");
 const { runContractReview } = require("../services/runContractReview");
 const { runContractGeneration } = require("../services/runContractGeneration");
+const { generateContractPdf } = require("../services/contractPdf");
+const storage = require("../services/storage");
 const { AiAnalysisError } = require("../ai/errors");
 const analysisProgress = require("../lib/analysisProgress");
+const env = require("../config/env");
+const { randomUUID } = require("crypto");
 
 async function listContracts(req, res) {
   const status = typeof req.query.status === "string" ? req.query.status : "all";
@@ -377,6 +381,75 @@ async function getContractVersions(req, res) {
   res.json({ versions });
 }
 
+// Generates a fresh PDF from the contract's current content (final_content
+// once approved, generated_content before that — whichever exists,
+// preferring final_content since that's the authoritative one once it's
+// set) and uploads it to the private contracts bucket. The storage path
+// is a server-generated UUID, never derived from anything client-supplied
+// — unlike the brand-assets signed-URL endpoint, there's no attacker-
+// controlled path input here to validate against, since GET below only
+// ever reads the path back from this contract's own DB row.
+async function generateContractPdfHandler(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) {
+    return res.status(400).json({ error: "Invalid contract id." });
+  }
+  const contract = await Contract.findById(id);
+  if (!contract) {
+    return res.status(404).json({ error: "Contract not found." });
+  }
+  if (!storage.isConfigured()) {
+    return res.status(503).json({ error: "PDF storage is not configured on this server." });
+  }
+
+  const content = contract.finalContent || contract.generatedContent;
+  if (!content) {
+    return res.status(400).json({ error: "Generate a contract draft before creating a PDF." });
+  }
+
+  const buffer = await generateContractPdf(contract, content);
+  const path = `contracts/${randomUUID()}.pdf`;
+
+  try {
+    await storage.uploadFile(path, buffer, "application/pdf", env.supabaseContractsBucket);
+  } catch (err) {
+    return res.status(502).json({ error: "Failed to upload the generated PDF." });
+  }
+
+  const updated = await Contract.setPdfStoragePath(id, path);
+  await logAction(id, "contract_pdf_generated", req.user.sub, {});
+  res.json({ contract: updated });
+}
+
+// Never returns a public/permanent URL — only a short-lived signed one,
+// generated fresh on every call, same pattern as
+// adminController.getAssetSignedUrl for brand assets.
+const PDF_SIGNED_URL_TTL_SECONDS = 300;
+
+async function getContractPdfUrl(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) {
+    return res.status(400).json({ error: "Invalid contract id." });
+  }
+  const contract = await Contract.findById(id);
+  if (!contract) {
+    return res.status(404).json({ error: "Contract not found." });
+  }
+  if (!contract.pdfStoragePath) {
+    return res.status(404).json({ error: "No PDF has been generated for this contract yet." });
+  }
+  if (!storage.isConfigured()) {
+    return res.status(503).json({ error: "PDF storage is not configured on this server." });
+  }
+
+  try {
+    const signedUrl = await storage.createSignedUrl(contract.pdfStoragePath, PDF_SIGNED_URL_TTL_SECONDS, env.supabaseContractsBucket);
+    res.json({ signedUrl, expiresInSeconds: PDF_SIGNED_URL_TTL_SECONDS });
+  } catch (err) {
+    res.status(502).json({ error: "Could not generate a link to the PDF." });
+  }
+}
+
 module.exports = {
   listContracts,
   getContract,
@@ -393,4 +466,6 @@ module.exports = {
   getContractGenerationProgress,
   saveContractContent,
   getContractVersions,
+  generateContractPdfHandler,
+  getContractPdfUrl,
 };

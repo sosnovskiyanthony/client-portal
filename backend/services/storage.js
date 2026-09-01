@@ -28,19 +28,24 @@ function isConfigured() {
   return getClient() !== null;
 }
 
-async function uploadFile(path, buffer, contentType) {
+// `bucket` defaults to the brand-assets bucket so every existing call site
+// (uploadBrandAssets, getAssetSignedUrl, etc.) keeps working unchanged —
+// contractController.js is the only caller that ever passes a different
+// one (env.supabaseContractsBucket), keeping contract PDFs in their own
+// bucket, separate from brand assets.
+async function uploadFile(path, buffer, contentType, bucket = env.supabaseBucket) {
   const client = getClient();
   if (!client) throw new Error("Supabase Storage is not configured.");
   const { error } = await client.storage
-    .from(env.supabaseBucket)
+    .from(bucket)
     .upload(path, buffer, { contentType, upsert: false });
   if (error) throw new Error(error.message);
 }
 
-async function createSignedUrl(path, expiresInSeconds) {
+async function createSignedUrl(path, expiresInSeconds, bucket = env.supabaseBucket) {
   const client = getClient();
   if (!client) throw new Error("Supabase Storage is not configured.");
-  const { data, error } = await client.storage.from(env.supabaseBucket).createSignedUrl(path, expiresInSeconds);
+  const { data, error } = await client.storage.from(bucket).createSignedUrl(path, expiresInSeconds);
   if (error) throw new Error(error.message);
   return data.signedUrl;
 }

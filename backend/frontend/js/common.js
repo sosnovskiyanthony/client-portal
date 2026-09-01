@@ -1004,6 +1004,21 @@ async function getContractVersions(id) {
   return data.versions;
 }
 
+async function generateContractPdf(id) {
+  const data = await contractFetch(`/api/admin/contracts/${id}/pdf`, {
+    method: "POST",
+    errorFallback: "Couldn't generate the PDF.",
+  });
+  return data.contract;
+}
+
+// Returns a short-lived signed URL, never a permanent/public one — the
+// caller should use it immediately (open/download), not store it.
+async function getContractPdfUrl(id) {
+  const data = await contractFetch(`/api/admin/contracts/${id}/pdf`, { errorFallback: "Couldn't get a link to the PDF." });
+  return data.signedUrl;
+}
+
 // ---------- Account menu ----------
 
 function initMenu() {
