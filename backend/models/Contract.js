@@ -129,13 +129,25 @@ const PATCHABLE_COLUMNS = {
   customTerms: "custom_terms",
 };
 
+// pg encodes a plain JS Array parameter as a Postgres array literal
+// ("{a,b}"), not JSON — fine for a real text[]/int[] column, but wrong for
+// a JSONB one, which then fails to parse that literal as JSON (confirmed
+// live: saving clientResponsibilities, a JS array, threw a real Postgres
+// JSON-parse error until this was added). paymentTerms is a plain object,
+// which pg does JSON.stringify automatically — but stringifying it
+// explicitly here too keeps this list the single source of truth for
+// "these columns are JSONB" rather than relying on that implicit,
+// type-dependent default behavior.
+const JSONB_COLUMNS = new Set(["paymentTerms", "clientResponsibilities"]);
+
 async function update(id, fields) {
   const setClauses = [];
   const params = [id];
 
   for (const [key, column] of Object.entries(PATCHABLE_COLUMNS)) {
     if (!(key in fields)) continue;
-    params.push(fields[key]);
+    const value = fields[key];
+    params.push(JSONB_COLUMNS.has(key) && value !== null ? JSON.stringify(value) : value);
     setClauses.push(`${column} = $${params.length}`);
   }
   if (setClauses.length === 0) return findById(id);

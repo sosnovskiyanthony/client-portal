@@ -844,6 +844,103 @@ async function getEmailDraftProgress(id) {
   }
 }
 
+// ---------- Contracts ----------
+
+// Shared by every Contracts helper below — same network/401/error-body
+// contract every other authenticated admin fetch in this file follows
+// (see analyzeSubmission above), factored out here since the Contracts
+// feature adds enough call sites that repeating it verbatim ten more times
+// would just be noise. Existing functions are left as-is rather than
+// retrofitted onto this, to avoid touching already-working code.
+async function contractFetch(url, { method = "GET", body, errorFallback } = {}) {
+  let res;
+  try {
+    const headers = { Authorization: `Bearer ${getAdminToken()}` };
+    if (body !== undefined) headers["Content-Type"] = "application/json";
+    res = await fetch(url, { method, headers, body: body !== undefined ? JSON.stringify(body) : undefined });
+  } catch (err) {
+    throw new Error("Can't reach the server. Is the backend running?");
+  }
+
+  if (res.status === 401 || res.status === 403) {
+    logoutAdmin();
+    throw new Error("Your session expired. Please log in again.");
+  }
+  if (res.status === 204) return null;
+
+  const responseBody = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(responseBody.error || errorFallback || "Request failed.");
+  }
+  return responseBody;
+}
+
+async function listContracts({ status = "all", search = "", page = 1 } = {}) {
+  const params = new URLSearchParams({ status, search, page: String(page) });
+  return contractFetch(`/api/admin/contracts?${params}`, { errorFallback: "Couldn't load contracts." });
+}
+
+async function getContractDetail(id) {
+  return contractFetch(`/api/admin/contracts/${id}`, { errorFallback: "Couldn't load this contract." });
+}
+
+async function createContractFromSubmission(submissionId) {
+  const data = await contractFetch(`/api/admin/contracts/from-submission/${submissionId}`, {
+    method: "POST",
+    body: {},
+    errorFallback: "Couldn't create a contract for this submission.",
+  });
+  return data.contract;
+}
+
+async function updateContract(id, fields) {
+  const data = await contractFetch(`/api/admin/contracts/${id}`, {
+    method: "PATCH",
+    body: fields,
+    errorFallback: "Couldn't save changes.",
+  });
+  return data.contract;
+}
+
+async function deleteContract(id) {
+  await contractFetch(`/api/admin/contracts/${id}`, { method: "DELETE", errorFallback: "Couldn't delete this contract." });
+}
+
+async function setContractFeatures(id, features) {
+  const data = await contractFetch(`/api/admin/contracts/${id}/features`, {
+    method: "PATCH",
+    body: { features },
+    errorFallback: "Couldn't save the scope of work.",
+  });
+  return data.selectedFeatures;
+}
+
+async function addCustomContractFeature(id, feature) {
+  const data = await contractFetch(`/api/admin/contracts/${id}/features/custom`, {
+    method: "POST",
+    body: feature,
+    errorFallback: "Couldn't add that feature.",
+  });
+  return data.feature;
+}
+
+async function removeContractFeature(id, featureRowId) {
+  await contractFetch(`/api/admin/contracts/${id}/features/${featureRowId}`, {
+    method: "DELETE",
+    errorFallback: "Couldn't remove that feature.",
+  });
+}
+
+async function getContractAuditLog(id) {
+  const data = await contractFetch(`/api/admin/contracts/${id}/audit-log`, { errorFallback: "Couldn't load the audit log." });
+  return data.auditLog;
+}
+
+async function listContractFeatureCatalog() {
+  const data = await contractFetch("/api/admin/contract-features", { errorFallback: "Couldn't load the feature catalog." });
+  return data;
+}
+
 // ---------- Account menu ----------
 
 function initMenu() {
@@ -886,6 +983,10 @@ function renderMenu() {
       <a class="menu-item" href="admin.html">
         <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.4"/><rect x="9" y="2" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.4"/><rect x="2" y="9" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.4"/><rect x="9" y="9" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.4"/></svg>
         Admin Dashboard
+      </a>
+      <a class="menu-item" href="admin-contracts.html">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><rect x="3" y="2" width="10" height="12" rx="1.2" stroke="currentColor" stroke-width="1.4"/><path d="M5.5 5.5H10.5M5.5 8H10.5M5.5 10.5H8.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+        Contracts
       </a>
       <button class="menu-item" data-action="logout" type="button">
         <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M6 2H3.5C2.67 2 2 2.67 2 3.5V12.5C2 13.33 2.67 14 3.5 14H6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M10.5 5.5L14 8L10.5 10.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 8H6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>

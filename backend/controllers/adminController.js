@@ -2,6 +2,7 @@ const Submission = require("../models/Submission");
 const Analysis = require("../models/Analysis");
 const ProjectOutcome = require("../models/ProjectOutcome");
 const EmailDraft = require("../models/EmailDraft");
+const Contract = require("../models/Contract");
 const { runAnalysis } = require("../services/runAnalysis");
 const { runDraftEmail } = require("../services/draftEmail");
 const { toCsv } = require("../utils/csv");
@@ -21,10 +22,11 @@ async function listSubmissions(req, res) {
     Submission.count({ type }),
   ]);
   const ids = submissions.map((s) => s.id);
-  const [analyses, outcomes, emailDrafts] = await Promise.all([
+  const [analyses, outcomes, emailDrafts, contracts] = await Promise.all([
     Analysis.findAllBySubmissionIds(ids),
     ProjectOutcome.findAllBySubmissionIds(ids),
     EmailDraft.findAllBySubmissionIds(ids),
+    Contract.findAllBySubmissionIds(ids),
   ]);
 
   res.json({
@@ -33,6 +35,10 @@ async function listSubmissions(req, res) {
       analysis: analyses[s.id] || null,
       outcome: outcomes[s.id] || null,
       emailDraft: emailDrafts[s.id] || null,
+      // Array, not a single object — unlike analysis/outcome/emailDraft,
+      // more than one contract can exist per submission (a re-negotiated
+      // deal). See models/Contract.js's findAllBySubmissionIds.
+      contracts: contracts[s.id] || [],
     })),
     total,
     page,

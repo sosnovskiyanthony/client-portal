@@ -708,8 +708,69 @@
         </div>
         ${submission.type === "web-design" ? renderAnalysisSection(submission) : ""}
         ${renderOutcomeSection(submission)}
+        ${renderContractSection(submission)}
       </div>
     `;
+  }
+
+  const CONTRACT_STATUS_LABELS = {
+    draft: "Draft",
+    needs_review: "Needs Review",
+    ready_for_approval: "Ready for Approval",
+    approved: "Approved",
+    sent: "Sent",
+    signed: "Signed",
+    completed: "Completed",
+    cancelled: "Cancelled",
+  };
+
+  // Works for any submission type, same reasoning as renderOutcomeSection —
+  // a contract can follow an SEO or contact inquiry too, not just
+  // web-design. Shows the most recent contract if one or more exist (an
+  // array, not 1:1 like analysis/emailDraft — see models/Contract.js), or
+  // a Create Contract action if none does. The actual create happens here
+  // (a real API call, not just a navigation), then redirects straight into
+  // the builder for the new contract.
+  function renderContractSection(submission) {
+    const contracts = submission.contracts || [];
+    if (contracts.length === 0) {
+      return `
+        <div class="contract-inline-section">
+          <span class="analysis-title">Contract</span>
+          <button class="btn btn-ghost contract-create-btn" data-submission-id="${submission.id}" type="button">Create Contract</button>
+        </div>
+      `;
+    }
+    const latest = contracts[0];
+    return `
+      <div class="contract-inline-section">
+        <span class="analysis-title">Contract</span>
+        <a class="contract-inline-link" href="admin-contracts.html?contract=${latest.id}">
+          ${escapeHtml(latest.contractNumber)}
+          <span class="contract-status-badge contract-status-${escapeHtml(latest.status)}">${escapeHtml(CONTRACT_STATUS_LABELS[latest.status] || latest.status)}</span>
+        </a>
+        ${contracts.length > 1 ? `<span class="contract-inline-more">+${contracts.length - 1} more</span>` : ""}
+      </div>
+    `;
+  }
+
+  function initContractCreation() {
+    els.list.addEventListener("click", async (e) => {
+      const btn = e.target.closest(".contract-create-btn[data-submission-id]");
+      if (!btn) return;
+      const submissionId = Number(btn.dataset.submissionId);
+      btn.disabled = true;
+      btn.textContent = "Creating…";
+      try {
+        const contract = await createContractFromSubmission(submissionId);
+        window.location.href = `admin-contracts.html?contract=${contract.id}`;
+      } catch (err) {
+        els.adminSub.textContent = err.message;
+        btn.disabled = false;
+        btn.textContent = "Create Contract";
+        if (!isAdminLoggedIn()) render();
+      }
+    });
   }
 
   async function loadSubmissions() {
@@ -1211,6 +1272,7 @@
     initExport();
     initCleanupOrphans();
     initOllamaControl();
+    initContractCreation();
 
     els.btnLogin.addEventListener("click", () => openModal("login"));
     els.btnLogout.addEventListener("click", () => {
