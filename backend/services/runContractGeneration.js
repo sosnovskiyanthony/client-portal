@@ -33,6 +33,7 @@ async function runContractGeneration(contract, selectedFeatures, actorUserId) {
     const outcome = await aiService.generateContract(approvedData, template.sections, {
       onProgress: (stage) => analysisProgress.setStage("contract-generate", contract.id, stage),
     });
+    analysisProgress.setStage("contract-generate", contract.id, "saving");
 
     await Contract.setScopeSnapshot(contract.id, approvedData.scope_of_work);
     await Contract.setGeneratedContent(contract.id, outcome.result);

@@ -24,6 +24,7 @@ async function runContractReview(contract, selectedFeatures) {
     const outcome = await aiService.reviewContract(approvedData, {
       onProgress: (stage) => analysisProgress.setStage("contract-review", contract.id, stage),
     });
+    analysisProgress.setStage("contract-review", contract.id, "saving");
     return Contract.setReviewResult(contract.id, outcome.result);
   } finally {
     analysisProgress.finish("contract-review", contract.id);

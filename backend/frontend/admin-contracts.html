@@ -132,7 +132,14 @@
       <h1 class="admin-title" id="builder-contract-number">Contract</h1>
       <p class="admin-sub" id="builder-sub" aria-live="polite"></p>
     </div>
-    <div class="admin-header-actions" id="builder-header-actions"></div>
+    <div class="admin-header-actions">
+      <div class="ollama-control" id="ollama-control" hidden>
+        <span class="ollama-status" id="ollama-status-dot" aria-hidden="true"></span>
+        <span id="ollama-status-text">Ollama: checking…</span>
+        <button class="btn btn-ghost" id="ollama-toggle-btn" type="button" hidden>Start</button>
+      </div>
+      <div class="admin-header-actions" id="builder-header-actions"></div>
+    </div>
   </div>
 
   <div id="contract-builder-content"></div>

@@ -25,6 +25,10 @@
     builderSub: document.getElementById("builder-sub"),
     builderActions: document.getElementById("builder-header-actions"),
     builderContent: document.getElementById("contract-builder-content"),
+    ollamaControl: document.getElementById("ollama-control"),
+    ollamaDot: document.getElementById("ollama-status-dot"),
+    ollamaText: document.getElementById("ollama-status-text"),
+    ollamaToggleBtn: document.getElementById("ollama-toggle-btn"),
   };
 
   let currentStatus = "all";
@@ -72,6 +76,7 @@
       els.listView.hidden = true;
       els.builderView.hidden = false;
       await loadBuilder(contractId);
+      refreshOllamaStatus();
     } else {
       els.builderView.hidden = true;
       els.listView.hidden = false;
@@ -725,10 +730,93 @@
     });
   }
 
+  // ---- Shared live-progress infrastructure for AI Review/Generation ----
+  // Same pattern as admin.js's analysis/email-draft progress display —
+  // real, backend-confirmed stages (see lib/analysisProgress.js and
+  // services/runContractReview.js/runContractGeneration.js's onProgress
+  // calls) polled live, not a simulated progress bar.
+  const CONTRACT_REVIEW_STAGES = [
+    { key: "preparing", label: "Preparing approved contract data" },
+    { key: "sending", label: "Sending to Ollama" },
+    { key: "generating", label: "Ollama is checking for gaps and conflicts…" },
+    { key: "validating", label: "Validating AI response" },
+    { key: "saving", label: "Saving results" },
+  ];
+  const CONTRACT_GENERATE_STAGES = [
+    { key: "preparing", label: "Preparing approved contract data" },
+    { key: "sending", label: "Sending to Ollama" },
+    { key: "generating", label: "Ollama is drafting the contract…" },
+    { key: "validating", label: "Validating AI response" },
+    { key: "saving", label: "Saving draft" },
+  ];
+  const CONTRACT_STAGE_ORDER = CONTRACT_REVIEW_STAGES.map((s) => s.key); // same order for both
+
+  // Ollama has no external "sources" — this is genuinely the entire input
+  // (see ai/contractData.js), the honest answer to "what is it using."
+  const REVIEW_FEEDING_IN =
+    "Client info, project info, scope of work, pricing, payment terms, timeline, revisions, responsibilities, and custom terms — everything currently saved on this contract";
+  const GENERATE_FEEDING_IN = "The same approved contract data, plus the active contract template's section guidance";
+
+  function renderStageList(stages) {
+    return `
+      <ol class="stage-list">
+        ${stages
+          .map(
+            (s, i) => `
+          <li class="stage-item ${i === 0 ? "active" : "pending"}" data-stage="${s.key}">
+            <span class="stage-dot" aria-hidden="true"></span>
+            <span class="stage-label">${escapeHtml(s.label)}</span>
+          </li>`
+          )
+          .join("")}
+      </ol>
+    `;
+  }
+
+  // Same reasoning as admin.js's identical function: does nothing when
+  // progress is missing/inactive, rather than resetting to "preparing" —
+  // a single missed poll shouldn't make a well-underway request look like
+  // it just started over.
+  function applyStageProgress(container, progress) {
+    if (!container || !progress || !progress.active) return;
+    const currentIdx = CONTRACT_STAGE_ORDER.indexOf(progress.stage);
+    if (currentIdx === -1) return;
+    container.querySelectorAll(".stage-item").forEach((li) => {
+      const idx = CONTRACT_STAGE_ORDER.indexOf(li.dataset.stage);
+      li.classList.remove("done", "active", "pending");
+      li.classList.add(idx < currentIdx ? "done" : idx === currentIdx ? "active" : "pending");
+    });
+    if (progress.model) {
+      const sendingLabel = container.querySelector('.stage-item[data-stage="sending"] .stage-label');
+      if (sendingLabel && !sendingLabel.dataset.modelSet) {
+        sendingLabel.textContent = `Sending to Ollama (${progress.model})`;
+        sendingLabel.dataset.modelSet = "1";
+      }
+    }
+  }
+
+  // Polls one progress endpoint every ~1s while its action is in flight,
+  // updating the stage list in place. `kind` matches the lib/
+  // analysisProgress.js key the backend tracks under ("contract-review" /
+  // "contract-generate").
+  function startProgressPolling({ getProgress, getContainer, isStillActive }) {
+    const handle = setInterval(async () => {
+      if (!isStillActive()) {
+        clearInterval(handle);
+        return;
+      }
+      const progress = await getProgress(activeContract.id);
+      const container = getContainer();
+      if (progress) applyStageProgress(container, progress);
+    }, 1000);
+    return handle;
+  }
+
   // ---- AI Review (Task 1) ----
   const SEVERITY_ORDER = { error: 0, warning: 1, info: 2 };
   let reviewInFlight = false;
   let reviewTickHandle = null;
+  let reviewPollHandle = null;
 
   function renderReviewWarnings(reviewResult) {
     if (!reviewResult) return "";
@@ -759,6 +847,7 @@
       `
       <p class="contract-section-footnote">Checks the data above for missing information and conflicts before drafting — it never changes anything itself. AI-generated content must be reviewed and approved before use.</p>
       <p class="contract-section-footnote" id="review-meta">${escapeHtml(reviewedNote)}</p>
+      <div id="review-progress-container"></div>
       <button class="btn btn-primary" id="btn-run-review" type="button">Run AI Review</button>
       <div id="review-result-container">${renderReviewWarnings(activeContract.reviewResult)}</div>
     `
@@ -774,10 +863,18 @@
       btn.disabled = true;
       btn.textContent = "Reviewing… 0:00";
 
+      const progressContainer = document.getElementById("review-progress-container");
+      progressContainer.innerHTML = `${renderStageList(CONTRACT_REVIEW_STAGES)}<p class="analysis-feeding-in">Feeding in: ${escapeHtml(REVIEW_FEEDING_IN)}</p>`;
+
       reviewTickHandle = setInterval(() => {
         const s = Math.floor((Date.now() - startTime) / 1000);
         btn.textContent = `Reviewing… ${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
       }, 1000);
+      reviewPollHandle = startProgressPolling({
+        getProgress: getContractReviewProgress,
+        getContainer: () => document.getElementById("review-progress-container"),
+        isStillActive: () => reviewInFlight,
+      });
 
       try {
         activeContract = await reviewContractWithAi(activeContract.id);
@@ -787,9 +884,11 @@
         els.builderSub.textContent = err.message;
       } finally {
         clearInterval(reviewTickHandle);
+        clearInterval(reviewPollHandle);
         reviewInFlight = false;
         btn.disabled = false;
         btn.textContent = "Run AI Review";
+        progressContainer.innerHTML = "";
       }
     });
   }
@@ -797,6 +896,7 @@
   // ---- AI Generation (Task 2), editing, version history ----
   let generateInFlight = false;
   let generateTickHandle = null;
+  let generatePollHandle = null;
 
   function renderGeneratedSections(content) {
     if (!content || !Array.isArray(content.sections) || content.sections.length === 0) {
@@ -823,6 +923,7 @@
         <button class="btn btn-primary" id="btn-generate-draft" type="button">${activeContract.generatedContent ? "Regenerate Draft" : "Generate Draft"}</button>
         <button class="btn btn-ghost" id="btn-save-draft-edits" type="button" ${activeContract.generatedContent ? "" : "disabled"}>Save Edits</button>
       </div>
+      <div id="generate-progress-container"></div>
       <div id="draft-sections-container">${renderGeneratedSections(activeContract.generatedContent)}</div>
       <h3 class="scope-category-title" style="margin-top:20px">Version History</h3>
       <div id="version-history-container"><p class="contract-section-footnote">Loading…</p></div>
@@ -840,10 +941,18 @@
       const label = activeContract.generatedContent ? "Regenerate Draft" : "Generate Draft";
       btn.textContent = "Generating… 0:00";
 
+      const progressContainer = document.getElementById("generate-progress-container");
+      progressContainer.innerHTML = `${renderStageList(CONTRACT_GENERATE_STAGES)}<p class="analysis-feeding-in">Feeding in: ${escapeHtml(GENERATE_FEEDING_IN)}</p>`;
+
       generateTickHandle = setInterval(() => {
         const s = Math.floor((Date.now() - startTime) / 1000);
         btn.textContent = `Generating… ${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
       }, 1000);
+      generatePollHandle = startProgressPolling({
+        getProgress: getContractGenerationProgress,
+        getContainer: () => document.getElementById("generate-progress-container"),
+        isStillActive: () => generateInFlight,
+      });
 
       try {
         activeContract = await generateContractWithAi(activeContract.id);
@@ -855,9 +964,11 @@
         els.builderSub.textContent = err.message;
       } finally {
         clearInterval(generateTickHandle);
+        clearInterval(generatePollHandle);
         generateInFlight = false;
         btn.disabled = false;
         btn.textContent = activeContract.generatedContent ? "Regenerate Draft" : "Generate Draft";
+        progressContainer.innerHTML = "";
       }
     });
 
@@ -1012,9 +1123,82 @@
     });
   }
 
+  // ---- Ollama control (ported from admin.js — identical logic/UI, this
+  // page is where Review/Generate actually happen, so turning Ollama on
+  // right before using it belongs here too) ----
+  let ollamaActionInFlight = false;
+  let ollamaControlUnavailable = false;
+
+  function setOllamaUi({ configured, running }) {
+    if (!els.ollamaControl) return;
+    if (!configured) {
+      els.ollamaControl.hidden = true;
+      return;
+    }
+    els.ollamaControl.hidden = false;
+    els.ollamaDot.classList.toggle("is-running", running);
+    els.ollamaDot.classList.toggle("is-stopped", !running);
+    els.ollamaText.textContent = `Ollama: ${running ? "running" : "stopped"}`;
+    els.ollamaToggleBtn.hidden = false;
+    els.ollamaToggleBtn.textContent = running ? "Stop" : "Start";
+    els.ollamaToggleBtn.dataset.running = running ? "true" : "false";
+  }
+
+  async function refreshOllamaStatus() {
+    if (ollamaControlUnavailable || !els.ollamaControl || ollamaActionInFlight) return;
+    try {
+      const result = await getOllamaStatus();
+      if (!result.configured) {
+        ollamaControlUnavailable = true;
+        setOllamaUi({ configured: false });
+        return;
+      }
+      setOllamaUi({ configured: true, running: result.running });
+    } catch (err) {
+      if (els.ollamaControl) {
+        els.ollamaControl.hidden = false;
+        els.ollamaDot.classList.remove("is-running");
+        els.ollamaDot.classList.add("is-stopped");
+        els.ollamaText.textContent = "Ollama: unreachable";
+        els.ollamaToggleBtn.hidden = true;
+      }
+      if (!isAdminLoggedIn()) render();
+    }
+  }
+
+  function initOllamaControl() {
+    if (!els.ollamaToggleBtn) return;
+    els.ollamaToggleBtn.addEventListener("click", async () => {
+      if (ollamaActionInFlight) return;
+      const wasRunning = els.ollamaToggleBtn.dataset.running === "true";
+      ollamaActionInFlight = true;
+      els.ollamaToggleBtn.disabled = true;
+      els.ollamaToggleBtn.textContent = wasRunning ? "Stopping…" : "Starting…";
+
+      try {
+        if (wasRunning) {
+          await stopOllamaRemote();
+        } else {
+          await startOllamaRemote();
+        }
+      } catch (err) {
+        els.builderSub.textContent = err.message;
+        if (!isAdminLoggedIn()) render();
+      } finally {
+        // Cleared before the follow-up status check, not after — see
+        // admin.js's identical comment on this exact ordering (a real bug,
+        // caught by a real live test, if reversed).
+        ollamaActionInFlight = false;
+        els.ollamaToggleBtn.disabled = false;
+      }
+      await refreshOllamaStatus();
+    });
+  }
+
   function init() {
     initCommon();
     initListControls();
+    initOllamaControl();
 
     els.btnLogin.addEventListener("click", () => openModal("login"));
     els.btnLogout.addEventListener("click", () => {
