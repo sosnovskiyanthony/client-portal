@@ -16,16 +16,32 @@ const Analysis = require("../models/Analysis");
 const aiService = require("../ai/aiService");
 const { AiAnalysisError } = require("../ai/errors");
 const { AI_PROMPT_VERSION } = require("../ai/prompt");
+const analysisProgress = require("../lib/analysisProgress");
 
 async function runAnalysis(submission) {
   const { provider, model } = aiService.getActiveProviderInfo();
+  analysisProgress.start("analysis", submission.id, { model });
 
+  try {
+    return await runAnalysisInner(submission, provider, model);
+  } finally {
+    // Always clear the progress entry, success or failure — otherwise a
+    // failed run would leave a stale "in progress" row that the next
+    // dashboard poll would show forever, since nothing else ever deletes it.
+    analysisProgress.finish("analysis", submission.id);
+  }
+}
+
+async function runAnalysisInner(submission, provider, model) {
   try {
     await Analysis.createPending(submission.id);
     await Analysis.markProcessing(submission.id, { provider, model, promptVersion: AI_PROMPT_VERSION });
 
-    const outcome = await aiService.analyzeSubmission(submission);
+    const outcome = await aiService.analyzeSubmission(submission, {
+      onProgress: (stage) => analysisProgress.setStage("analysis", submission.id, stage),
+    });
 
+    analysisProgress.setStage("analysis", submission.id, "saving");
     return await Analysis.markCompleted(submission.id, {
       result: outcome.result,
       provider: outcome.provider,

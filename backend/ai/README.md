@@ -28,6 +28,19 @@ AI analysis never runs automatically — submitting the intake form only ever sa
 SELECT status, error FROM submission_analyses ORDER BY id DESC LIMIT 5;
 ```
 
+## Live analysis progress
+
+A request against a local model can genuinely take a couple of minutes — a static "Analyzing…" label gives no way to tell that apart from a hung request. Two independent, backend-confirmed signals cover this instead of a simulated/fake progress bar:
+
+- **`lib/analysisProgress.js`** — an in-memory map of real pipeline stages (`preparing` → `sending` → `generating` → `validating` → `saving`) per in-flight submission, updated by `runAnalysis.js`/`draftEmail.js` via an `onProgress` callback threaded through `aiService.js` and each provider. Polled by the dashboard every ~1s via `GET /api/admin/submissions/:id/analyze/progress` and `.../draft-email/progress` while a request is in flight (see `admin.js`'s `tickElapsedLabels`). In-memory only, and only correct because this runs as a single Railway instance — see that file's own comment if this ever needs to scale horizontally.
+- **`ollamaProvider.js`'s console logs** — the request-sent / response-received timing lines, visible live in Railway's log tab, useful when you want ground truth independent of the dashboard.
+
+The dashboard's stage list also shows exactly what's being fed into the model — the same allowlisted fields `sanitizeWebDesignSubmission`/`buildEmailContext` actually send, nothing more. Ollama has no external "sources" of its own here: no web search, no retrieval, no data beyond the submission's own answers (and, for the email draft, the completed analysis).
+
+## Analysis reasoning
+
+`AnalysisSchema`'s `reasoning` field (`ai/schema.js`) asks the model to explain, per major judgment call, which specific thing the client said or didn't say led to that conclusion — not a restatement of the conclusion itself. Rendered as its own "How the AI reached these conclusions" section on the dashboard (`admin.js`), visually set apart from the rest of the analysis. Internal-only, like `internal_notes` — never forwarded into the email-draft context (see `buildEmailContext`).
+
 ## Why Ollama can't run on Railway
 
 Railway's app containers aren't built for hosting a persistent multi-gigabyte model with sustained CPU/memory load — that's a different kind of infrastructure than a web app + Postgres. The web app and the inference layer need to stay logically separate, as designed:

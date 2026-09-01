@@ -34,6 +34,7 @@ const VALID_ANALYSIS = {
   priority: "high",
   potential_additional_services: ["SEO Consultation"],
   internal_notes: ["Client seems price-sensitive"],
+  reasoning: ["Classified as lead-gen because the client selected Lead Generation / Sales as the primary goal."],
   confidence: 0.8,
 };
 

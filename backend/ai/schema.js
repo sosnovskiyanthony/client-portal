@@ -57,6 +57,9 @@ const AnalysisSchema = z.object({
   priority: z.enum(["low", "medium", "high"]),
   potential_additional_services: z.array(z.string()).describe("Only when the intake gives a legitimate reason — not a sales pitch"),
   internal_notes: z.array(z.string()).describe("Private observations for the business owner — never shown to the client"),
+  reasoning: z.array(z.string()).describe(
+    "How you arrived at the conclusions above. One bullet per major judgment call (goal classification, scope/complexity, priority, top risks) — each bullet must name the specific thing the client said or didn't say that led to that conclusion, e.g. 'Classified as e-commerce because the client selected E-Commerce Storefront and mentioned needing product filtering.' Never restate a conclusion without tying it back to the submission — a bullet with no cited evidence is not reasoning."
+  ),
   confidence: z.number().min(0).max(1).describe(
     "Your confidence in this analysis, as a decimal fraction between 0.0 and 1.0 — e.g. 0.75, never a percentage like 75 or 75%"
   ),

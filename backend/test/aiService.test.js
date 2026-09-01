@@ -23,7 +23,7 @@ const VALID_RESULT = {
   critical_questions: [], nice_to_have_questions: [],
   scope_recommendation: { scope: "small", reasoning: "r" }, complexity: "low",
   timeline_recommendation: { discovery: "1w", design: "1w", development: "1w", qa_and_launch: "1w" },
-  priority: "low", potential_additional_services: [], internal_notes: [], confidence: 0.5,
+  priority: "low", potential_additional_services: [], internal_notes: [], reasoning: [], confidence: 0.5,
 };
 
 test("rejects submission types other than web-design without calling the provider", async () => {

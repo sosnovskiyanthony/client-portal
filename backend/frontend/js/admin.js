@@ -106,6 +106,47 @@
   const draftingStartTimes = new Map();
   let elapsedTickHandle = null;
 
+  // Ordered to match the stage strings lib/analysisProgress.js's
+  // setStage() calls actually use server-side (see runAnalysis.js,
+  // draftEmail.js, aiService.js, ollamaProvider.js) — this list IS the
+  // step-order contract between backend and dashboard, not just labels.
+  const ANALYSIS_STAGES = [
+    { key: "preparing", label: "Preparing submission data" },
+    { key: "sending", label: "Sending to Ollama" },
+    { key: "generating", label: "Ollama is generating the analysis…" },
+    { key: "validating", label: "Validating AI response" },
+    { key: "saving", label: "Saving results" },
+  ];
+  const EMAIL_STAGES = [
+    { key: "preparing", label: "Preparing analysis context" },
+    { key: "sending", label: "Sending to Ollama" },
+    { key: "generating", label: "Ollama is drafting the email…" },
+    { key: "validating", label: "Validating draft" },
+    { key: "saving", label: "Saving draft" },
+  ];
+  const STAGE_ORDER = ANALYSIS_STAGES.map((s) => s.key); // same order for both
+
+  // What's actually sent as model input — see ai/prompt.js's
+  // sanitizeWebDesignSubmission (analysis) and ai/emailPrompt.js's
+  // buildEmailContext (email draft). Ollama has no external "sources" of
+  // its own — this is genuinely the entire input, which is the honest
+  // answer to "what is it using."
+  const ANALYSIS_FEEDING_IN =
+    "Goal, business summary, brand guidelines status, requested features, content readiness, target timeline, existing website (client name/email excluded)";
+  const EMAIL_FEEDING_IN =
+    "Client name, project summary, scope & timeline recommendations, required/recommended features, open questions — all from the completed analysis above";
+
+  // Last-known progress per in-flight id, refreshed each tick from the
+  // server. Cached (rather than re-fetched synchronously inline) so a
+  // slow/failed poll just leaves the stage list showing its last-known
+  // state for one more tick instead of flickering back to "no stage yet".
+  const analysisProgressCache = new Map();
+  const emailProgressCache = new Map();
+  // Guards against a slow poll response for one id overlapping with the
+  // next tick's poll for that same id — irrelevant at this poll rate in
+  // practice, cheap to just not worry about it either way.
+  const progressPollInFlight = new Set();
+
   function formatElapsed(ms) {
     const totalSeconds = Math.max(0, Math.floor(ms / 1000));
     const m = Math.floor(totalSeconds / 60);
@@ -113,11 +154,51 @@
     return `${m}:${String(s).padStart(2, "0")}`;
   }
 
+  function renderStageList(stages) {
+    return `
+      <ol class="stage-list">
+        ${stages
+          .map(
+            (s, i) => `
+          <li class="stage-item ${i === 0 ? "active" : "pending"}" data-stage="${s.key}">
+            <span class="stage-dot" aria-hidden="true"></span>
+            <span class="stage-label">${escapeHtml(s.label)}</span>
+          </li>`
+          )
+          .join("")}
+      </ol>
+    `;
+  }
+
+  // Applies the server-confirmed current stage to an already-rendered stage
+  // list (in place — see renderStageList above for the initial markup) and
+  // fills in the model name once known. Deliberately does nothing when
+  // progress is missing/inactive rather than resetting to "preparing" —
+  // a single missed poll shouldn't make a request that's actually well
+  // underway look like it just started over.
+  function applyStageProgress(section, progress) {
+    if (!progress || !progress.active) return;
+    const currentIdx = STAGE_ORDER.indexOf(progress.stage);
+    if (currentIdx === -1) return;
+    section.querySelectorAll(".stage-item").forEach((li) => {
+      const idx = STAGE_ORDER.indexOf(li.dataset.stage);
+      li.classList.remove("done", "active", "pending");
+      li.classList.add(idx < currentIdx ? "done" : idx === currentIdx ? "active" : "pending");
+    });
+    if (progress.model) {
+      const sendingLabel = section.querySelector('.stage-item[data-stage="sending"] .stage-label');
+      if (sendingLabel && !sendingLabel.dataset.modelSet) {
+        sendingLabel.textContent = `Sending to Ollama (${progress.model})`;
+        sendingLabel.dataset.modelSet = "1";
+      }
+    }
+  }
+
   // Updates the in-flight cards' text directly via the DOM rather than
   // going through renderList() — a full list re-render every second would
   // fight with anything else the admin is doing at the time (a status
   // dropdown open, scroll position, etc.) for no benefit here, since only
-  // these two elements per in-flight card actually change each tick.
+  // these elements per in-flight card actually change each tick.
   function tickElapsedLabels() {
     if (analyzingIds.size === 0 && draftingIds.size === 0) {
       clearInterval(elapsedTickHandle);
@@ -129,24 +210,43 @@
       const start = analyzingStartTimes.get(id);
       if (!start) continue;
       const section = els.list.querySelector(`.submission-card[data-id="${id}"] .analysis-section`);
-      if (!section) continue;
-      const label = `Analyzing… ${formatElapsed(now - start)}`;
-      const badge = section.querySelector(".analysis-status-badge");
-      const btn = section.querySelector(".analysis-btn");
-      if (badge) badge.textContent = label;
-      if (btn) btn.textContent = label;
+      if (section) {
+        const label = `Analyzing… ${formatElapsed(now - start)}`;
+        const badge = section.querySelector(".analysis-status-badge");
+        const btn = section.querySelector(".analysis-btn");
+        if (badge) badge.textContent = label;
+        if (btn) btn.textContent = label;
+        applyStageProgress(section, analysisProgressCache.get(id));
+      }
+      pollProgress(id, "analysis");
     }
     for (const id of draftingIds) {
       const start = draftingStartTimes.get(id);
       if (!start) continue;
       const section = els.list.querySelector(`.submission-card[data-id="${id}"] .email-draft-section`);
-      if (!section) continue;
-      const label = `Drafting… ${formatElapsed(now - start)}`;
-      const badge = section.querySelector(".analysis-status-badge");
-      const btn = section.querySelector(".email-draft-btn");
-      if (badge) badge.textContent = label;
-      if (btn) btn.textContent = label;
+      if (section) {
+        const label = `Drafting… ${formatElapsed(now - start)}`;
+        const badge = section.querySelector(".analysis-status-badge");
+        const btn = section.querySelector(".email-draft-btn");
+        if (badge) badge.textContent = label;
+        if (btn) btn.textContent = label;
+        applyStageProgress(section, emailProgressCache.get(id));
+      }
+      pollProgress(id, "email");
     }
+  }
+
+  function pollProgress(id, kind) {
+    const pollKey = `${kind}:${id}`;
+    if (progressPollInFlight.has(pollKey)) return;
+    progressPollInFlight.add(pollKey);
+    const fetchFn = kind === "analysis" ? getAnalysisProgress : getEmailDraftProgress;
+    const cache = kind === "analysis" ? analysisProgressCache : emailProgressCache;
+    fetchFn(id)
+      .then((progress) => {
+        if (progress) cache.set(id, progress);
+      })
+      .finally(() => progressPollInFlight.delete(pollKey));
   }
 
   function ensureElapsedTicking() {
@@ -229,7 +329,8 @@
             <span class="analysis-title">AI Project Analysis</span>
             <span class="analysis-status-badge analysis-status-processing">Analyzing…</span>
           </div>
-          <p class="analysis-empty">Analyzing — this can take a couple of minutes with a local model.</p>
+          ${renderStageList(ANALYSIS_STAGES)}
+          <p class="analysis-feeding-in">Feeding in: ${escapeHtml(ANALYSIS_FEEDING_IN)}</p>
           <button class="btn btn-ghost analysis-btn" type="button" disabled>Analyzing…</button>
         </div>
       `;
@@ -358,6 +459,11 @@
           ${renderRisks(r.potential_risks)}
         </div>
 
+        <div class="analysis-reasoning">
+          <span class="analysis-block-label">How the AI reached these conclusions</span>
+          ${renderStringList(r.reasoning, "No reasoning was returned for this analysis.")}
+        </div>
+
         <details class="analysis-raw">
           <summary>Raw JSON (debug)</summary>
           <pre>${escapeHtml(JSON.stringify(r, null, 2))}</pre>
@@ -385,7 +491,8 @@
             <span class="email-draft-title">Outreach Email</span>
             <span class="analysis-status-badge analysis-status-processing">Drafting…</span>
           </div>
-          <p class="analysis-empty">Drafting — this can take a minute with a local model.</p>
+          ${renderStageList(EMAIL_STAGES)}
+          <p class="analysis-feeding-in">Feeding in: ${escapeHtml(EMAIL_FEEDING_IN)}</p>
           <button class="btn btn-ghost email-draft-btn" type="button" disabled>Drafting…</button>
         </div>
       `;
@@ -739,12 +846,14 @@
         if (!isAdminLoggedIn()) {
           analyzingIds.delete(id);
           analyzingStartTimes.delete(id);
+          analysisProgressCache.delete(id);
           render();
           return;
         }
       } finally {
         analyzingIds.delete(id);
         analyzingStartTimes.delete(id);
+        analysisProgressCache.delete(id);
         renderList();
       }
     });
@@ -794,12 +903,14 @@
         if (!isAdminLoggedIn()) {
           draftingIds.delete(id);
           draftingStartTimes.delete(id);
+          emailProgressCache.delete(id);
           render();
           return;
         }
       } finally {
         draftingIds.delete(id);
         draftingStartTimes.delete(id);
+        emailProgressCache.delete(id);
         renderList();
       }
     });

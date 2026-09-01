@@ -32,7 +32,11 @@ const PROVIDERS = {
 
 // `client` is injectable (passed through to whichever provider is active)
 // so tests can fake the network/SDK call — see test/aiAnalysis.test.js.
-async function analyzeSubmission(submission, { client } = {}) {
+// `onProgress` is optional and only ever used by services/runAnalysis.js to
+// drive lib/analysisProgress.js — every call site that doesn't pass it
+// (including every existing test) works unchanged, since every call below
+// is guarded with `?.`.
+async function analyzeSubmission(submission, { client, onProgress } = {}) {
   // Scoped to web-design intake submissions only — the only type whose
   // fields (goals, features, brand status, etc.) this analysis, its
   // sanitizer, and its schema are built around. seo/contact submissions are
@@ -53,17 +57,21 @@ async function analyzeSubmission(submission, { client } = {}) {
     );
   }
 
+  onProgress?.("preparing");
   const sanitized = sanitizeWebDesignSubmission(submission.projectDetails);
   const userMessage = buildUserMessage(sanitized);
   const model = provider.model();
 
+  onProgress?.("sending");
   const { parsed } = await provider.impl.generateStructuredAnalysis({
     systemPrompt: SYSTEM_PROMPT,
     userMessage,
     zodSchema: AnalysisSchema,
     model,
     client,
+    onProgress,
   });
+  onProgress?.("validating");
 
   // Defensive normalization before validation: smaller local models can
   // satisfy every other field of a large schema correctly and still return
@@ -98,7 +106,7 @@ async function analyzeSubmission(submission, { client } = {}) {
 // Drafts a client-facing outreach email from a completed AI analysis. Only
 // ever called once an analysis exists and succeeded (see
 // services/draftEmail.js) — there's nothing useful to draft from otherwise.
-async function draftEmail(submission, analysis, { client } = {}) {
+async function draftEmail(submission, analysis, { client, onProgress } = {}) {
   if (!analysis || analysis.status !== "completed" || !analysis.result) {
     throw new AiAnalysisError(
       "no_analysis",
@@ -115,17 +123,21 @@ async function draftEmail(submission, analysis, { client } = {}) {
     );
   }
 
+  onProgress?.("preparing");
   const context = buildEmailContext(submission, analysis);
   const userMessage = buildEmailUserMessage(context);
   const model = provider.model();
 
+  onProgress?.("sending");
   const { parsed } = await provider.impl.generateStructuredAnalysis({
     systemPrompt: EMAIL_SYSTEM_PROMPT,
     userMessage,
     zodSchema: EmailDraftSchema,
     model,
     client,
+    onProgress,
   });
+  onProgress?.("validating");
 
   const validation = EmailDraftSchema.safeParse(parsed);
   if (!validation.success) {

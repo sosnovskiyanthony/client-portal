@@ -6,16 +6,29 @@ const EmailDraft = require("../models/EmailDraft");
 const aiService = require("../ai/aiService");
 const { AiAnalysisError } = require("../ai/errors");
 const { EMAIL_PROMPT_VERSION } = require("../ai/emailPrompt");
+const analysisProgress = require("../lib/analysisProgress");
 
 async function runDraftEmail(submission, analysis) {
   const { provider, model } = aiService.getActiveProviderInfo();
+  analysisProgress.start("email", submission.id, { model });
 
+  try {
+    return await runDraftEmailInner(submission, analysis, provider, model);
+  } finally {
+    analysisProgress.finish("email", submission.id);
+  }
+}
+
+async function runDraftEmailInner(submission, analysis, provider, model) {
   try {
     await EmailDraft.createPending(submission.id);
     await EmailDraft.markProcessing(submission.id, { provider, model, promptVersion: EMAIL_PROMPT_VERSION });
 
-    const outcome = await aiService.draftEmail(submission, analysis);
+    const outcome = await aiService.draftEmail(submission, analysis, {
+      onProgress: (stage) => analysisProgress.setStage("email", submission.id, stage),
+    });
 
+    analysisProgress.setStage("email", submission.id, "saving");
     return await EmailDraft.markCompleted(submission.id, {
       subject: outcome.result.subject,
       body: outcome.result.body,

@@ -812,6 +812,38 @@ async function stopOllamaRemote() {
   return postOllamaControl("stop");
 }
 
+// Polled every second or two by admin.js while an analysis/draft is in
+// flight, to show real backend-confirmed stages instead of a static label.
+// Deliberately fails soft (returns null) rather than throwing: a missed
+// poll should just leave the dashboard showing its last-known stage until
+// the next tick, not force a logout or an error message over a background
+// convenience request. The two real fetch calls (analyzeSubmission,
+// draftEmail above) already own the real error/auth handling for this
+// feature — this is not that.
+async function getAnalysisProgress(id) {
+  try {
+    const res = await fetch(`/api/admin/submissions/${id}/analyze/progress`, {
+      headers: { Authorization: `Bearer ${getAdminToken()}` },
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (err) {
+    return null;
+  }
+}
+
+async function getEmailDraftProgress(id) {
+  try {
+    const res = await fetch(`/api/admin/submissions/${id}/draft-email/progress`, {
+      headers: { Authorization: `Bearer ${getAdminToken()}` },
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (err) {
+    return null;
+  }
+}
+
 // ---------- Account menu ----------
 
 function initMenu() {

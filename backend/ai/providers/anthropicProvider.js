@@ -44,12 +44,13 @@ function classifyError(err) {
   return new AiAnalysisError("unknown_error", err?.message || "Unknown Anthropic provider error.", err);
 }
 
-async function generateStructuredAnalysis({ systemPrompt, userMessage, zodSchema, model, client }) {
+async function generateStructuredAnalysis({ systemPrompt, userMessage, zodSchema, model, client, onProgress }) {
   const activeClient = client || getClient();
   if (!activeClient) {
     throw new AiAnalysisError("missing_api_key", "ANTHROPIC_API_KEY is not configured.");
   }
 
+  onProgress?.("generating");
   let response;
   try {
     response = await activeClient.messages.parse(

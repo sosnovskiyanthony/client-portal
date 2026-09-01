@@ -9,6 +9,7 @@ const storage = require("../services/storage");
 const { BRAND_ASSET_PATH_RE } = require("../lib/validators");
 const { cleanupOrphanedAssets } = require("../services/orphanCleanup");
 const { tailscaleDispatcher } = require("../lib/tailscaleDispatcher");
+const analysisProgress = require("../lib/analysisProgress");
 const env = require("../config/env");
 
 async function listSubmissions(req, res) {
@@ -332,6 +333,30 @@ async function draftEmail(req, res) {
   res.json({ emailDraft });
 }
 
+// Polled by the dashboard (see frontend/js/admin.js's tickElapsedLabels)
+// while an analysis/draft is in flight from this tab, to show real,
+// backend-confirmed stages instead of a single static "Analyzing…" label.
+// Cheap in-memory read (see lib/analysisProgress.js) — no DB round trip, no
+// rate limit needed. Always 200; { active: false } just means nothing is
+// currently running for this submission (finished, failed, or never
+// started), which is a normal state, not an error.
+function makeProgressHandler(kind) {
+  return async function handler(req, res) {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) {
+      return res.status(400).json({ error: "Invalid submission id." });
+    }
+    const progress = analysisProgress.get(kind, id);
+    if (!progress) {
+      return res.json({ active: false });
+    }
+    res.json({ active: true, ...progress });
+  };
+}
+
+const getAnalysisProgress = makeProgressHandler("analysis");
+const getEmailDraftProgress = makeProgressHandler("email");
+
 async function updateSubmissionStatus(req, res) {
   const id = Number(req.params.id);
   const { status } = req.body || {};
@@ -403,4 +428,6 @@ module.exports = {
   getOllamaStatus,
   startOllamaRemote,
   stopOllamaRemote,
+  getAnalysisProgress,
+  getEmailDraftProgress,
 };

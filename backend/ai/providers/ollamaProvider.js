@@ -31,19 +31,21 @@ const REQUEST_TIMEOUT_MS = 5 * 60 * 1000;
 // above even kicks in.
 const MAX_OUTPUT_TOKENS = 4096;
 
-async function generateStructuredAnalysis({ systemPrompt, userMessage, zodSchema, model }) {
+async function generateStructuredAnalysis({ systemPrompt, userMessage, zodSchema, model, onProgress }) {
   const url = `${env.ollamaBaseUrl}/api/chat`;
   const jsonSchema = z.toJSONSchema(zodSchema);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
-  // The only real-time signal an admin has that a request is actually
-  // progressing rather than hung — the dashboard just shows a static
-  // "Analyzing…" for the whole (potentially minutes-long) request, so
-  // these are meant to be watched live in Railway's log tab, not read
-  // after the fact.
+  // Server-side timing log, meant to be watched live in Railway's log tab.
+  // onProgress (see lib/analysisProgress.js) is the matching signal for the
+  // dashboard itself — "generating" covers this whole fetch, since Ollama's
+  // stream:false response only arrives as one lump; there's no real
+  // sub-stage between "request sent" and "response received" without
+  // switching to streaming.
   const startedAt = Date.now();
   console.log(`[ollamaProvider] Sending request to Ollama at ${env.ollamaBaseUrl} (model=${model})...`);
+  onProgress?.("generating");
 
   let res;
   try {
