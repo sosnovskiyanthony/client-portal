@@ -1,0 +1,15 @@
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    # Visibility and maintenance, not auto-merge — see
+    # backend/guardian/README.md. A human reviews every dependency PR
+    # Dependabot opens before it's merged.
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

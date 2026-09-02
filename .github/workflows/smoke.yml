@@ -1,0 +1,32 @@
+name: Production smoke test
+
+# Scheduled production monitoring — see backend/guardian/smokeTest.js and
+# backend/guardian/README.md. Read-only GET requests against the live
+# public site only; never submits a form, never touches real customer
+# data. A failure here fails the workflow, which triggers GitHub's own
+# built-in failure-email notification to the repo's watchers — no
+# additional alerting service wired up for this first pass.
+on:
+  schedule:
+    - cron: "*/30 * * * *" # every 30 minutes — change freely, see the README
+  workflow_dispatch: {}
+
+defaults:
+  run:
+    working-directory: backend
+
+jobs:
+  smoke:
+    name: Smoke test production
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "26.x"
+
+      - name: Run smoke test
+        run: node guardian/smokeTest.js
+        env:
+          SITE_URL: ${{ vars.SITE_URL || 'https://client-portal-production-d328.up.railway.app' }}

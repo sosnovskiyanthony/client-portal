@@ -1,0 +1,30 @@
+name: CodeQL
+
+# Security/code scanning for the backend's JavaScript — see
+# backend/guardian/README.md. Free for this public repository. Findings
+# show up under the repo's Security tab, not as a blocking check by
+# default; enable "Require CodeQL" in branch protection if a mandatory
+# gate is wanted later.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 7 * * 1" # weekly, Monday 07:00 UTC
+
+jobs:
+  analyze:
+    name: Analyze (javascript)
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+
+      - uses: github/codeql-action/analyze@v3
