@@ -60,4 +60,16 @@ const chatLimiter = rateLimit({
   message: { error: "Too many chat requests. Please try again later." },
 });
 
-module.exports = { loginLimiter, submissionLimiter, analysisLimiter, uploadLimiter, chatLimiter };
+// Public and unauthenticated (any visitor's browser can hit this — see
+// routes/errors.js) — generous enough for a real page with a handful of
+// genuine errors, tight enough that a malicious/broken script spamming this
+// endpoint can't turn it into a log-flooding or Sentry-quota-burning vector.
+const clientErrorLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many error reports from this device." },
+});
+
+module.exports = { loginLimiter, submissionLimiter, analysisLimiter, uploadLimiter, chatLimiter, clientErrorLimiter };

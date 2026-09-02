@@ -4,6 +4,58 @@
 // Loaded before the page-specific script, which calls initCommon() and may
 // call attachMagneticTilt() or saveSubmission() itself.
 
+// BrindLeaf Guardian's frontend error monitoring — attached here, at the
+// very top of common.js (not inside initCommon(), and not a separate
+// <script> tag added to every page), so it's live for the entire page
+// lifetime and catches errors from every script that loads after this one,
+// including this file's own later code. Reuses the existing server-side
+// Sentry pipe (see controllers/errorController.js) rather than adding the
+// Sentry browser SDK or a second log store. Capped per page load so a
+// broken page in an error loop can't turn into an unbounded request flood;
+// never includes form contents or anything beyond the error's own
+// message/stack/location — see errorController.js's own allowlist.
+(function initErrorMonitor() {
+  const MAX_REPORTS_PER_LOAD = 5;
+  let reportCount = 0;
+
+  function report(payload) {
+    if (reportCount >= MAX_REPORTS_PER_LOAD) return;
+    reportCount += 1;
+    try {
+      fetch("/api/client-error", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        keepalive: true,
+      }).catch(() => {});
+    } catch {
+      // An error handler must never itself throw.
+    }
+  }
+
+  window.addEventListener("error", (event) => {
+    // Ignore resource load errors (a missing image/script) — event.error is
+    // only populated for an actual thrown JS exception.
+    if (!event.error && !event.message) return;
+    report({
+      message: String(event.message || event.error?.message || "Unknown error"),
+      stack: event.error?.stack,
+      url: event.filename || location.href,
+      line: event.lineno,
+      col: event.colno,
+    });
+  });
+
+  window.addEventListener("unhandledrejection", (event) => {
+    const reason = event.reason;
+    report({
+      message: String(reason?.message || reason || "Unhandled promise rejection"),
+      stack: reason?.stack,
+      url: location.href,
+    });
+  });
+})();
+
 const commonEls = {
   spotlight: document.getElementById("spotlight"),
   cursor: document.getElementById("cursor"),
@@ -851,6 +903,76 @@ async function startOllamaRemote() {
 
 async function stopOllamaRemote() {
   return postOllamaControl("stop");
+}
+
+// BrindLeaf Guardian's production diagnostics panel (see admin.js's
+// initGuardianPanel) — same request/error shape as the Ollama control
+// helpers above.
+async function getGuardianDiagnostics() {
+  let res;
+  try {
+    res = await fetch("/api/admin/guardian/diagnostics", {
+      headers: { Authorization: `Bearer ${getAdminToken()}` },
+    });
+  } catch (err) {
+    throw new Error("Can't reach the server. Is the backend running?");
+  }
+
+  if (res.status === 401 || res.status === 403) {
+    logoutAdmin();
+    throw new Error("Your session expired. Please log in again.");
+  }
+
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(body.error || "Couldn't run Guardian diagnostics.");
+  }
+  return body;
+}
+
+async function runGuardianCheck() {
+  let res;
+  try {
+    res = await fetch("/api/admin/guardian/run", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${getAdminToken()}` },
+    });
+  } catch (err) {
+    throw new Error("Can't reach the server. Is the backend running?");
+  }
+
+  if (res.status === 401 || res.status === 403) {
+    logoutAdmin();
+    throw new Error("Your session expired. Please log in again.");
+  }
+
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(body.error || "Couldn't run the Guardian check.");
+  }
+  return body;
+}
+
+async function getGuardianHistory(limit = 5) {
+  let res;
+  try {
+    res = await fetch(`/api/admin/guardian/history?limit=${encodeURIComponent(limit)}`, {
+      headers: { Authorization: `Bearer ${getAdminToken()}` },
+    });
+  } catch (err) {
+    throw new Error("Can't reach the server. Is the backend running?");
+  }
+
+  if (res.status === 401 || res.status === 403) {
+    logoutAdmin();
+    throw new Error("Your session expired. Please log in again.");
+  }
+
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(body.error || "Couldn't load Guardian history.");
+  }
+  return body.history || [];
 }
 
 // Polled every second or two by admin.js while an analysis/draft is in
