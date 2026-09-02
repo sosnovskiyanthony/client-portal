@@ -7,10 +7,19 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "test": "node --test"
+    "test": "node --test",
+    "lint": "eslint .",
+    "test:coverage": "node --test --experimental-test-coverage --test-coverage-lines=65 --test-coverage-branches=65 --test-coverage-functions=42",
+    "guardian": "node guardian/runGuardian.js",
+    "guardian:ai": "node guardian/reviewCli.js",
+    "guardian:smoke": "node guardian/smokeTest.js"
   },
   "engines": {
     "node": "26.x"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.9.1"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.122.0",

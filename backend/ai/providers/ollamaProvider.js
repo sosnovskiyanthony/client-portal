@@ -396,7 +396,6 @@ async function generateChatReplyWithTools({ systemPrompt, messages, model, onPro
         // A failed search shouldn't take down the whole reply — tell the
         // model the search failed (as tool content, not a thrown error)
         // and let it continue/answer with what it has.
-        results = [];
         workingMessages.push({
           role: "tool",
           tool_name: name || "web_search",
