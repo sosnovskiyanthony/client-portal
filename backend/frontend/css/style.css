@@ -2261,6 +2261,50 @@ a:focus-visible {
   color: var(--accent-1);
 }
 
+/* Ranked recommendations (ai/servicesSchema.js's `recommendations`) — the
+   requested-vs-suggested distinction gets its own badge so it's never
+   ambiguous which is which at a glance. */
+.reco-origin-badge {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+}
+
+.reco-origin-requested {
+  background: rgba(96, 165, 250, 0.12);
+  color: #60a5fa;
+}
+
+.reco-origin-suggested {
+  background: rgba(167, 139, 250, 0.12);
+  color: #a78bfa;
+}
+
+/* Per-service field groups on a type: "services" submission card
+   (frontend/js/admin.js's renderServicesFields). */
+.submission-service-block {
+  grid-column: 1 / -1;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.submission-service-block:first-child {
+  padding-top: 0;
+  border-top: none;
+}
+
+.submission-service-block-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-tertiary);
+  margin-bottom: 6px;
+}
+
 .analysis-raw {
   margin: 16px 0;
   border: 1px solid var(--border);

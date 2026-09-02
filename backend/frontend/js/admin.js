@@ -3,6 +3,7 @@
     "web-design": "Web Design",
     seo: "SEO",
     contact: "Contact",
+    services: "Multi-Service",
   };
 
   const STATUS_LABELS = {
@@ -57,6 +58,38 @@
     ],
   };
 
+  // Per-selected-service field sets for a type: "services" submission's
+  // nested projectDetails (see lib/services.js's SERVICE_DATA_KEYS,
+  // controllers/intakeController.js's handleServicesIntake). web-design/seo
+  // reuse FIELD_CONFIG["web-design"]/["seo"] directly below — those nested
+  // sub-objects have the exact same field names as the dedicated forms.
+  const SERVICES_SUB_FIELD_CONFIG = {
+    "ai-integration": [
+      { key: "aiGoal", label: "AI goal" },
+      { key: "businessProblem", label: "Business problem" },
+      { key: "currentProcess", label: "Current manual process" },
+      { key: "hasExistingAi", label: "Existing AI tools" },
+      { key: "dataInvolved", label: "Data involved" },
+      { key: "integrations", label: "Integrations" },
+    ],
+    "app-building": [
+      { key: "appGoal", label: "App goal" },
+      { key: "coreWorkflows", label: "Core workflows" },
+      { key: "userType", label: "User type" },
+      { key: "requiredFeatures", label: "Required features" },
+      { key: "dataToStore", label: "Data to store" },
+      { key: "integrations", label: "Integrations" },
+    ],
+    "web-management": [
+      { key: "existingUrl", label: "Existing URL" },
+      { key: "helpNeeded", label: "Help needed" },
+      { key: "engagementType", label: "Engagement type" },
+      { key: "currentHosting", label: "Current hosting" },
+      { key: "concerns", label: "Concerns" },
+    ],
+  };
+  const SERVICES_DATA_KEYS = { "web-design": "webDesign", seo: "seo", "ai-integration": "aiIntegration", "app-building": "appBuilding", "web-management": "webManagement" };
+
   const els = {
     gate: document.getElementById("admin-gate"),
     dashboard: document.getElementById("admin-dashboard"),
@@ -79,6 +112,12 @@
   // current page's rows, not the whole table, so this scales past a couple
   // dozen submissions instead of shipping every row on every load.
   let currentType = "all";
+  // Mutually exclusive with currentType — the three new service filter
+  // pills filter the services array (see models/Submission.js) rather
+  // than the type column, since one submission can match more than one of
+  // them. Selecting a service pill sets currentType back to "all" and vice
+  // versa (see initFilters below).
+  let currentService = null;
   let currentPage = 1;
   let paginationMeta = { total: 0, totalPages: 1, pageSize: 20 };
   let cachedSubmissions = [];
@@ -362,9 +401,78 @@
       .join("");
   }
 
-  // AI project analysis is only implemented for web-design submissions —
-  // see backend/ai/aiService.js. Rendered as a distinct section within the
-  // card so it reads clearly as internal-only, never client-facing content.
+  // Ranked recommendations across every selected service (ServicesAnalysisSchema's
+  // `recommendations` — see ai/servicesSchema.js) — a flat, comparable list,
+  // not five disconnected per-service ones. "origin" is rendered as its own
+  // badge so requested-vs-suggested is never ambiguous at a glance.
+  function renderRankedRecommendations(items) {
+    if (!Array.isArray(items) || items.length === 0) return "";
+    return items
+      .map(
+        (r) => `
+        <div class="reco-item">
+          <div class="reco-item-head">
+            <span class="reco-name">${escapeHtml(r.feature || "")}</span>
+            <span class="reco-origin-badge reco-origin-${escapeHtml(r.origin || "")}">${r.origin === "requested" ? "Client requested" : "AI suggested"}</span>
+            <span class="risk-severity risk-severity-${escapeHtml(r.priority || "")}">${escapeHtml(SEVERITY_LABELS[r.priority] || r.priority || "")}</span>
+          </div>
+          <p class="reco-field"><strong>Service:</strong> ${escapeHtml(SERVICE_LABELS[r.service] || r.service || "")}</p>
+          <p class="reco-field"><strong>Why:</strong> ${escapeHtml(r.why || "")}</p>
+          <p class="reco-field"><strong>Evidence:</strong> ${escapeHtml(r.evidence || "")}</p>
+          <p class="reco-field"><strong>Expected value:</strong> ${escapeHtml(r.expected_value || "")}</p>
+          <p class="reco-field"><strong>Confidence:</strong> ${typeof r.confidence === "number" ? Math.round(r.confidence * 100) + "%" : "—"}</p>
+          ${r.considerations ? `<p class="reco-field"><strong>Considerations:</strong> ${escapeHtml(r.considerations)}</p>` : ""}
+        </div>
+      `
+      )
+      .join("");
+  }
+
+  // One collapsible block per populated per-service analysis section
+  // (web_design_analysis/seo_analysis/ai_integration_analysis/
+  // app_building_analysis/web_management_analysis) — only sections the AI
+  // actually populated appear at all, matching "don't render a section for
+  // a service that wasn't selected."
+  const SERVICES_ANALYSIS_SECTION_KEYS = {
+    "web-design": "web_design_analysis",
+    seo: "seo_analysis",
+    "ai-integration": "ai_integration_analysis",
+    "app-building": "app_building_analysis",
+    "web-management": "web_management_analysis",
+  };
+
+  function renderPerServiceAnalysis(r) {
+    const blocks = Object.entries(SERVICES_ANALYSIS_SECTION_KEYS)
+      .map(([slug, key]) => {
+        const section = r[key];
+        if (!section || typeof section !== "object") return "";
+        const rows = Object.entries(section)
+          .filter(([field]) => field !== "risks")
+          .map(([field, value]) => {
+            const label = field.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+            const displayValue = Array.isArray(value) ? value.join(", ") : String(value ?? "");
+            if (!displayValue) return "";
+            return `<p class="reco-field"><strong>${escapeHtml(label)}:</strong> ${escapeHtml(displayValue)}</p>`;
+          })
+          .join("");
+        const risksHtml = Array.isArray(section.risks) && section.risks.length ? renderRisks(section.risks) : "";
+        return `
+          <div class="analysis-block">
+            <span class="analysis-block-label">${escapeHtml(SERVICE_LABELS[slug] || slug)} analysis</span>
+            ${rows}
+            ${risksHtml ? `<div class="reco-field"><strong>Risks:</strong></div>${risksHtml}` : ""}
+          </div>
+        `;
+      })
+      .filter(Boolean);
+    return blocks.join("");
+  }
+
+  // AI project analysis — see backend/ai/aiService.js. Covers both
+  // web-design submissions (AnalysisSchema) and multi-select "services"
+  // submissions (ServicesAnalysisSchema — see ai/servicesSchema.js).
+  // Rendered as a distinct section within the card so it reads clearly as
+  // internal-only, never client-facing content.
   function renderAnalysisSection(submission) {
     const a = submission.analysis;
     const btnLabel = a && a.status !== "pending" ? "Re-analyze with AI" : "Analyze with AI";
@@ -444,8 +552,11 @@
     }
 
     const r = a.result || {};
+    const isServicesResult = submission.type === "services";
     const seoRecoHtml = renderSeoRecommendations(r.seo_recommendations);
     const featureRecoHtml = renderFeatureRecommendations(r.feature_recommendations);
+    const rankedRecommendationsHtml = isServicesResult ? renderRankedRecommendations(r.recommendations) : "";
+    const perServiceAnalysisHtml = isServicesResult ? renderPerServiceAnalysis(r) : "";
     return `
       <div class="analysis-section">
         <div class="analysis-header">
@@ -495,19 +606,34 @@
             <span class="analysis-block-label">Nice-to-have questions</span>
             ${renderStringList(r.nice_to_have_questions)}
           </div>
-          <div class="analysis-block">
-            <span class="analysis-block-label">SEO opportunities</span>
-            ${renderStringList(r.seo_opportunities)}
-          </div>
-          <div class="analysis-block">
-            <span class="analysis-block-label">Potential additional services</span>
-            ${renderStringList(r.potential_additional_services)}
-          </div>
+          ${
+            isServicesResult
+              ? ""
+              : `<div class="analysis-block">
+                  <span class="analysis-block-label">SEO opportunities</span>
+                  ${renderStringList(r.seo_opportunities)}
+                </div>
+                <div class="analysis-block">
+                  <span class="analysis-block-label">Potential additional services</span>
+                  ${renderStringList(r.potential_additional_services)}
+                </div>`
+          }
           <div class="analysis-block analysis-block-notes">
             <span class="analysis-block-label">Internal notes (private — never shown to client)</span>
             ${renderStringList(r.internal_notes)}
           </div>
         </div>
+
+        ${perServiceAnalysisHtml}
+
+        ${
+          rankedRecommendationsHtml
+            ? `<div class="analysis-block">
+                <span class="analysis-block-label">Ranked recommendations</span>
+                ${rankedRecommendationsHtml}
+              </div>`
+            : ""
+        }
 
         ${
           seoRecoHtml
@@ -527,10 +653,14 @@
             : ""
         }
 
-        <div class="analysis-block">
-          <span class="analysis-block-label">Potential risks</span>
-          ${renderRisks(r.potential_risks)}
-        </div>
+        ${
+          isServicesResult
+            ? ""
+            : `<div class="analysis-block">
+                <span class="analysis-block-label">Potential risks</span>
+                ${renderRisks(r.potential_risks)}
+              </div>`
+        }
 
         <div class="analysis-reasoning">
           <span class="analysis-block-label">How the AI reached these conclusions</span>
@@ -723,23 +853,83 @@
     `;
   }
 
-  function submissionCard(submission) {
-    const config = FIELD_CONFIG[submission.type] || [];
+  // Renders the field list for a type: "services" submission — one block
+  // per selected service, using FIELD_CONFIG["web-design"]/["seo"] for
+  // those two (identical nested field names to their dedicated forms) and
+  // SERVICES_SUB_FIELD_CONFIG for the three new services. Kept separate
+  // from submissionCard()'s generic FIELD_CONFIG[type] path below since the
+  // shape here is nested (one sub-object per selected service), not flat.
+  function renderServicesFields(submission) {
     const details = submission.projectDetails || {};
-    const fields = config
-      .map((f) => ({ label: f.label, value: fieldValue(f, details[f.key]) }))
-      .filter((f) => f.value !== null);
+    const services = Array.isArray(details.services) ? details.services : [];
+    if (services.length === 0) return "";
 
-    const fieldsHtml = fields
-      .map(
-        (f) => `
+    // Unlike web-design/seo (where name/email are spread into
+    // projectDetails redundantly alongside the real clientName/email
+    // columns), a services submission only ever stores them at the
+    // top level (see intakeController.handleServicesIntake) — so this is
+    // the one place that has to read submission.clientName/.email
+    // directly rather than details.name/.email like FIELD_CONFIG does.
+    const contactHtml = `
+      <div>
+        <div class="submission-field-label">Name</div>
+        <div class="submission-field-value">${escapeHtml(submission.clientName || "")}</div>
+      </div>
+      <div>
+        <div class="submission-field-label">Email</div>
+        <div class="submission-field-value">${escapeHtml(submission.email || "")}</div>
+      </div>
+    `;
+
+    return contactHtml + services
+      .map((slug) => {
+        const dataKey = SERVICES_DATA_KEYS[slug];
+        const subConfig = FIELD_CONFIG[slug] || SERVICES_SUB_FIELD_CONFIG[slug] || [];
+        const subDetails = (dataKey && details[dataKey]) || {};
+        const fields = subConfig
+          .map((f) => ({ label: f.label, value: fieldValue(f, subDetails[f.key]) }))
+          .filter((f) => f.value !== null);
+        if (fields.length === 0) return "";
+
+        return `
+          <div class="submission-service-block">
+            <div class="submission-service-block-label">${escapeHtml(SERVICE_LABELS[slug] || slug)}</div>
+            ${fields
+              .map(
+                (f) => `
+              <div>
+                <div class="submission-field-label">${escapeHtml(f.label)}</div>
+                <div class="submission-field-value">${escapeHtml(String(f.value))}</div>
+              </div>
+            `
+              )
+              .join("")}
+          </div>
+        `;
+      })
+      .join("");
+  }
+
+  function submissionCard(submission) {
+    const details = submission.projectDetails || {};
+    const isServices = submission.type === "services";
+    const config = FIELD_CONFIG[submission.type] || [];
+    const fields = isServices
+      ? []
+      : config.map((f) => ({ label: f.label, value: fieldValue(f, details[f.key]) })).filter((f) => f.value !== null);
+
+    const fieldsHtml = isServices
+      ? renderServicesFields(submission)
+      : fields
+          .map(
+            (f) => `
         <div>
           <div class="submission-field-label">${escapeHtml(f.label)}</div>
           <div class="submission-field-value">${escapeHtml(String(f.value))}</div>
         </div>
       `
-      )
-      .join("");
+          )
+          .join("");
 
     const time = new Date(submission.createdAt).toLocaleString(undefined, {
       dateStyle: "medium",
@@ -780,7 +970,7 @@
           </label>
           <button class="btn btn-ghost submission-delete-btn" data-delete-id="${submission.id}" type="button">Delete</button>
         </div>
-        ${submission.type === "web-design" ? renderAnalysisSection(submission) : ""}
+        ${submission.type === "web-design" || submission.type === "services" ? renderAnalysisSection(submission) : ""}
         ${renderOutcomeSection(submission)}
         ${renderContractSection(submission)}
       </div>
@@ -853,7 +1043,7 @@
     els.pagination.innerHTML = "";
 
     try {
-      const body = await fetchSubmissions({ type: currentType, page: currentPage });
+      const body = await fetchSubmissions({ type: currentType, service: currentService, page: currentPage });
       cachedSubmissions = body.submissions;
       paginationMeta = { total: body.total, totalPages: body.totalPages, pageSize: body.pageSize };
     } catch (err) {
@@ -909,7 +1099,13 @@
       if (!btn) return;
       els.filters.querySelectorAll(".pill").forEach((p) => p.classList.remove("selected"));
       btn.classList.add("selected");
-      currentType = btn.dataset.filter;
+      if (btn.dataset.filterService) {
+        currentService = btn.dataset.filterService;
+        currentType = "all";
+      } else {
+        currentType = btn.dataset.filter;
+        currentService = null;
+      }
       currentPage = 1;
       loadSubmissions();
     });
@@ -1310,7 +1506,7 @@
       els.exportBtn.textContent = "Exporting…";
 
       try {
-        const { blob, filename } = await exportSubmissionsCsv(currentType);
+        const { blob, filename } = await exportSubmissionsCsv(currentType, currentService);
         // A plain <a href> can't carry the Authorization header the export
         // endpoint requires, so the file arrives as a Blob (see
         // exportSubmissionsCsv in common.js) and this triggers the actual
