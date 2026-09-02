@@ -82,6 +82,21 @@ const FIELD_LABELS = {
   },
 };
 
+// Mirrors backend/lib/services.js's SERVICE_SLUGS/SERVICE_LABELS — kept
+// here too (not shared, same reasoning as FIELD_LABELS above: this is
+// frontend display code, that's backend validation code) since the site
+// has no shared module system between them. Update both if the service
+// catalog ever changes. Order here is the canonical display/step order
+// used by services.html's dynamic section navigation.
+const SERVICE_SLUGS = ["web-design", "seo", "ai-integration", "app-building", "web-management"];
+const SERVICE_LABELS = {
+  "web-design": "Web Design",
+  seo: "SEO",
+  "ai-integration": "AI Integration",
+  "app-building": "App Building",
+  "web-management": "Web Management",
+};
+
 // ---------- Cursor spotlight ----------
 
 function initSpotlight() {
@@ -470,6 +485,7 @@ const INTAKE_ENDPOINTS = {
   "web-design": "/api/intake/web-design",
   seo: "/api/intake/seo",
   contact: "/api/contact",
+  services: "/api/intake/services",
 };
 
 async function saveSubmission(type, data) {

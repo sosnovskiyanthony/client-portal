@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Get Started | BrindLeaf</title>
+<meta name="description" content="Tell BrindLeaf what you need — Web Design, SEO, AI Integration, App Building, Web Management, or any combination. One quick intake, tailored to what you select." />
+<meta name="robots" content="noindex, nofollow" />
+<meta name="theme-color" content="#09090b" />
+<link rel="icon" href="favicon.svg" type="image/svg+xml" />
+<link rel="canonical" href="https://client-portal-production-d328.up.railway.app/services.html" />
+
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="BrindLeaf" />
+<meta property="og:title" content="Get Started | BrindLeaf" />
+<meta property="og:description" content="Tell us what you need — Web Design, SEO, AI Integration, App Building, Web Management, or any combination." />
+<meta property="og:url" content="https://client-portal-production-d328.up.railway.app/services.html" />
+<meta property="og:image" content="https://client-portal-production-d328.up.railway.app/og-image.png" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta property="og:image:alt" content="BrindLeaf — custom web design, SEO, AI, apps, and website management" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Get Started | BrindLeaf" />
+<meta name="twitter:description" content="One quick intake, tailored to what you select." />
+<meta name="twitter:image" content="https://client-portal-production-d328.up.railway.app/og-image.png" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Inter+Tight:wght@600;700;800&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="css/style.css" />
+<!-- GA_TAG -->
+</head>
+<body>
+
+<div class="spotlight" id="spotlight"></div>
+<div class="cursor" id="cursor">
+  <div class="cursor-inner">
+    <span class="cursor-tick tick-top"></span>
+    <span class="cursor-tick tick-right"></span>
+    <span class="cursor-tick tick-bottom"></span>
+    <span class="cursor-tick tick-left"></span>
+  </div>
+  <span class="cursor-dot"></span>
+  <span class="cursor-ring"></span>
+  <span class="cursor-caret"></span>
+</div>
+<div class="coord-readout" id="coord-readout">
+  <span id="coord-text">000, 000</span>
+</div>
+<div class="bg-grid"></div>
+
+<!-- Account menu -->
+<div class="menu-root">
+  <button class="menu-toggle" id="menu-toggle" type="button" aria-label="Open menu" aria-expanded="false">
+    <span class="menu-toggle-line"></span>
+    <span class="menu-toggle-line"></span>
+    <span class="menu-toggle-line"></span>
+  </button>
+  <div class="menu-dropdown" id="menu-dropdown" hidden></div>
+</div>
+
+<!-- Auth modal -->
+<div class="modal-overlay" id="modal-overlay" hidden>
+  <div class="modal" id="modal" role="dialog" aria-modal="true">
+    <button class="modal-close" id="modal-close" type="button" aria-label="Close">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 4L12 12M12 4L4 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+    </button>
+    <div class="modal-body" id="modal-body"></div>
+  </div>
+</div>
+
+<!-- Site navigation -->
+<header class="nav-pill" id="nav-pill">
+  <span class="nav-pill-dot"></span>
+  <nav class="nav-tabs" aria-label="Main">
+    <a class="nav-tab" href="index.html">Home</a>
+    <a class="nav-tab" href="web-design-services.html">Web Design</a>
+    <a class="nav-tab" href="seo.html">SEO</a>
+    <a class="nav-tab" href="ai-integration.html">AI Integration</a>
+    <a class="nav-tab" href="app-building.html">App Building</a>
+    <a class="nav-tab" href="web-management.html">Web Management</a>
+    <a class="nav-tab" href="contact.html">Contact</a>
+  </nav>
+</header>
+
+<main class="layout" id="layout">
+
+  <h1 class="sr-only">Get Started With BrindLeaf</h1>
+
+  <div class="draft-banner" id="draft-banner" hidden>
+    <p class="draft-banner-text" id="draft-banner-text" aria-live="polite"></p>
+    <div class="draft-banner-actions">
+      <button class="btn btn-ghost" type="button" id="draft-restore-btn">Restore draft</button>
+      <button class="btn btn-ghost" type="button" id="draft-dismiss-btn">Discard</button>
+    </div>
+  </div>
+
+  <div class="form-column">
+
+    <!-- Dynamic — populated by js/services.js based on which services are selected -->
+    <div class="section-nav" id="section-nav"></div>
+
+    <div class="form-frame">
+      <div class="step-content" id="step-content">
+
+        <!-- Select services -->
+        <div class="step-panel visible active" data-panel="select-services">
+          <div class="step-header">
+            <span class="step-kicker">Get started</span>
+            <h2 class="step-title">What do you need<br /><span class="text-gradient">from BrindLeaf?</span></h2>
+            <p class="step-desc">Select everything that applies — most projects combine more than one. We'll only ask about what you pick.</p>
+          </div>
+
+          <div class="field-group">
+            <div class="toggle-grid" data-field="services" data-mode="multi">
+              <button class="bento-card" data-value="web-design" type="button">
+                <span class="bento-icon">
+                  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 8L4 12L9 16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M15 8L20 12L15 16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </span>
+                <span class="bento-title">Web Design</span>
+                <span class="bento-desc">A new site, built by hand — no page builders.</span>
+              </button>
+              <button class="bento-card" data-value="seo" type="button">
+                <span class="bento-icon">
+                  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.6"/><path d="M20 20L16 16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+                </span>
+                <span class="bento-title">SEO</span>
+                <span class="bento-desc">Get found — rankings, traffic, visibility.</span>
+              </button>
+              <button class="bento-card" data-value="ai-integration" type="button">
+                <span class="bento-icon">
+                  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="4" y="7" width="16" height="12" rx="2" stroke="currentColor" stroke-width="1.6"/><path d="M8 3V7M16 3V7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="9" cy="13" r="1.2" fill="currentColor"/><circle cx="15" cy="13" r="1.2" fill="currentColor"/></svg>
+                </span>
+                <span class="bento-title">AI Integration</span>
+                <span class="bento-desc">Add practical AI where it actually helps your business.</span>
+              </button>
+              <button class="bento-card" data-value="app-building" type="button">
+                <span class="bento-icon">
+                  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2" stroke="currentColor" stroke-width="1.6"/><path d="M3 9H21" stroke="currentColor" stroke-width="1.6"/></svg>
+                </span>
+                <span class="bento-title">App Building</span>
+                <span class="bento-desc">A custom web application — dashboard, portal, tool.</span>
+              </button>
+              <button class="bento-card" data-value="web-management" type="button">
+                <span class="bento-icon">
+                  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 2L4 6V12C4 17 7.5 20.5 12 22C16.5 20.5 20 17 20 12V6L12 2Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+                </span>
+                <span class="bento-title">Web Management</span>
+                <span class="bento-desc">Keep an existing site secure, fast, and up to date.</span>
+              </button>
+            </div>
+          </div>
+
+          <button class="section-continue" data-goto="__next__" type="button">
+            Continue
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8H12.5M12.5 8L8.5 4M12.5 8L8.5 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+
+        <!-- Web Design -->
+        <div class="step-panel" data-panel="web-design">
+          <div class="step-header">
+            <span class="step-kicker">Web Design</span>
+            <h2 class="step-title">Your site,<br /><span class="text-gradient">start to finish</span></h2>
+            <p class="step-desc">The same questions as our dedicated Web Design intake.</p>
+          </div>
+
+          <div class="field-group">
+            <span class="field-group-label">Primary goal</span>
+            <div class="pill-row" data-field="webDesign.goal" data-mode="single">
+              <button class="pill" data-value="lead-gen" type="button">Lead Generation / Sales</button>
+              <button class="pill" data-value="ecommerce" type="button">E-Commerce Storefront</button>
+              <button class="pill" data-value="brand" type="button">Brand Authority / Portfolio</button>
+              <button class="pill" data-value="webapp" type="button">Custom Web App / SaaS</button>
+            </div>
+          </div>
+
+          <div class="field-group">
+            <label class="field">
+              <span class="field-label">Give us a brief summary of your business</span>
+              <textarea class="field-input field-textarea" id="input-webDesign-summary" data-field="webDesign.summary" rows="3" placeholder="What you do, who you serve, what makes you different…"></textarea>
+            </label>
+          </div>
+
+          <div class="field-group">
+            <span class="field-group-label">Brand guidelines status</span>
+            <div class="pill-row" data-field="webDesign.brandStatus" data-mode="single">
+              <button class="pill" data-value="established" type="button">Fully established</button>
+              <button class="pill" data-value="expansion" type="button">Needs expansion</button>
+              <button class="pill" data-value="scratch" type="button">Starting from scratch</button>
+            </div>
+          </div>
+
+          <div class="field-group">
+            <span class="field-group-label">Key features needed</span>
+            <div class="pill-row" data-field="webDesign.features" data-mode="multi">
+              <button class="pill" data-value="cms" type="button">CMS Integration</button>
+              <button class="pill" data-value="animations" type="button">Advanced Animations</button>
+              <button class="pill" data-value="integrations" type="button">Third-Party Integrations</button>
+              <button class="pill" data-value="auth" type="button">User Authentication / Portals</button>
+              <button class="pill" data-value="multilingual" type="button">Multilingual Support</button>
+            </div>
+          </div>
+
+          <div class="field-group">
+            <span class="field-group-label">Content readiness</span>
+            <div class="pill-row" data-field="webDesign.contentReadiness" data-mode="single">
+              <button class="pill" data-value="ready" type="button">Ready to go</button>
+              <button class="pill" data-value="draft" type="button">Rough draft</button>
+              <button class="pill" data-value="help" type="button">Need complete help</button>
+            </div>
+          </div>
+
+          <div class="field-group">
+            <span class="field-group-label">Target timeline</span>
+            <div class="pill-row" data-field="webDesign.timeline" data-mode="single">
+              <button class="pill" data-value="2-4-weeks" type="button">2–4 Weeks</button>
+              <button class="pill" data-value="1-2-months" type="button">1–2 Months</button>
+              <button class="pill" data-value="3-plus-months" type="button">3+ Months</button>
+            </div>
+          </div>
+
+          <button class="section-continue" data-goto="__next__" type="button">
+            Continue
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8H12.5M12.5 8L8.5 4M12.5 8L8.5 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+
+        <!-- SEO -->
+        <div class="step-panel" data-panel="seo">
+          <div class="step-header">
+            <span class="step-kicker">SEO</span>
+            <h2 class="step-title">Get found<br /><span class="text-gradient">by the right people</span></h2>
+            <p class="step-desc">The same questions as our dedicated SEO intake.</p>
+          </div>
+
+          <div class="field-group">
+            <label class="field">
+              <span class="field-label">Website URL</span>
+              <input class="field-input" type="url" id="input-seo-url" data-field="seo.url" placeholder="yourcompany.com" />
+            </label>
+          </div>
+
+          <div class="field-group">
+            <label class="field">
+              <span class="field-label">Target keywords or topics</span>
+              <textarea class="field-input field-textarea" id="input-seo-keywords" data-field="seo.keywords" rows="2" placeholder="e.g. 'commercial roofing Denver', 'vegan bakery Portland'"></textarea>
+            </label>
+          </div>
+
+          <div class="field-group">
+            <span class="field-group-label">Biggest current challenge</span>
+            <div class="pill-row" data-field="seo.challenge" data-mode="single">
+              <button class="pill" data-value="not-ranking" type="button">Not ranking</button>
+              <button class="pill" data-value="traffic-declining" type="button">Traffic declining</button>
+              <button class="pill" data-value="low-ctr" type="button">Low click-through</button>
+              <button class="pill" data-value="poor-conversion" type="button">Poor conversion</button>
+            </div>
+          </div>
+
+          <div class="field-group">
+            <span class="field-group-label">Current visibility</span>
+            <div class="pill-row" data-field="seo.visibility" data-mode="single">
+              <button class="pill" data-value="some-terms" type="button">Ranking well for some terms</button>
+              <button class="pill" data-value="barely-visible" type="button">Barely visible</button>
+              <button class="pill" data-value="not-sure" type="button">Not sure</button>
+            </div>
+          </div>
+
+          <button class="section-continue" data-goto="__next__" type="button">
+            Continue
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8H12.5M12.5 8L8.5 4M12.5 8L8.5 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+
+        <!-- AI Integration -->
+        <div class="step-panel" data-panel="ai-integration">
+          <div class="step-header">
+            <span class="step-kicker">AI Integration</span>
+            <h2 class="step-title">Where should AI<br /><span class="text-gradient">actually help?</span></h2>
+            <p class="step-desc">We'll look for real opportunities, not add AI for its own sake.</p>
+          </div>
+
+          <div class="field-group">
+            <label class="field">
+              <span class="field-label">What do you want AI to accomplish?</span>
+              <textarea class="field-input field-textarea" id="input-ai-goal" data-field="aiIntegration.aiGoal" rows="2" placeholder="e.g. answer common customer questions automatically"></textarea>
+            </label>
+          </div>
+
+          <div class="field-group">
+            <label class="field">
+              <span class="field-label">What business problem are you trying to solve?</span>
+              <textarea class="field-input field-textarea" id="input-ai-problem" data-field="aiIntegration.businessProblem" rows="2" placeholder="e.g. we spend hours a day answering the same emails"></textarea>
+            </label>
+          </div>
+
+          <div class="field-group">
+            <label class="field">
+              <span class="field-label">Where do you currently spend the most manual time? <span class="field-optional">(optional)</span></span>
+              <textarea class="field-input field-textarea" id="input-ai-manual" data-field="aiIntegration.currentProcess" rows="2" placeholder="What's the manual process today?"></textarea>
+            </label>
+          </div>
+
+          <div class="field-group">
+            <span class="field-group-label">Do you already use any AI tools? <span class="field-optional">(optional)</span></span>
+            <div class="pill-row" data-field="aiIntegration.hasExistingAi" data-mode="single">
+              <button class="pill" data-value="yes" type="button">Yes</button>
+              <button class="pill" data-value="no" type="button">No</button>
+              <button class="pill" data-value="not-sure" type="button">Not sure</button>
+            </div>
+          </div>
+
+          <div class="field-group">
+            <label class="field">
+              <span class="field-label">Data or documents involved, if any <span class="field-optional">(optional)</span></span>
+              <input class="field-input" type="text" id="input-ai-data" data-field="aiIntegration.dataInvolved" placeholder="e.g. product catalog, past support tickets" />
+            </label>
+          </div>
+
+          <div class="field-group">
+            <label class="field">
+              <span class="field-label">Existing tools/systems to connect to <span class="field-optional">(optional)</span></span>
+              <input class="field-input" type="text" id="input-ai-integrations" data-field="aiIntegration.integrations" placeholder="e.g. Shopify, HubSpot, our booking system" />
+            </label>
+          </div>
+
+          <button class="section-continue" data-goto="__next__" type="button">
+            Continue
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8H12.5M12.5 8L8.5 4M12.5 8L8.5 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+
+        <!-- App Building -->
+        <div class="step-panel" data-panel="app-building">
+          <div class="step-header">
+            <span class="step-kicker">App Building</span>
+            <h2 class="step-title">What should<br /><span class="text-gradient">this app do?</span></h2>
+            <p class="step-desc">A dashboard, portal, booking system, internal tool — tell us the shape of it.</p>
+          </div>
+
+          <div class="field-group">
+            <label class="field">
+              <span class="field-label">What should the application accomplish?</span>
+              <textarea class="field-input field-textarea" id="input-app-goal" data-field="appBuilding.appGoal" rows="2" placeholder="e.g. let customers book and manage appointments"></textarea>
+            </label>
+          </div>
+
+          <div class="field-group">
+            <label class="field">
+              <span class="field-label">What are the core workflows it needs to support?</span>
+              <textarea class="field-input field-textarea" id="input-app-workflows" data-field="appBuilding.coreWorkflows" rows="2" placeholder="Walk us through how someone would actually use it"></textarea>
+            </label>
+          </div>
+
+          <div class="field-group">
+            <span class="field-group-label">Who is this for? <span class="field-optional">(optional)</span></span>
+            <div class="pill-row" data-field="appBuilding.userType" data-mode="single">
+              <button class="pill" data-value="customer-facing" type="button">Customer-facing</button>
+              <button class="pill" data-value="internal" type="button">Internal team</button>
+              <button class="pill" data-value="both" type="button">Both</button>
+            </div>
+          </div>
+
+          <div class="field-group">
+            <label class="field">
+              <span class="field-label">Required features <span class="field-optional">(optional)</span></span>
+              <input class="field-input" type="text" id="input-app-features" data-field="appBuilding.requiredFeatures" placeholder="e.g. user accounts, payments, calendar" />
+            </label>
+          </div>
+
+          <div class="field-group">
+            <label class="field">
+              <span class="field-label">Data the app needs to store <span class="field-optional">(optional)</span></span>
+              <input class="field-input" type="text" id="input-app-data" data-field="appBuilding.dataToStore" placeholder="e.g. customer records, orders, files" />
+            </label>
+          </div>
+
+          <div class="field-group">
+            <label class="field">
+              <span class="field-label">Existing systems to integrate with <span class="field-optional">(optional)</span></span>
+              <input class="field-input" type="text" id="input-app-integrations" data-field="appBuilding.integrations" placeholder="e.g. Stripe, QuickBooks, our CRM" />
+            </label>
+          </div>
+
+          <button class="section-continue" data-goto="__next__" type="button">
+            Continue
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8H12.5M12.5 8L8.5 4M12.5 8L8.5 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+
+        <!-- Web Management -->
+        <div class="step-panel" data-panel="web-management">
+          <div class="step-header">
+            <span class="step-kicker">Web Management</span>
+            <h2 class="step-title">Let's take your site<br /><span class="text-gradient">off your plate</span></h2>
+            <p class="step-desc">A one-time fix or ongoing care — either way, we start with what's there today.</p>
+          </div>
+
+          <div class="field-group">
+            <label class="field">
+              <span class="field-label">Existing website URL</span>
+              <input class="field-input" type="url" id="input-wm-url" data-field="webManagement.existingUrl" placeholder="yourcompany.com" />
+            </label>
+          </div>
+
+          <div class="field-group">
+            <label class="field">
+              <span class="field-label">What do you need help with?</span>
+              <textarea class="field-input field-textarea" id="input-wm-help" data-field="webManagement.helpNeeded" rows="2" placeholder="e.g. site is slow, need a new page, hasn't been touched in years"></textarea>
+            </label>
+          </div>
+
+          <div class="field-group">
+            <span class="field-group-label">One-time or ongoing? <span class="field-optional">(optional)</span></span>
+            <div class="pill-row" data-field="webManagement.engagementType" data-mode="single">
+              <button class="pill" data-value="one-time" type="button">One-time</button>
+              <button class="pill" data-value="ongoing" type="button">Ongoing</button>
+              <button class="pill" data-value="not-sure" type="button">Not sure yet</button>
+            </div>
+          </div>
+
+          <div class="field-group">
+            <label class="field">
+              <span class="field-label">Current hosting/platform, if known <span class="field-optional">(optional)</span></span>
+              <input class="field-input" type="text" id="input-wm-hosting" data-field="webManagement.currentHosting" placeholder="e.g. WordPress on Bluehost, Squarespace, not sure" />
+            </label>
+          </div>
+
+          <div class="field-group">
+            <label class="field">
+              <span class="field-label">Anything else — security, performance, SEO, content <span class="field-optional">(optional)</span></span>
+              <textarea class="field-input field-textarea" id="input-wm-concerns" data-field="webManagement.concerns" rows="2" placeholder="Anything specific you're worried about"></textarea>
+            </label>
+          </div>
+
+          <button class="section-continue" data-goto="__next__" type="button">
+            Continue
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8H12.5M12.5 8L8.5 4M12.5 8L8.5 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+
+        <!-- Contact -->
+        <div class="step-panel" data-panel="contact">
+          <div class="step-header">
+            <span class="step-kicker">Almost done</span>
+            <h2 class="step-title">Let's get in touch<br /><span class="text-gradient">about all of it</span></h2>
+            <p class="step-desc">We'll review everything above and follow up with next steps and a custom quote.</p>
+          </div>
+
+          <div class="field-group">
+            <span class="field-group-label">Contact details</span>
+            <div class="field-row">
+              <label class="field">
+                <span class="field-label">Full name</span>
+                <input class="field-input" type="text" id="input-name" name="name" placeholder="Jordan Casey" autocomplete="name" required />
+              </label>
+              <label class="field">
+                <span class="field-label">Email address</span>
+                <input class="field-input" type="email" id="input-email" name="email" placeholder="jordan@company.com" autocomplete="email" required />
+              </label>
+            </div>
+          </div>
+
+          <div class="submit-area">
+            <button class="btn btn-primary btn-large" id="btn-submit" type="button" disabled>
+              Submit
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8H12.5M12.5 8L8.5 4M12.5 8L8.5 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <p class="submit-hint" id="submit-hint" aria-live="polite"></p>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+
+  <aside class="summary-drawer" id="summary-drawer">
+    <span class="summary-title">Live summary</span>
+    <div class="summary-list" id="summary-list"></div>
+  </aside>
+
+<section class="success-state" id="success-state" hidden>
+  <div class="success-inner">
+    <div class="success-icon">✓</div>
+    <h2 class="success-title" tabindex="-1">Submission received.</h2>
+    <p class="success-sub" id="success-sub">We'll review everything and follow up by email within one business day.</p>
+    <div class="success-summary" id="success-summary"></div>
+  </div>
+</section>
+</main>
+
+<footer class="site-footer">
+  <p>&copy; 2026 BrindLeaf. <a href="contact.html">Contact</a></p>
+</footer>
+
+<div class="consent-banner" id="consent-banner" role="region" aria-label="Cookie consent" hidden>
+  <p class="consent-banner-text">This site uses Google Analytics to understand traffic. No analytics data is collected unless you accept.</p>
+  <div class="consent-banner-actions">
+    <button class="btn btn-ghost" id="consent-decline-btn" type="button">Decline</button>
+    <button class="btn btn-primary" id="consent-accept-btn" type="button">Accept</button>
+  </div>
+</div>
+
+<script src="js/common.js"></script>
+<script src="js/analytics.js"></script>
+<script src="js/services.js"></script>
+</body>
+</html>
