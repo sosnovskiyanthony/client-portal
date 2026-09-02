@@ -370,12 +370,31 @@
     updateSubmitState();
   }
 
+  // The three new service marketing pages link here as
+  // services.html?service=ai-integration (etc.) so the relevant card is
+  // already checked on arrival — one fewer click for someone who came from
+  // a page specifically about that service. Silently ignores an unknown/
+  // missing value; the picker just starts empty in that case, same as
+  // navigating here directly.
+  function preselectFromQueryString() {
+    const params = new URLSearchParams(window.location.search);
+    const requested = params.get("service");
+    if (!requested || !SERVICE_SLUGS.includes(requested) || state.data.services.includes(requested)) return;
+    state.data.services.push(requested);
+    const card = document.querySelector(`.toggle-grid[data-field="services"] .bento-card[data-value="${requested}"]`);
+    if (card) {
+      card.classList.add("selected");
+      card.setAttribute("aria-pressed", "true");
+    }
+  }
+
   function init() {
     initCommon();
     initSelectors();
     initTextInputs();
     initSectionContinue();
     initSubmit();
+    preselectFromQueryString();
     renderSectionNav();
     renderSummary();
     updateSubmitState();

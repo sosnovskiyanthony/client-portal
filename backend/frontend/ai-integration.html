@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AI Integration Services | BrindLeaf</title>
+<meta name="description" content="Practical AI integration for existing and new websites and web apps — assistants, automation, document/data processing, and custom AI-powered tools, scoped to where it actually helps your business." />
+<meta name="theme-color" content="#09090b" />
+<link rel="icon" href="favicon.svg" type="image/svg+xml" />
+<link rel="canonical" href="https://client-portal-production-d328.up.railway.app/ai-integration.html" />
+
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="BrindLeaf" />
+<meta property="og:title" content="AI Integration Services | BrindLeaf" />
+<meta property="og:description" content="Practical AI integration, scoped to where it actually helps your business — not AI for its own sake." />
+<meta property="og:url" content="https://client-portal-production-d328.up.railway.app/ai-integration.html" />
+<meta property="og:image" content="https://client-portal-production-d328.up.railway.app/og-image.png" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta property="og:image:alt" content="BrindLeaf — custom web design, SEO, AI, apps, and website management" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="AI Integration Services | BrindLeaf" />
+<meta name="twitter:description" content="Practical AI integration, scoped to where it actually helps your business." />
+<meta name="twitter:image" content="https://client-portal-production-d328.up.railway.app/og-image.png" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Inter+Tight:wght@600;700;800&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="css/style.css" />
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Service",
+  "serviceType": "AI Integration",
+  "provider": {
+    "@type": "Organization",
+    "name": "BrindLeaf",
+    "url": "https://client-portal-production-d328.up.railway.app/"
+  },
+  "description": "Practical AI integration for existing and new websites and web applications — assistants, automation, document/data processing, and custom AI-powered tools.",
+  "url": "https://client-portal-production-d328.up.railway.app/ai-integration.html"
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "Do I need AI Integration for my business?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Not necessarily. AI is a tool, not a requirement — it's worth adding where it solves a real problem (a repetitive task, a slow response time, a search or document problem) and skipping where it wouldn't. The intake and review process is built to identify which of those is actually true for your business, rather than assuming AI belongs everywhere." }
+    },
+    {
+      "@type": "Question",
+      "name": "Can you add AI to a website you didn't build?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Yes. AI Integration works on existing sites and applications, not just new BrindLeaf builds — the intake covers your current site/platform so the integration can be scoped around it." }
+    },
+    {
+      "@type": "Question",
+      "name": "What kinds of AI capabilities can you build?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Common examples include AI assistants for customer questions, lead qualification, document or data processing, AI-powered search, and connecting your business to existing AI APIs or services. The right approach depends on what you're actually trying to solve." }
+    },
+    {
+      "@type": "Question",
+      "name": "Can AI Integration be combined with a new website or app?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Yes — it's commonly paired with Web Design or App Building as part of one larger project, or added on its own to something that already exists." }
+    },
+    {
+      "@type": "Question",
+      "name": "How is pricing handled?",
+      "acceptedAnswer": { "@type": "Answer", "text": "There's no fixed public price. Every AI Integration project starts with an intake, gets reviewed, and comes back with a custom quote based on the actual scope." }
+    }
+  ]
+}
+</script>
+<!-- GA_TAG -->
+</head>
+<body>
+
+<div class="spotlight" id="spotlight"></div>
+<div class="cursor" id="cursor">
+  <div class="cursor-inner">
+    <span class="cursor-tick tick-top"></span>
+    <span class="cursor-tick tick-right"></span>
+    <span class="cursor-tick tick-bottom"></span>
+    <span class="cursor-tick tick-left"></span>
+  </div>
+  <span class="cursor-dot"></span>
+  <span class="cursor-ring"></span>
+  <span class="cursor-caret"></span>
+</div>
+<div class="coord-readout" id="coord-readout">
+  <span id="coord-text">000, 000</span>
+</div>
+<div class="bg-grid"></div>
+
+<!-- Account menu -->
+<div class="menu-root">
+  <button class="menu-toggle" id="menu-toggle" type="button" aria-label="Open menu" aria-expanded="false">
+    <span class="menu-toggle-line"></span>
+    <span class="menu-toggle-line"></span>
+    <span class="menu-toggle-line"></span>
+  </button>
+  <div class="menu-dropdown" id="menu-dropdown" hidden></div>
+</div>
+
+<!-- Auth modal -->
+<div class="modal-overlay" id="modal-overlay" hidden>
+  <div class="modal" id="modal" role="dialog" aria-modal="true">
+    <button class="modal-close" id="modal-close" type="button" aria-label="Close">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 4L12 12M12 4L4 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+    </button>
+    <div class="modal-body" id="modal-body"></div>
+  </div>
+</div>
+
+<!-- Site navigation -->
+<header class="nav-pill" id="nav-pill">
+  <span class="nav-pill-dot"></span>
+  <nav class="nav-tabs" aria-label="Main">
+    <a class="nav-tab" href="index.html">Home</a>
+    <a class="nav-tab" href="web-design-services.html">Web Design</a>
+    <a class="nav-tab" href="seo.html">SEO</a>
+    <a class="nav-tab active" href="ai-integration.html">AI Integration</a>
+    <a class="nav-tab" href="app-building.html">App Building</a>
+    <a class="nav-tab" href="web-management.html">Web Management</a>
+    <a class="nav-tab" href="contact.html">Contact</a>
+  </nav>
+</header>
+
+<main>
+<!-- Hero -->
+<section class="home-hero">
+  <span class="eyebrow">AI Integration</span>
+  <h1 class="home-title">AI Integration</h1>
+  <p class="home-sub">Practical AI, added where it actually creates value — not AI for its own sake. Assistants, automation, document and data processing, and custom AI-powered tools, for both new and existing websites and applications.</p>
+
+  <div class="home-highlights">
+    <div class="home-highlight">
+      <span class="home-highlight-icon" aria-hidden="true">
+        <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 8.5L6.5 11L12 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </span>
+      <span>Works with existing sites and apps, not just new builds</span>
+    </div>
+    <div class="home-highlight">
+      <span class="home-highlight-icon" aria-hidden="true">
+        <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2 2H7L14 9L9 14L2 7V2Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><circle cx="5" cy="5" r="1" fill="currentColor"/></svg>
+      </span>
+      <span>Scoped to real business value, never AI by default</span>
+    </div>
+    <div class="home-highlight">
+      <span class="home-highlight-icon" aria-hidden="true">
+        <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2 3.5H14V10.5H5.5L2 13.5V10.5" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+      </span>
+      <span>Combines with Web Design or App Building, or stands alone</span>
+    </div>
+  </div>
+
+  <div class="home-actions">
+    <a class="btn btn-primary btn-large" href="services.html?service=ai-integration">
+      Start an Inquiry
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8H12.5M12.5 8L8.5 4M12.5 8L8.5 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </a>
+  </div>
+</section>
+
+<!-- Intro -->
+<section class="faq-container">
+  <p class="section-copy section-copy-wide">AI is a tool, not a strategy — it's worth adding where it removes real friction from your business (a slow response, a manual process that eats hours every week, a search problem) and worth skipping where it wouldn't genuinely help. The intake and review process is built around figuring out which of those is true for you, not assuming every business needs the same AI features.</p>
+</section>
+
+<!-- What we can build -->
+<section class="faq-container">
+  <div class="faq-header">
+    <span class="eyebrow">Capabilities</span>
+    <h2 class="faq-heading">What AI Integration Can Cover</h2>
+    <p class="faq-sub">Practical, use-case starting points — what applies to you depends on the intake and review.</p>
+  </div>
+
+  <div class="info-grid info-grid-spaced">
+    <article class="bento-card">
+      <span class="bento-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="4" y="7" width="16" height="12" rx="2" stroke="currentColor" stroke-width="1.6"/><path d="M8 3V7M16 3V7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="9" cy="13" r="1.2" fill="currentColor"/><circle cx="15" cy="13" r="1.2" fill="currentColor"/></svg>
+      </span>
+      <span class="bento-title">AI assistants</span>
+      <span class="bento-desc">Answering common questions, guiding visitors, or supporting a team internally.</span>
+    </article>
+    <article class="bento-card">
+      <span class="bento-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 15L15 9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M11 6L12.5 4.5C13.9 3.1 16.1 3.1 17.5 4.5C18.9 5.9 18.9 8.1 17.5 9.5L16 11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M13 18L11.5 19.5C10.1 20.9 7.9 20.9 6.5 19.5C5.1 18.1 5.1 15.9 6.5 14.5L8 13" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      </span>
+      <span class="bento-title">Connecting to existing AI APIs</span>
+      <span class="bento-desc">Wiring your product or workflow into AI services you already use or want to use.</span>
+    </article>
+    <article class="bento-card">
+      <span class="bento-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2" stroke="currentColor" stroke-width="1.6"/><path d="M3 9H21" stroke="currentColor" stroke-width="1.6"/><path d="M9 9V20" stroke="currentColor" stroke-width="1.6"/></svg>
+      </span>
+      <span class="bento-title">Custom AI-powered tools</span>
+      <span class="bento-desc">Purpose-built functionality specific to how your business actually works.</span>
+    </article>
+    <article class="bento-card">
+      <span class="bento-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M13 2L4 14H12L11 22L20 10H12L13 2Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+      </span>
+      <span class="bento-title">Workflow &amp; content automation</span>
+      <span class="bento-desc">Reducing repetitive manual work across a business process.</span>
+    </article>
+    <article class="bento-card">
+      <span class="bento-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="10" cy="10" r="6" stroke="currentColor" stroke-width="1.6"/><path d="M15 15L20 20" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      </span>
+      <span class="bento-title">AI-powered search &amp; knowledge systems</span>
+      <span class="bento-desc">Making information — internal or customer-facing — actually findable.</span>
+    </article>
+    <article class="bento-card">
+      <span class="bento-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 17L9 11L13 15L21 7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M15 7H21V13" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </span>
+      <span class="bento-title">Lead qualification</span>
+      <span class="bento-desc">Surfacing which inbound interest is actually worth your time first.</span>
+    </article>
+    <article class="bento-card">
+      <span class="bento-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="1.5" stroke="currentColor" stroke-width="1.6"/><path d="M8 8H16M8 12H16M8 16H12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      </span>
+      <span class="bento-title">Document &amp; data processing</span>
+      <span class="bento-desc">Extracting or organizing information from documents your business already has.</span>
+    </article>
+    <article class="bento-card">
+      <span class="bento-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 8L4 12L9 16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M15 8L20 12L15 16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </span>
+      <span class="bento-title">Adding AI to new or existing builds</span>
+      <span class="bento-desc">Part of a new BrindLeaf site or app, or bolted onto something already live elsewhere.</span>
+    </article>
+  </div>
+</section>
+
+<!-- Combine with other services -->
+<section class="faq-container">
+  <div class="faq-header">
+    <span class="eyebrow">Combine it</span>
+    <h2 class="faq-heading">Pairs Well With</h2>
+  </div>
+  <p class="section-copy">AI Integration is rarely a project on its own — it's usually part of something bigger. Add it to a <a href="web-design-services.html">new website</a> as a built-in capability, build it into a <a href="app-building.html">custom application</a>, or bolt it onto a site that already exists. If your site needs ongoing care too, that's <a href="web-management.html">Web Management</a>.</p>
+</section>
+
+<!-- Process -->
+<section class="faq-container">
+  <div class="faq-header">
+    <span class="eyebrow">Process</span>
+    <h2 class="faq-heading">How It Works</h2>
+    <p class="faq-sub">The same reviewed, quoted process as every BrindLeaf engagement — nothing starts without your sign-off.</p>
+  </div>
+
+  <div class="process-grid">
+    <div class="process-step">
+      <span class="process-step-number" aria-hidden="true">1</span>
+      <h3 class="process-step-title">Intake</h3>
+      <p class="process-step-desc">You describe the problem, the process, and what you'd want AI to actually do about it.</p>
+    </div>
+    <div class="process-step">
+      <span class="process-step-number" aria-hidden="true">2</span>
+      <h3 class="process-step-title">Review</h3>
+      <p class="process-step-desc">We evaluate whether AI is genuinely the right fit here, and what approach makes sense.</p>
+    </div>
+    <div class="process-step">
+      <span class="process-step-number" aria-hidden="true">3</span>
+      <h3 class="process-step-title">Custom quote</h3>
+      <p class="process-step-desc">A scoped, fixed proposal based on your actual requirements — no fixed public pricing.</p>
+    </div>
+    <div class="process-step">
+      <span class="process-step-number" aria-hidden="true">4</span>
+      <h3 class="process-step-title">Build &amp; integrate</h3>
+      <p class="process-step-desc">Implementation against the agreed scope, whether that's a new build or an existing site.</p>
+    </div>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section class="faq-container" id="faq">
+  <div class="faq-header">
+    <span class="eyebrow">Common questions</span>
+    <h2 class="faq-heading">Frequently Asked Questions</h2>
+  </div>
+
+  <div class="faq-panel">
+    <div class="accordion">
+      <div class="accordion-item">
+        <h3 class="accordion-item-heading">
+          <button class="accordion-question" type="button" aria-expanded="false" aria-controls="ai-faq-answer-1" id="ai-faq-question-1">
+            <span>Do I need AI Integration for my business?</span>
+            <span class="accordion-icon" aria-hidden="true"></span>
+          </button>
+        </h3>
+        <div class="accordion-answer-wrap" id="ai-faq-answer-1" role="region" aria-labelledby="ai-faq-question-1">
+          <div class="accordion-answer-inner">
+            <p>Not necessarily. AI is a tool, not a requirement — it's worth adding where it solves a real problem (a repetitive task, a slow response time, a search or document problem) and skipping where it wouldn't. The intake and review process is built to identify which of those is actually true for your business, rather than assuming AI belongs everywhere.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="accordion-item">
+        <h3 class="accordion-item-heading">
+          <button class="accordion-question" type="button" aria-expanded="false" aria-controls="ai-faq-answer-2" id="ai-faq-question-2">
+            <span>Can you add AI to a website you didn't build?</span>
+            <span class="accordion-icon" aria-hidden="true"></span>
+          </button>
+        </h3>
+        <div class="accordion-answer-wrap" id="ai-faq-answer-2" role="region" aria-labelledby="ai-faq-question-2">
+          <div class="accordion-answer-inner">
+            <p>Yes. AI Integration works on existing sites and applications, not just new BrindLeaf builds — the intake covers your current site/platform so the integration can be scoped around it.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="accordion-item">
+        <h3 class="accordion-item-heading">
+          <button class="accordion-question" type="button" aria-expanded="false" aria-controls="ai-faq-answer-3" id="ai-faq-question-3">
+            <span>What kinds of AI capabilities can you build?</span>
+            <span class="accordion-icon" aria-hidden="true"></span>
+          </button>
+        </h3>
+        <div class="accordion-answer-wrap" id="ai-faq-answer-3" role="region" aria-labelledby="ai-faq-question-3">
+          <div class="accordion-answer-inner">
+            <p>Common examples include AI assistants for customer questions, lead qualification, document or data processing, AI-powered search, and connecting your business to existing AI APIs or services. The right approach depends on what you're actually trying to solve.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="accordion-item">
+        <h3 class="accordion-item-heading">
+          <button class="accordion-question" type="button" aria-expanded="false" aria-controls="ai-faq-answer-4" id="ai-faq-question-4">
+            <span>Can AI Integration be combined with a new website or app?</span>
+            <span class="accordion-icon" aria-hidden="true"></span>
+          </button>
+        </h3>
+        <div class="accordion-answer-wrap" id="ai-faq-answer-4" role="region" aria-labelledby="ai-faq-question-4">
+          <div class="accordion-answer-inner">
+            <p>Yes — it's commonly paired with Web Design or App Building as part of one larger project, or added on its own to something that already exists.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="accordion-item">
+        <h3 class="accordion-item-heading">
+          <button class="accordion-question" type="button" aria-expanded="false" aria-controls="ai-faq-answer-5" id="ai-faq-question-5">
+            <span>How is pricing handled?</span>
+            <span class="accordion-icon" aria-hidden="true"></span>
+          </button>
+        </h3>
+        <div class="accordion-answer-wrap" id="ai-faq-answer-5" role="region" aria-labelledby="ai-faq-question-5">
+          <div class="accordion-answer-inner">
+            <p>There's no fixed public price. Every AI Integration project starts with an intake, gets reviewed, and comes back with a custom quote based on the actual scope.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Closing CTA -->
+<section class="faq-container">
+  <div class="cta-banner">
+    <h2 class="cta-banner-title">Ready to start?</h2>
+    <p class="cta-banner-sub">A short intake, reviewed by hand — no commitment, no cost.</p>
+    <div class="cta-banner-links">
+      <a class="btn btn-primary btn-large" href="services.html?service=ai-integration">
+        Start an Inquiry
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8H12.5M12.5 8L8.5 4M12.5 8L8.5 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </a>
+      <a class="cta-banner-secondary-link" href="index.html#faq">More general questions? See the homepage FAQ</a>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer class="site-footer">
+  <p>&copy; 2026 BrindLeaf. <a href="contact.html">Contact</a></p>
+</footer>
+
+<div class="consent-banner" id="consent-banner" role="region" aria-label="Cookie consent" hidden>
+  <p class="consent-banner-text">This site uses Google Analytics to understand traffic. No analytics data is collected unless you accept.</p>
+  <div class="consent-banner-actions">
+    <button class="btn btn-ghost" id="consent-decline-btn" type="button">Decline</button>
+    <button class="btn btn-primary" id="consent-accept-btn" type="button">Accept</button>
+  </div>
+</div>
+
+<script src="js/common.js"></script>
+<script src="js/analytics.js"></script>
+<script src="js/marketing-page.js"></script>
+</body>
+</html>

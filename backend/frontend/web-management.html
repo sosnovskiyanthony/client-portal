@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Website Management Services | BrindLeaf</title>
+<meta name="description" content="One-time fixes or ongoing website management — updates, maintenance, security, performance, and SEO — so your site stays secure, fast, and improving without it being on your plate." />
+<meta name="theme-color" content="#09090b" />
+<link rel="icon" href="favicon.svg" type="image/svg+xml" />
+<link rel="canonical" href="https://client-portal-production-d328.up.railway.app/web-management.html" />
+
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="BrindLeaf" />
+<meta property="og:title" content="Website Management Services | BrindLeaf" />
+<meta property="og:description" content="One-time fixes or ongoing management — keep your site secure, fast, and improving, off your plate." />
+<meta property="og:url" content="https://client-portal-production-d328.up.railway.app/web-management.html" />
+<meta property="og:image" content="https://client-portal-production-d328.up.railway.app/og-image.png" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta property="og:image:alt" content="BrindLeaf — custom web design, SEO, AI, apps, and website management" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Website Management Services | BrindLeaf" />
+<meta name="twitter:description" content="One-time fixes or ongoing management — keep your site secure, fast, and improving." />
+<meta name="twitter:image" content="https://client-portal-production-d328.up.railway.app/og-image.png" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Inter+Tight:wght@600;700;800&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="css/style.css" />
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Service",
+  "serviceType": "Website Management",
+  "provider": {
+    "@type": "Organization",
+    "name": "BrindLeaf",
+    "url": "https://client-portal-production-d328.up.railway.app/"
+  },
+  "description": "One-time fixes or ongoing website management — updates, maintenance, security, performance, and SEO — for existing websites, whether or not BrindLeaf built them.",
+  "url": "https://client-portal-production-d328.up.railway.app/web-management.html"
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "Does the website have to be one BrindLeaf built?",
+      "acceptedAnswer": { "@type": "Answer", "text": "No — Web Management covers existing websites generally, including ones built elsewhere or on another platform. The intake asks about your current site and hosting so the work can be scoped around it." }
+    },
+    {
+      "@type": "Question",
+      "name": "Is this a one-time service or an ongoing subscription?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Both are available. Some clients need a single fix or update; others want ongoing maintenance, monitoring, and improvement. You choose which fits, and it can change later." }
+    },
+    {
+      "@type": "Question",
+      "name": "What kind of work does this cover?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Updates, fixes, technical maintenance, performance and security improvements, SEO improvements, content changes, new pages, and hosting/domain/SSL assistance, among others — whatever your site actually needs." }
+    },
+    {
+      "@type": "Question",
+      "name": "How is pricing handled?",
+      "acceptedAnswer": { "@type": "Answer", "text": "There's no fixed public price. BrindLeaf reviews what your site needs and provides a custom quote, whether that's for a single fix or ongoing management." }
+    }
+  ]
+}
+</script>
+<!-- GA_TAG -->
+</head>
+<body>
+
+<div class="spotlight" id="spotlight"></div>
+<div class="cursor" id="cursor">
+  <div class="cursor-inner">
+    <span class="cursor-tick tick-top"></span>
+    <span class="cursor-tick tick-right"></span>
+    <span class="cursor-tick tick-bottom"></span>
+    <span class="cursor-tick tick-left"></span>
+  </div>
+  <span class="cursor-dot"></span>
+  <span class="cursor-ring"></span>
+  <span class="cursor-caret"></span>
+</div>
+<div class="coord-readout" id="coord-readout">
+  <span id="coord-text">000, 000</span>
+</div>
+<div class="bg-grid"></div>
+
+<!-- Account menu -->
+<div class="menu-root">
+  <button class="menu-toggle" id="menu-toggle" type="button" aria-label="Open menu" aria-expanded="false">
+    <span class="menu-toggle-line"></span>
+    <span class="menu-toggle-line"></span>
+    <span class="menu-toggle-line"></span>
+  </button>
+  <div class="menu-dropdown" id="menu-dropdown" hidden></div>
+</div>
+
+<!-- Auth modal -->
+<div class="modal-overlay" id="modal-overlay" hidden>
+  <div class="modal" id="modal" role="dialog" aria-modal="true">
+    <button class="modal-close" id="modal-close" type="button" aria-label="Close">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 4L12 12M12 4L4 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+    </button>
+    <div class="modal-body" id="modal-body"></div>
+  </div>
+</div>
+
+<!-- Site navigation -->
+<header class="nav-pill" id="nav-pill">
+  <span class="nav-pill-dot"></span>
+  <nav class="nav-tabs" aria-label="Main">
+    <a class="nav-tab" href="index.html">Home</a>
+    <a class="nav-tab" href="web-design-services.html">Web Design</a>
+    <a class="nav-tab" href="seo.html">SEO</a>
+    <a class="nav-tab" href="ai-integration.html">AI Integration</a>
+    <a class="nav-tab" href="app-building.html">App Building</a>
+    <a class="nav-tab active" href="web-management.html">Web Management</a>
+    <a class="nav-tab" href="contact.html">Contact</a>
+  </nav>
+</header>
+
+<main>
+<!-- Hero -->
+<section class="home-hero">
+  <span class="eyebrow">Web Management</span>
+  <h1 class="home-title">Website Management</h1>
+  <p class="home-sub">Take your website off your plate. One-time fixes or ongoing care — security, performance, SEO, and content — so it stays healthy and keeps improving, whether or not BrindLeaf built it.</p>
+
+  <div class="home-highlights">
+    <div class="home-highlight">
+      <span class="home-highlight-icon" aria-hidden="true">
+        <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 8.5L6.5 11L12 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </span>
+      <span>Works on sites BrindLeaf didn't build</span>
+    </div>
+    <div class="home-highlight">
+      <span class="home-highlight-icon" aria-hidden="true">
+        <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2 2H7L14 9L9 14L2 7V2Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><circle cx="5" cy="5" r="1" fill="currentColor"/></svg>
+      </span>
+      <span>One-time or ongoing — your choice</span>
+    </div>
+    <div class="home-highlight">
+      <span class="home-highlight-icon" aria-hidden="true">
+        <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2 3.5H14V10.5H5.5L2 13.5V10.5" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+      </span>
+      <span>Security, performance &amp; SEO covered</span>
+    </div>
+  </div>
+
+  <div class="home-actions">
+    <a class="btn btn-primary btn-large" href="services.html?service=web-management">
+      Start an Inquiry
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8H12.5M12.5 8L8.5 4M12.5 8L8.5 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </a>
+  </div>
+</section>
+
+<!-- Intro -->
+<section class="faq-container">
+  <p class="section-copy section-copy-wide">A website isn't done at launch — it needs updates, security patches, performance checks, and ongoing SEO attention to keep working for your business. Web Management takes that off your plate, whether you need a single fix today or someone watching it long-term.</p>
+</section>
+
+<!-- One-time vs ongoing -->
+<section class="faq-container">
+  <div class="faq-header">
+    <span class="eyebrow">Two ways to work together</span>
+    <h2 class="faq-heading">One-Time or Ongoing</h2>
+  </div>
+  <div class="info-grid info-grid-spaced">
+    <article class="bento-card bento-card-wide">
+      <span class="bento-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 8.5L6.5 11L12 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </span>
+      <span class="bento-title">One-time work</span>
+      <span class="bento-desc">Website updates, fixes, technical maintenance, performance and security improvements, SEO improvements, content changes, new pages, hosting-related work, domain/SSL assistance, backups, and troubleshooting.</span>
+    </article>
+    <article class="bento-card bento-card-wide">
+      <span class="bento-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 2L4 6V12C4 17 7.5 20.5 12 22C16.5 20.5 20 17 20 12V6L12 2Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+      </span>
+      <span class="bento-title">Ongoing management</span>
+      <span class="bento-desc">Regular maintenance, security monitoring, performance monitoring, SEO monitoring and improvement, content updates, backups, technical upkeep, and general website support over time.</span>
+    </article>
+  </div>
+</section>
+
+<!-- Combine with other services -->
+<section class="faq-container">
+  <div class="faq-header">
+    <span class="eyebrow">Combine it</span>
+    <h2 class="faq-heading">Pairs Well With</h2>
+  </div>
+  <p class="section-copy">Web Management is a natural next step after a <a href="web-design-services.html">new website</a> or <a href="app-building.html">custom application</a> launches, and works just as well for a site built somewhere else. It's often paired with ongoing <a href="seo.html">SEO</a> work.</p>
+</section>
+
+<!-- Process -->
+<section class="faq-container">
+  <div class="faq-header">
+    <span class="eyebrow">Process</span>
+    <h2 class="faq-heading">How It Works</h2>
+    <p class="faq-sub">We start with what's actually there today, not assumptions.</p>
+  </div>
+
+  <div class="process-grid">
+    <div class="process-step">
+      <span class="process-step-number" aria-hidden="true">1</span>
+      <h3 class="process-step-title">Intake</h3>
+      <p class="process-step-desc">Tell us about your current site, hosting, and what you need help with.</p>
+    </div>
+    <div class="process-step">
+      <span class="process-step-number" aria-hidden="true">2</span>
+      <h3 class="process-step-title">Review</h3>
+      <p class="process-step-desc">We look at what's actually going on with the site before proposing anything.</p>
+    </div>
+    <div class="process-step">
+      <span class="process-step-number" aria-hidden="true">3</span>
+      <h3 class="process-step-title">Custom quote</h3>
+      <p class="process-step-desc">A proposal scoped to one-time work or an ongoing arrangement, whichever fits.</p>
+    </div>
+    <div class="process-step">
+      <span class="process-step-number" aria-hidden="true">4</span>
+      <h3 class="process-step-title">Work &amp; upkeep</h3>
+      <p class="process-step-desc">The agreed work gets done — and, if ongoing, kept up over time.</p>
+    </div>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section class="faq-container" id="faq">
+  <div class="faq-header">
+    <span class="eyebrow">Common questions</span>
+    <h2 class="faq-heading">Frequently Asked Questions</h2>
+  </div>
+
+  <div class="faq-panel">
+    <div class="accordion">
+      <div class="accordion-item">
+        <h3 class="accordion-item-heading">
+          <button class="accordion-question" type="button" aria-expanded="false" aria-controls="wm-faq-answer-1" id="wm-faq-question-1">
+            <span>Does the website have to be one BrindLeaf built?</span>
+            <span class="accordion-icon" aria-hidden="true"></span>
+          </button>
+        </h3>
+        <div class="accordion-answer-wrap" id="wm-faq-answer-1" role="region" aria-labelledby="wm-faq-question-1">
+          <div class="accordion-answer-inner">
+            <p>No — Web Management covers existing websites generally, including ones built elsewhere or on another platform. The intake asks about your current site and hosting so the work can be scoped around it.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="accordion-item">
+        <h3 class="accordion-item-heading">
+          <button class="accordion-question" type="button" aria-expanded="false" aria-controls="wm-faq-answer-2" id="wm-faq-question-2">
+            <span>Is this a one-time service or an ongoing subscription?</span>
+            <span class="accordion-icon" aria-hidden="true"></span>
+          </button>
+        </h3>
+        <div class="accordion-answer-wrap" id="wm-faq-answer-2" role="region" aria-labelledby="wm-faq-question-2">
+          <div class="accordion-answer-inner">
+            <p>Both are available. Some clients need a single fix or update; others want ongoing maintenance, monitoring, and improvement. You choose which fits, and it can change later.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="accordion-item">
+        <h3 class="accordion-item-heading">
+          <button class="accordion-question" type="button" aria-expanded="false" aria-controls="wm-faq-answer-3" id="wm-faq-question-3">
+            <span>What kind of work does this cover?</span>
+            <span class="accordion-icon" aria-hidden="true"></span>
+          </button>
+        </h3>
+        <div class="accordion-answer-wrap" id="wm-faq-answer-3" role="region" aria-labelledby="wm-faq-question-3">
+          <div class="accordion-answer-inner">
+            <p>Updates, fixes, technical maintenance, performance and security improvements, SEO improvements, content changes, new pages, and hosting/domain/SSL assistance, among others — whatever your site actually needs.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="accordion-item">
+        <h3 class="accordion-item-heading">
+          <button class="accordion-question" type="button" aria-expanded="false" aria-controls="wm-faq-answer-4" id="wm-faq-question-4">
+            <span>How is pricing handled?</span>
+            <span class="accordion-icon" aria-hidden="true"></span>
+          </button>
+        </h3>
+        <div class="accordion-answer-wrap" id="wm-faq-answer-4" role="region" aria-labelledby="wm-faq-question-4">
+          <div class="accordion-answer-inner">
+            <p>There's no fixed public price. BrindLeaf reviews what your site needs and provides a custom quote, whether that's for a single fix or ongoing management.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Closing CTA -->
+<section class="faq-container">
+  <div class="cta-banner">
+    <h2 class="cta-banner-title">Ready to start?</h2>
+    <p class="cta-banner-sub">A short intake, reviewed by hand — no commitment, no cost.</p>
+    <div class="cta-banner-links">
+      <a class="btn btn-primary btn-large" href="services.html?service=web-management">
+        Start an Inquiry
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8H12.5M12.5 8L8.5 4M12.5 8L8.5 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </a>
+      <a class="cta-banner-secondary-link" href="index.html#faq">More general questions? See the homepage FAQ</a>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer class="site-footer">
+  <p>&copy; 2026 BrindLeaf. <a href="contact.html">Contact</a></p>
+</footer>
+
+<div class="consent-banner" id="consent-banner" role="region" aria-label="Cookie consent" hidden>
+  <p class="consent-banner-text">This site uses Google Analytics to understand traffic. No analytics data is collected unless you accept.</p>
+  <div class="consent-banner-actions">
+    <button class="btn btn-ghost" id="consent-decline-btn" type="button">Decline</button>
+    <button class="btn btn-primary" id="consent-accept-btn" type="button">Accept</button>
+  </div>
+</div>
+
+<script src="js/common.js"></script>
+<script src="js/analytics.js"></script>
+<script src="js/marketing-page.js"></script>
+</body>
+</html>
