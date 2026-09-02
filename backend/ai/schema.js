@@ -129,4 +129,12 @@ const AnalysisSchema = z.object({
   research_used: z.boolean().optional(),
 });
 
-module.exports = { AnalysisSchema, SeoRecommendationSchema, FeatureRecommendationSchema, SourceSchema };
+module.exports = {
+  AnalysisSchema,
+  SeoRecommendationSchema,
+  FeatureRecommendationSchema,
+  SourceSchema,
+  RiskSchema,
+  ScopeRecommendationSchema,
+  TimelineRecommendationSchema,
+};

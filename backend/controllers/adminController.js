@@ -312,8 +312,8 @@ async function analyzeSubmission(req, res) {
   if (!submission) {
     return res.status(404).json({ error: "Submission not found." });
   }
-  if (submission.type !== "web-design") {
-    return res.status(400).json({ error: "AI analysis is only available for web-design submissions." });
+  if (submission.type !== "web-design" && submission.type !== "services") {
+    return res.status(400).json({ error: "AI analysis is only available for web-design and services submissions." });
   }
 
   const existing = await Analysis.findBySubmissionId(id);

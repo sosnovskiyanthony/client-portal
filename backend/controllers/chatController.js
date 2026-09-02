@@ -10,7 +10,9 @@ const { runChat, regenerateLastReply, RegenerateValidationError } = require("../
 const { runRawTextAnalysis } = require("../services/runRawTextAnalysis");
 const { runAnalysisUpdate } = require("../services/runAnalysisUpdate");
 const { AnalysisSchema } = require("../ai/schema");
+const { ServicesAnalysisSchema } = require("../ai/servicesSchema");
 const { AI_PROMPT_VERSION } = require("../ai/prompt");
+const { AI_SERVICES_PROMPT_VERSION } = require("../ai/servicesPrompt");
 const { AiAnalysisError } = require("../ai/errors");
 const aiService = require("../ai/aiService");
 const analysisProgress = require("../lib/analysisProgress");
@@ -253,7 +255,12 @@ async function saveChatAnalysis(req, res) {
   const submission = await loadSubmissionOr404(req, res);
   if (!submission) return;
 
-  const validation = AnalysisSchema.safeParse(req.body?.result);
+  // A "services" submission's analysis has a different shape
+  // (ServicesAnalysisSchema) than a web-design one's (AnalysisSchema) — see
+  // ai/servicesSchema.js. Validate against whichever actually applies to
+  // this submission, same as runAnalysisUpdate/analyzeServicesSubmission do.
+  const schema = submission.type === "services" ? ServicesAnalysisSchema : AnalysisSchema;
+  const validation = schema.safeParse(req.body?.result);
   if (!validation.success) {
     return res.status(400).json({
       error: `Provided analysis does not match the required schema: ${validation.error.issues.map((i) => i.path.join(".") + " " + i.message).join("; ")}`,
@@ -262,7 +269,8 @@ async function saveChatAnalysis(req, res) {
 
   const provider = typeof req.body?.provider === "string" ? req.body.provider : null;
   const model = typeof req.body?.model === "string" ? req.body.model : null;
-  const promptVersion = typeof req.body?.promptVersion === "string" ? req.body.promptVersion : AI_PROMPT_VERSION;
+  const defaultPromptVersion = submission.type === "services" ? AI_SERVICES_PROMPT_VERSION : AI_PROMPT_VERSION;
+  const promptVersion = typeof req.body?.promptVersion === "string" ? req.body.promptVersion : defaultPromptVersion;
 
   await Analysis.createPending(submission.id);
   const analysis = await Analysis.markCompleted(submission.id, {

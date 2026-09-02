@@ -16,7 +16,19 @@ const Analysis = require("../models/Analysis");
 const aiService = require("../ai/aiService");
 const { AiAnalysisError } = require("../ai/errors");
 const { AI_PROMPT_VERSION } = require("../ai/prompt");
+const { AI_SERVICES_PROMPT_VERSION } = require("../ai/servicesPrompt");
 const analysisProgress = require("../lib/analysisProgress");
+
+// web-design submissions use aiService.analyzeSubmission()/AnalysisSchema;
+// the multi-select "services" submissions use analyzeServicesSubmission()/
+// ServicesAnalysisSchema (see ai/servicesSchema.js for why that's a
+// genuinely separate schema, not a reuse of AnalysisSchema's web-design-
+// specific fields). Same orchestration shape either way — this table is
+// the only thing that varies per type.
+const ANALYSIS_FN_BY_TYPE = {
+  "web-design": { fn: (s, opts) => aiService.analyzeSubmission(s, opts), promptVersion: AI_PROMPT_VERSION },
+  services: { fn: (s, opts) => aiService.analyzeServicesSubmission(s, opts), promptVersion: AI_SERVICES_PROMPT_VERSION },
+};
 
 async function runAnalysis(submission) {
   const { provider, model } = aiService.getActiveProviderInfo();
@@ -33,11 +45,20 @@ async function runAnalysis(submission) {
 }
 
 async function runAnalysisInner(submission, provider, model) {
+  const entry = ANALYSIS_FN_BY_TYPE[submission.type];
+  const promptVersion = entry ? entry.promptVersion : AI_PROMPT_VERSION;
   try {
-    await Analysis.createPending(submission.id);
-    await Analysis.markProcessing(submission.id, { provider, model, promptVersion: AI_PROMPT_VERSION });
+    if (!entry) {
+      // Mirrors aiService.analyzeSubmission's own "unsupported_type" check
+      // — reachable here too if this is ever called directly for a seo/
+      // contact submission, which have no analysis pipeline at all.
+      throw new AiAnalysisError("unsupported_type", `AI analysis is not implemented for "${submission.type}" submissions.`);
+    }
 
-    const outcome = await aiService.analyzeSubmission(submission, {
+    await Analysis.createPending(submission.id);
+    await Analysis.markProcessing(submission.id, { provider, model, promptVersion });
+
+    const outcome = await entry.fn(submission, {
       onProgress: (stage) => analysisProgress.setStage("analysis", submission.id, stage),
     });
 
@@ -64,7 +85,7 @@ async function runAnalysisInner(submission, provider, model) {
     }
 
     try {
-      return await Analysis.markFailed(submission.id, { error: `${code}: ${detail}`, provider, model, promptVersion: AI_PROMPT_VERSION });
+      return await Analysis.markFailed(submission.id, { error: `${code}: ${detail}`, provider, model, promptVersion });
     } catch (dbErr) {
       // The DB write to record the failure itself failed. Nothing left to
       // do but log — the underlying submission is still safe either way,

@@ -25,6 +25,7 @@ const VALID_WEB_DESIGN_FIELDS = {
 
 let serverProcess;
 let pool;
+let singleServiceSubmissionId; // captured from the "single-service" test below, reused by the analyze-dispatch tests so they don't need their own intake POST (submissionLimiter is shared and tight across this whole file)
 
 async function waitForServer(url, timeoutMs = 15000) {
   const start = Date.now();
@@ -100,6 +101,7 @@ test("a single-service submission (ai-integration only) is saved with the right 
   assert.deepEqual(submission.services, ["ai-integration"]);
   assert.deepEqual(submission.projectDetails.services, ["ai-integration"]);
   assert.equal(submission.projectDetails.aiIntegration.aiGoal, "Automate replies");
+  singleServiceSubmissionId = submission.id;
 });
 
 test("a multi-service submission (app-building + web-management) is saved with both", async () => {
@@ -256,3 +258,22 @@ test("backward compatibility: a web-design submission through its own dedicated 
   const serviceListBody = await serviceListRes.json();
   assert.ok(serviceListBody.submissions.some((s) => s.id === submission.id));
 });
+
+test("AI analysis is dispatched correctly for a 'services' submission — no longer rejected as an unsupported type", async () => {
+  assert.ok(singleServiceSubmissionId, "expected the single-service test to have run first and captured an id");
+  // services/runAnalysis.js never throws (same design as before this
+  // feature — a failed attempt is recorded as analysis.status="failed" and
+  // returned normally, always HTTP 200). AI_PROVIDER is deliberately
+  // broken for this whole suite, so a failed status with an
+  // "unknown_provider" error — not the 400 "unsupported type" this would
+  // have gotten before ANALYSIS_FN_BY_TYPE recognized "services" — is what
+  // proves the dispatch actually reached analyzeServicesSubmission.
+  const res = await authed(`/api/admin/submissions/${singleServiceSubmissionId}/analyze`, { method: "POST" });
+  assert.equal(res.status, 200);
+  const { analysis } = await res.json();
+  assert.equal(analysis.status, "failed");
+  assert.ok(analysis.error.includes("unknown_provider"));
+});
+// "seo submissions still correctly rejected as unanalyzable" is already
+// covered by test/integration.test.js — not duplicated here, since every
+// intake POST in this file shares submissionLimiter's tight 10/hour cap.

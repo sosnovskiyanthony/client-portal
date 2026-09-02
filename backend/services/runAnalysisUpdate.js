@@ -7,6 +7,7 @@
 const aiService = require("../ai/aiService");
 const analysisProgress = require("../lib/analysisProgress");
 const { sanitizeWebDesignSubmission } = require("../ai/prompt");
+const { sanitizeServicesSubmission } = require("../ai/servicesPrompt");
 
 // Same admin/assistant filtering chatReply already applies, plus "analysis"
 // entries kept (summarized, not dumped raw — see
@@ -20,11 +21,15 @@ function relevantConversationTurns(messages) {
 async function runAnalysisUpdate(submission, currentAnalysisResult, chatMessages) {
   analysisProgress.start("analysis-update", submission.id, { model: aiService.getActiveProviderInfo().model });
   try {
-    const sanitizedIntake = sanitizeWebDesignSubmission(submission.projectDetails);
+    const sanitizedIntake =
+      submission.type === "services"
+        ? sanitizeServicesSubmission(submission.projectDetails)
+        : sanitizeWebDesignSubmission(submission.projectDetails);
     const conversationTurns = relevantConversationTurns(chatMessages);
 
     return await aiService.updateAnalysisFromConversation(currentAnalysisResult, sanitizedIntake, conversationTurns, {
       onProgress: (stage) => analysisProgress.setStage("analysis-update", submission.id, stage),
+      submissionType: submission.type,
     });
   } finally {
     analysisProgress.finish("analysis-update", submission.id);

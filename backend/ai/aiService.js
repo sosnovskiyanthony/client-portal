@@ -8,6 +8,7 @@
 //   └── AnthropicProvider (opt-in via AI_PROVIDER=anthropic, dormant by default)
 const env = require("../config/env");
 const { AnalysisSchema } = require("./schema");
+const { ServicesAnalysisSchema } = require("./servicesSchema");
 const { EmailDraftSchema } = require("./emailSchema");
 const {
   SYSTEM_PROMPT,
@@ -16,6 +17,12 @@ const {
   buildUserMessage,
   buildRawTextUserMessage,
 } = require("./prompt");
+const {
+  AI_SERVICES_PROMPT_VERSION,
+  SERVICES_SYSTEM_PROMPT,
+  sanitizeServicesSubmission,
+  buildServicesUserMessage,
+} = require("./servicesPrompt");
 const {
   AI_CHAT_PROMPT_VERSION,
   CHAT_SYSTEM_PROMPT,
@@ -125,6 +132,75 @@ async function analyzeSubmission(submission, { client, onProgress } = {}) {
     model,
     provider: providerName,
     promptVersion: AI_PROMPT_VERSION,
+  };
+}
+
+// The multi-select "services" submission's analysis — the sibling to
+// analyzeSubmission() above for type: "services" (see
+// ai/servicesSchema.js/ai/servicesPrompt.js for why this is a separate
+// schema/prompt rather than a reuse of AnalysisSchema itself). Same
+// structural shape as analyzeSubmission(): sanitize → build user message →
+// provider dispatch → central validation → confidence normalization.
+async function analyzeServicesSubmission(submission, { client, onProgress } = {}) {
+  if (submission.type !== "services") {
+    throw new AiAnalysisError(
+      "unsupported_type",
+      `This analysis path is only implemented for "services" submissions (got "${submission.type}").`
+    );
+  }
+
+  const providerName = env.aiProvider;
+  const provider = PROVIDERS[providerName];
+  if (!provider) {
+    throw new AiAnalysisError(
+      "unknown_provider",
+      `AI_PROVIDER "${providerName}" is not recognized. Expected one of: ${Object.keys(PROVIDERS).join(", ")}.`
+    );
+  }
+
+  onProgress?.("preparing");
+  const sanitized = sanitizeServicesSubmission(submission.projectDetails);
+  const userMessage = buildServicesUserMessage(sanitized);
+  const model = provider.model();
+
+  onProgress?.("sending");
+  const { parsed } = await provider.impl.generateStructuredAnalysis({
+    systemPrompt: SERVICES_SYSTEM_PROMPT,
+    userMessage,
+    zodSchema: ServicesAnalysisSchema,
+    model,
+    client,
+    onProgress,
+  });
+  onProgress?.("validating");
+
+  // Same defensive normalization as analyzeSubmission() — a local model can
+  // return confidence as a 0-100 percentage instead of a 0-1 fraction, both
+  // at the top level and inside each recommendation.
+  if (typeof parsed?.confidence === "number" && parsed.confidence > 1) {
+    parsed.confidence = Math.max(0, Math.min(1, parsed.confidence / 100));
+  }
+  if (Array.isArray(parsed?.recommendations)) {
+    for (const r of parsed.recommendations) {
+      if (typeof r?.confidence === "number" && r.confidence > 1) {
+        r.confidence = Math.max(0, Math.min(1, r.confidence / 100));
+      }
+    }
+  }
+
+  const validation = ServicesAnalysisSchema.safeParse(parsed);
+  if (!validation.success) {
+    throw new AiAnalysisError(
+      "invalid_schema",
+      `AI response did not match the required services-analysis schema: ${validation.error.issues.map((i) => i.path.join(".") + " " + i.message).join("; ")}`
+    );
+  }
+
+  return {
+    result: validation.data,
+    model,
+    provider: providerName,
+    promptVersion: AI_SERVICES_PROMPT_VERSION,
   };
 }
 
@@ -309,15 +385,18 @@ async function chatReplyWithResearch({ sanitizedIntake, analysisResult, history,
   };
 }
 
-// "Update Analysis from this Conversation" — reuses AnalysisSchema exactly
-// (see ai/analysisUpdatePrompt.js's own comment for why this is a distinct
-// third prompt from SYSTEM_PROMPT/CHAT_SYSTEM_PROMPT). `currentAnalysis` is
-// the exact stored AnalysisSchema-shaped result; `conversationTurns` is the
+// "Update Analysis from this Conversation" — reuses AnalysisSchema (or, for
+// a "services" submission, ServicesAnalysisSchema — see submissionType
+// below) exactly, never a bespoke third schema (see
+// ai/analysisUpdatePrompt.js's own comment for why ANALYSIS_UPDATE_SYSTEM_PROMPT
+// is a distinct prompt from SYSTEM_PROMPT/CHAT_SYSTEM_PROMPT, independent of
+// which schema it's constraining output to). `currentAnalysis` is the exact
+// stored result for whichever schema applies; `conversationTurns` is the
 // filtered admin/assistant/analysis history (same filtering chatReply
-// already does — see services/runAnalysisUpdate.js for the caller).
-// Result is never saved automatically by this function — same "admin
-// explicitly reviews and saves" discipline as analyzeRawText.
-async function updateAnalysisFromConversation(currentAnalysis, sanitizedIntake, conversationTurns, { client, onProgress } = {}) {
+// already does — see services/runAnalysisUpdate.js for the caller). Result
+// is never saved automatically by this function — same "admin explicitly
+// reviews and saves" discipline as analyzeRawText.
+async function updateAnalysisFromConversation(currentAnalysis, sanitizedIntake, conversationTurns, { client, onProgress, submissionType = "web-design" } = {}) {
   const providerName = env.aiProvider;
   const provider = PROVIDERS[providerName];
   if (!provider) {
@@ -327,6 +406,8 @@ async function updateAnalysisFromConversation(currentAnalysis, sanitizedIntake, 
     );
   }
 
+  const zodSchema = submissionType === "services" ? ServicesAnalysisSchema : AnalysisSchema;
+
   onProgress?.("preparing");
   const userMessage = buildAnalysisUpdateUserMessage(currentAnalysis, sanitizedIntake, conversationTurns);
   const model = provider.model();
@@ -335,7 +416,7 @@ async function updateAnalysisFromConversation(currentAnalysis, sanitizedIntake, 
   const { parsed } = await provider.impl.generateStructuredAnalysis({
     systemPrompt: ANALYSIS_UPDATE_SYSTEM_PROMPT,
     userMessage,
-    zodSchema: AnalysisSchema,
+    zodSchema,
     model,
     client,
     onProgress,
@@ -346,7 +427,7 @@ async function updateAnalysisFromConversation(currentAnalysis, sanitizedIntake, 
     parsed.confidence = Math.max(0, Math.min(1, parsed.confidence / 100));
   }
 
-  const validation = AnalysisSchema.safeParse(parsed);
+  const validation = zodSchema.safeParse(parsed);
   if (!validation.success) {
     throw new AiAnalysisError(
       "invalid_schema",
@@ -517,6 +598,7 @@ function getActiveProviderInfo() {
 
 module.exports = {
   analyzeSubmission,
+  analyzeServicesSubmission,
   analyzeRawText,
   chatReply,
   chatReplyWithResearch,
