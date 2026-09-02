@@ -49,6 +49,18 @@ async function init() {
   // that predates this column.
   await pool.query(`ALTER TABLE submissions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();`);
 
+  // Token revocation (see middleware/auth.js, controllers/authController.js's
+  // logout). A JWT is otherwise stateless — this column is what makes
+  // "log out" actually invalidate a token server-side, not just clear it
+  // client-side. Every JWT this app issues now carries the token_version
+  // that was current at sign time; authenticate() rejects a token whose
+  // version doesn't match the user's current value. Bumping it (logout, or
+  // a future "log out everywhere") invalidates every previously-issued
+  // token at once — there's exactly one admin account, so there's no
+  // per-session granularity to preserve; "log out" meaning "kill every
+  // outstanding session" is the correct behavior here, not a limitation.
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 1;`);
+
   // The three new services (AI Integration / App Building / Web Management)
   // need a lead to be filterable under more than one service at once — a
   // single `type` column can't express "this submission is both AI

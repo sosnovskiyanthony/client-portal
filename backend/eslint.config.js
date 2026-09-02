@@ -146,6 +146,7 @@ module.exports = [
         getAdminToken: "readonly",
         loginAdmin: "readonly",
         logoutAdmin: "readonly",
+        requestServerLogout: "readonly",
         INTAKE_ENDPOINTS: "readonly",
         saveSubmission: "readonly",
         fetchSubmissions: "readonly",

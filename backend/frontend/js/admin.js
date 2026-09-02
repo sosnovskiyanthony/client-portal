@@ -1750,7 +1750,8 @@
     initContractCreation();
 
     els.btnLogin.addEventListener("click", () => openModal("login"));
-    els.btnLogout.addEventListener("click", () => {
+    els.btnLogout.addEventListener("click", async () => {
+      await requestServerLogout();
       logoutAdmin();
       render();
     });

@@ -41,7 +41,7 @@ async function login(req, res) {
   }
 
   const token = jwt.sign(
-    { sub: user.id, email: user.email, role: user.role },
+    { sub: user.id, email: user.email, role: user.role, tokenVersion: user.token_version },
     env.jwtSecret,
     { expiresIn: env.jwtExpiresIn }
   );
@@ -61,4 +61,24 @@ async function login(req, res) {
   });
 }
 
-module.exports = { login };
+// Real server-side logout — bumps token_version so the JWT that was just
+// used (and any other outstanding one, since there's only one admin
+// account and no per-session granularity) is rejected by every future
+// request. req.user is already verified by authenticate() before this
+// runs, so req.user.sub is trustworthy.
+async function logout(req, res) {
+  await User.bumpTokenVersion(req.user.sub);
+
+  logSecurityEvent({
+    severity: "INFO",
+    eventType: "auth_logout",
+    actorType: "admin",
+    actorId: req.user.sub,
+    source: "authController",
+    description: `Admin logout: ${req.user.email}.`,
+  }).catch(() => {});
+
+  res.status(204).end();
+}
+
+module.exports = { login, logout };

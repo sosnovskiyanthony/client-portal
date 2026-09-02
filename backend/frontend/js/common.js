@@ -528,6 +528,29 @@ function logoutAdmin() {
   window.dispatchEvent(new CustomEvent("studio:admin-auth-change"));
 }
 
+// Real server-side logout (POST /api/auth/logout) — invalidates the
+// current token via middleware/auth.js's token_version check, not just
+// clearing it client-side the way logoutAdmin() alone does. Deliberately
+// a SEPARATE function, not folded into logoutAdmin() itself:
+// logoutAdmin() is called from ~20 "your session already expired, clean
+// up" paths throughout this file (every 401/403 handler), where the
+// token is already known-bad and hitting the server again would just be
+// a wasted request. Call this first, only from an actual "Log Out"
+// button click, while the token is still valid and attached — then call
+// logoutAdmin() to clear it locally. Best-effort: if this fails (offline,
+// server hiccup), the token still expires naturally at its normal TTL,
+// exactly like today — never blocks the local logout from completing.
+async function requestServerLogout() {
+  try {
+    await fetch("/api/auth/logout", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${getAdminToken()}` },
+    });
+  } catch {
+    // Offline or server unreachable — the local logout below still runs.
+  }
+}
+
 // ---------- Submission storage ----------
 // Questionnaire pages call saveSubmission() on submit, which POSTs to the
 // matching intake/contact endpoint. admin.html reads the saved submissions
