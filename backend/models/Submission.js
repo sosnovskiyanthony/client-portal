@@ -14,10 +14,14 @@ const VALID_STATUSES = [
   "lost",
 ];
 
-async function create({ type, clientName, email, projectDetails, flexiblePaymentPreference }) {
+// `services` (array of service slugs — see ai/services.js's SERVICE_SLUGS)
+// is optional and only meaningful for the new type: 'services' multi-select
+// intake (routes/intake.js); every other caller either omits it or passes
+// null, same as before this column existed.
+async function create({ type, clientName, email, projectDetails, flexiblePaymentPreference, services }) {
   const { rows } = await pool.query(
-    `INSERT INTO submissions (type, client_name, email, project_details, flexible_payment_preference, status)
-     VALUES ($1, $2, $3, $4, $5, 'new')
+    `INSERT INTO submissions (type, client_name, email, project_details, flexible_payment_preference, services, status)
+     VALUES ($1, $2, $3, $4, $5, $6, 'new')
      RETURNING *`,
     [
       type,
@@ -25,6 +29,7 @@ async function create({ type, clientName, email, projectDetails, flexiblePayment
       email || null,
       projectDetails || null,
       flexiblePaymentPreference === undefined ? null : flexiblePaymentPreference,
+      Array.isArray(services) && services.length > 0 ? services : null,
     ]
   );
   return serialize(rows[0]);
@@ -39,15 +44,32 @@ async function findById(id) {
 // UI decision, not deployment config.
 const PAGE_SIZE = 20;
 
-// type: "all" (or omitted) for no filter, otherwise an exact submission type.
-// page: 1-indexed.
-async function findPage({ type, page = 1 } = {}) {
+// Shared by findPage/findAll/count below — `type` filters the existing
+// exact-match column (web-design|seo|contact|services|"all"); `service`
+// filters the new services array via containment (ai-integration|
+// app-building|web-management|web-design|seo — see ai/services.js's
+// SERVICE_SLUGS), matching a 'services'-type submission that selected it
+// alongside others, OR a legacy web-design/seo submission (backfilled at
+// migration time — see config/database.js). Mutually exclusive in the
+// admin UI (one filter pill active at a time — frontend/js/admin.js), but
+// nothing here assumes that; if both are somehow passed, both apply.
+function buildWhereClause({ type, service }) {
   const params = [];
-  let whereClause = "";
+  const conditions = [];
   if (type && type !== "all") {
     params.push(type);
-    whereClause = `WHERE type = $${params.length}`;
+    conditions.push(`type = $${params.length}`);
   }
+  if (service) {
+    params.push(service);
+    conditions.push(`$${params.length} = ANY(services)`);
+  }
+  return { whereClause: conditions.length ? `WHERE ${conditions.join(" AND ")}` : "", params };
+}
+
+// type/service: see buildWhereClause above. page: 1-indexed.
+async function findPage({ type, service, page = 1 } = {}) {
+  const { whereClause, params } = buildWhereClause({ type, service });
 
   const offset = (Math.max(1, page) - 1) * PAGE_SIZE;
   params.push(PAGE_SIZE, offset);
@@ -63,13 +85,8 @@ async function findPage({ type, page = 1 } = {}) {
 
 // Unpaginated — used only by the CSV export, which needs every matching row
 // at once. findPage() above stays paginated for the dashboard's own list.
-async function findAll({ type } = {}) {
-  const params = [];
-  let whereClause = "";
-  if (type && type !== "all") {
-    params.push(type);
-    whereClause = `WHERE type = $${params.length}`;
-  }
+async function findAll({ type, service } = {}) {
+  const { whereClause, params } = buildWhereClause({ type, service });
   const { rows } = await pool.query(
     `SELECT * FROM submissions ${whereClause} ORDER BY created_at DESC, id DESC`,
     params
@@ -77,13 +94,8 @@ async function findAll({ type } = {}) {
   return rows.map(serialize);
 }
 
-async function count({ type } = {}) {
-  const params = [];
-  let whereClause = "";
-  if (type && type !== "all") {
-    params.push(type);
-    whereClause = `WHERE type = $1`;
-  }
+async function count({ type, service } = {}) {
+  const { whereClause, params } = buildWhereClause({ type, service });
   const { rows } = await pool.query(`SELECT COUNT(*)::int AS count FROM submissions ${whereClause}`, params);
   return rows[0].count;
 }
@@ -146,6 +158,7 @@ function serialize(row) {
     email: row.email,
     projectDetails: row.project_details,
     flexiblePaymentPreference: row.flexible_payment_preference,
+    services: row.services || [],
     status: row.status,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

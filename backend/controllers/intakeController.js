@@ -3,6 +3,7 @@ const Submission = require("../models/Submission");
 const { notifyNewSubmission } = require("../services/email");
 const { EMAIL_RE, BRAND_ASSET_PATH_RE } = require("../lib/validators");
 const storage = require("../services/storage");
+const { SERVICE_DATA_KEYS, SERVICE_LABELS, isValidServiceSlug } = require("../lib/services");
 
 // Mirrors each form's own client-side "isComplete" gating on its submit
 // button (frontend/js/web-design.js, frontend/js/seo.js) — server-side, so a
@@ -18,6 +19,21 @@ function isMissing(value) {
   if (typeof value === "string") return value.trim().length === 0;
   return value === undefined || value === null;
 }
+
+// Per-service required fields for the multi-select "services" intake (see
+// handleServicesIntake below) — same isMissing() gating as REQUIRED_FIELDS
+// above, just keyed by service slug instead of submission type, since one
+// 'services' submission can carry more than one of these nested field sets
+// at once. web-design/seo here intentionally match REQUIRED_FIELDS above —
+// selecting Web Design or SEO within the combined form asks the identical
+// questions the dedicated web-design.html/seo.html forms do.
+const REQUIRED_SERVICE_FIELDS = {
+  "web-design": REQUIRED_FIELDS["web-design"],
+  seo: REQUIRED_FIELDS.seo,
+  "ai-integration": ["aiGoal", "businessProblem"],
+  "app-building": ["appGoal", "coreWorkflows"],
+  "web-management": ["existingUrl", "helpNeeded"],
+};
 
 // Brand assets on the web-design intake — uploaded ahead of the final
 // submit (see uploadBrandAssets below), then referenced by path in the
@@ -84,6 +100,14 @@ function makeIntakeHandler(type) {
       flexiblePaymentPreference: typeof data.flexiblePaymentPreference === "boolean"
         ? data.flexiblePaymentPreference
         : null,
+      // web-design/seo submitted through their own dedicated forms are
+      // still single-service by definition — populate services the same
+      // way the one-time migration backfill does for pre-existing rows
+      // (config/database.js), so every web-design/seo submission from here
+      // on (not just historical ones) shows up under the new service
+      // filter pills consistently, regardless of which form it came
+      // through.
+      services: type === "web-design" || type === "seo" ? [type] : undefined,
     });
 
     res.status(201).json({ submission });
@@ -100,6 +124,64 @@ function makeIntakeHandler(type) {
     // services/runAnalysis.js. That's what lets Ollama stay completely shut
     // down between uses instead of needing to be running for every intake.
   };
+}
+
+// The multi-select "services" intake (frontend/services.html +
+// frontend/js/services.js) — a prospect selects any combination of
+// web-design/seo/ai-integration/app-building/web-management, and only the
+// selected ones' question sections get validated/stored. Deliberately
+// separate from makeIntakeHandler() above: that factory validates one flat
+// REQUIRED_FIELDS[type] list against the whole body; this validates a
+// dynamic set of nested per-service objects, one per selected service, so
+// the two aren't the same shape of problem. Rate-limited the same way (see
+// routes/intake.js) and follows the identical name/email/response/
+// notify/never-auto-analyze conventions as every other intake handler here.
+async function handleServicesIntake(req, res) {
+  const data = req.body || {};
+  const { name, email } = data;
+
+  if (!name || typeof name !== "string" || !name.trim()) {
+    return res.status(400).json({ error: "A name is required." });
+  }
+  if (!email || !EMAIL_RE.test(email)) {
+    return res.status(400).json({ error: "A valid email is required." });
+  }
+
+  const selectedServices = Array.isArray(data.services) ? data.services.filter(isValidServiceSlug) : [];
+  if (selectedServices.length === 0) {
+    return res.status(400).json({ error: "Select at least one service." });
+  }
+
+  const projectDetails = { services: selectedServices };
+  for (const slug of selectedServices) {
+    const key = SERVICE_DATA_KEYS[slug];
+    const serviceData = data[key];
+    if (!serviceData || typeof serviceData !== "object" || Array.isArray(serviceData)) {
+      return res.status(400).json({ error: `Missing details for ${SERVICE_LABELS[slug]}.` });
+    }
+    const missingField = (REQUIRED_SERVICE_FIELDS[slug] || []).find((field) => isMissing(serviceData[field]));
+    if (missingField) {
+      return res.status(400).json({ error: `Missing required field for ${SERVICE_LABELS[slug]}: ${missingField}.` });
+    }
+    projectDetails[key] = serviceData;
+  }
+
+  const submission = await Submission.create({
+    type: "services",
+    clientName: name.trim(),
+    email: email.trim(),
+    projectDetails,
+    flexiblePaymentPreference: typeof data.flexiblePaymentPreference === "boolean" ? data.flexiblePaymentPreference : null,
+    services: selectedServices,
+  });
+
+  res.status(201).json({ submission });
+
+  notifyNewSubmission(submission);
+
+  // Same discipline as every other intake handler — AI analysis is never
+  // triggered automatically here either (see services.js's own AI pipeline,
+  // only ever run from the admin dashboard).
 }
 
 // Public (rate-limited via submissionLimiter — see routes/intake.js), called
@@ -142,6 +224,7 @@ async function uploadBrandAssets(req, res) {
 module.exports = {
   webDesign: makeIntakeHandler("web-design"),
   seo: makeIntakeHandler("seo"),
+  services: handleServicesIntake,
   uploadBrandAssets,
   sanitizeBrandAssets,
 };

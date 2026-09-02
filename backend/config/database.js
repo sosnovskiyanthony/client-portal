@@ -49,10 +49,31 @@ async function init() {
   // that predates this column.
   await pool.query(`ALTER TABLE submissions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();`);
 
+  // The three new services (AI Integration / App Building / Web Management)
+  // need a lead to be filterable under more than one service at once — a
+  // single `type` column can't express "this submission is both AI
+  // Integration and App Building." `type` stays exactly as it's always been
+  // (web-design|seo|contact for existing submissions, 'services' for the
+  // new unified multi-select intake — see routes/intake.js); this array is
+  // the actual multi-service membership, queried with the `@>`/`= ANY`
+  // containment operators (models/Submission.js), never an ORM concept.
+  // Nullable and unbackfilled by default — existing web-design/seo rows get
+  // backfilled below (one-time, idempotent — only ever touches rows that
+  // still have services IS NULL, so it's safe to run on every boot);
+  // contact submissions are deliberately left NULL, since a general inquiry
+  // isn't a "service" selection in this filtering sense.
+  await pool.query(`ALTER TABLE submissions ADD COLUMN IF NOT EXISTS services TEXT[];`);
+  await pool.query(`
+    UPDATE submissions
+    SET services = ARRAY[type]
+    WHERE services IS NULL AND type IN ('web-design', 'seo');
+  `);
+
   // Supports the admin dashboard's actual query patterns: filtering by type
   // and sorting newest-first for pagination (see models/Submission.js).
   await pool.query(`CREATE INDEX IF NOT EXISTS submissions_type_idx ON submissions (type);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS submissions_created_at_idx ON submissions (created_at DESC);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS submissions_services_idx ON submissions USING GIN (services);`);
 
   // One AI analysis per submission (re-analyze overwrites the existing row
   // rather than accumulating history — see services/aiAnalysis.js). `outcome`

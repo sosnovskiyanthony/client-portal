@@ -11,6 +11,7 @@ const router = express.Router();
 // middleware/rateLimit.js for why they're kept separate).
 router.post("/web-design", submissionLimiter, asyncHandler(intakeController.webDesign));
 router.post("/seo", submissionLimiter, asyncHandler(intakeController.seo));
+router.post("/services", submissionLimiter, asyncHandler(intakeController.services));
 
 // Brand-asset uploads on the web-design intake form (see
 // intakeController.uploadBrandAssets / services/storage.js). Buffered in

@@ -8,6 +8,7 @@ const { runDraftEmail } = require("../services/draftEmail");
 const { toCsv } = require("../utils/csv");
 const storage = require("../services/storage");
 const { BRAND_ASSET_PATH_RE } = require("../lib/validators");
+const { isValidServiceSlug } = require("../lib/services");
 const { cleanupOrphanedAssets } = require("../services/orphanCleanup");
 const { tailscaleDispatcher } = require("../lib/tailscaleDispatcher");
 const analysisProgress = require("../lib/analysisProgress");
@@ -15,11 +16,16 @@ const env = require("../config/env");
 
 async function listSubmissions(req, res) {
   const type = typeof req.query.type === "string" ? req.query.type : "all";
+  // Filters the new services array (see models/Submission.js) — a
+  // different query dimension from `type`, since a single 'services'
+  // submission can match more than one of these (frontend/js/admin.js's
+  // new service-based filter pills use this, not `type`).
+  const service = typeof req.query.service === "string" && isValidServiceSlug(req.query.service) ? req.query.service : undefined;
   const page = Math.max(1, parseInt(req.query.page, 10) || 1);
 
   const [submissions, total] = await Promise.all([
-    Submission.findPage({ type, page }),
-    Submission.count({ type }),
+    Submission.findPage({ type, service, page }),
+    Submission.count({ type, service }),
   ]);
   const ids = submissions.map((s) => s.id);
   const [analyses, outcomes, emailDrafts, contracts] = await Promise.all([
@@ -95,6 +101,7 @@ async function upsertOutcome(req, res) {
 const EXPORT_HEADERS = [
   "id",
   "type",
+  "services",
   "status",
   "clientName",
   "email",
@@ -117,7 +124,8 @@ const EXPORT_HEADERS = [
 // any submission type is lost or needs special-casing here.
 async function exportSubmissions(req, res) {
   const type = typeof req.query.type === "string" ? req.query.type : "all";
-  const submissions = await Submission.findAll({ type });
+  const service = typeof req.query.service === "string" && isValidServiceSlug(req.query.service) ? req.query.service : undefined;
+  const submissions = await Submission.findAll({ type, service });
   const outcomes = await ProjectOutcome.findAllBySubmissionIds(submissions.map((s) => s.id));
 
   const rows = submissions.map((s) => {
@@ -125,6 +133,7 @@ async function exportSubmissions(req, res) {
     return {
       id: s.id,
       type: s.type,
+      services: Array.isArray(s.services) ? s.services.join("; ") : "",
       status: s.status,
       clientName: s.clientName || "",
       email: s.email || "",
@@ -142,7 +151,7 @@ async function exportSubmissions(req, res) {
   });
 
   const csv = toCsv(rows, EXPORT_HEADERS);
-  const filename = `submissions-${type}-${new Date().toISOString().slice(0, 10)}.csv`;
+  const filename = `submissions-${service || type}-${new Date().toISOString().slice(0, 10)}.csv`;
   res.setHeader("Content-Type", "text/csv; charset=utf-8");
   res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
   res.send(csv);
