@@ -6,6 +6,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const aiService = require("../ai/aiService");
 const { AiAnalysisError } = require("../ai/errors");
+const { ndjsonSuccess } = require("./helpers/ollamaStream");
 
 function withMockedFetch(impl, fn) {
   const original = globalThis.fetch;
@@ -31,7 +32,7 @@ const VALID_RESULT = {
 
 test("analyzeRawText: a well-formed response passes end-to-end, reusing the same schema as analyzeSubmission", async () => {
   await withMockedFetch(
-    async () => ({ ok: true, status: 200, json: async () => ({ message: { content: JSON.stringify(VALID_RESULT) } }) }),
+    async () => ({ ok: true, status: 200, body: ndjsonSuccess(JSON.stringify(VALID_RESULT)) }),
     async () => {
       const outcome = await aiService.analyzeRawText("Client emailed asking about a new site.");
       assert.equal(outcome.provider, "ollama");
@@ -44,7 +45,7 @@ test("analyzeRawText: a well-formed response passes end-to-end, reusing the same
 
 test("analyzeRawText: malformed structured output is rejected as invalid_schema, not silently stored", async () => {
   await withMockedFetch(
-    async () => ({ ok: true, status: 200, json: async () => ({ message: { content: JSON.stringify({ project_summary: "only this field" }) } }) }),
+    async () => ({ ok: true, status: 200, body: ndjsonSuccess(JSON.stringify({ project_summary: "only this field" })) }),
     async () => {
       await assert.rejects(
         () => aiService.analyzeRawText("some pasted text"),
@@ -56,7 +57,7 @@ test("analyzeRawText: malformed structured output is rejected as invalid_schema,
 
 test("analyzeRawText: normalizes an out-of-range confidence the same way analyzeSubmission does", async () => {
   await withMockedFetch(
-    async () => ({ ok: true, status: 200, json: async () => ({ message: { content: JSON.stringify({ ...VALID_RESULT, confidence: 90 }) } }) }),
+    async () => ({ ok: true, status: 200, body: ndjsonSuccess(JSON.stringify({ ...VALID_RESULT, confidence: 90 })) }),
     async () => {
       const outcome = await aiService.analyzeRawText("some pasted text");
       assert.equal(outcome.result.confidence, 0.9);
@@ -69,7 +70,7 @@ test("chatReply: a well-formed free-text response passes through, with the conte
   await withMockedFetch(
     async (url, opts) => {
       capturedBody = JSON.parse(opts.body);
-      return { ok: true, status: 200, json: async () => ({ message: { content: "  Here's my take on that.  " } }) };
+      return { ok: true, status: 200, body: ndjsonSuccess("  Here's my take on that.  ") };
     },
     async () => {
       const outcome = await aiService.chatReply({
@@ -99,7 +100,7 @@ test("chatReply: prior turns are replayed as user/assistant messages, mapped fro
   await withMockedFetch(
     async (url, opts) => {
       capturedBody = JSON.parse(opts.body);
-      return { ok: true, status: 200, json: async () => ({ message: { content: "ok" } }) };
+      return { ok: true, status: 200, body: ndjsonSuccess("ok") };
     },
     async () => {
       await aiService.chatReply({
@@ -126,7 +127,7 @@ test("updateAnalysisFromConversation: a well-formed revision passes end-to-end, 
   await withMockedFetch(
     async (url, opts) => {
       capturedBody = JSON.parse(opts.body);
-      return { ok: true, status: 200, json: async () => ({ message: { content: JSON.stringify({ ...VALID_RESULT, project_summary: "Revised summary" }) } }) };
+      return { ok: true, status: 200, body: ndjsonSuccess(JSON.stringify({ ...VALID_RESULT, project_summary: "Revised summary" })) };
     },
     async () => {
       const outcome = await aiService.updateAnalysisFromConversation(
@@ -152,7 +153,7 @@ test("updateAnalysisFromConversation: a well-formed revision passes end-to-end, 
 
 test("updateAnalysisFromConversation: malformed structured output is rejected as invalid_schema", async () => {
   await withMockedFetch(
-    async () => ({ ok: true, status: 200, json: async () => ({ message: { content: JSON.stringify({ project_summary: "only this field" }) } }) }),
+    async () => ({ ok: true, status: 200, body: ndjsonSuccess(JSON.stringify({ project_summary: "only this field" })) }),
     async () => {
       await assert.rejects(
         () => aiService.updateAnalysisFromConversation(VALID_RESULT, {}, []),
@@ -164,7 +165,7 @@ test("updateAnalysisFromConversation: malformed structured output is rejected as
 
 test("chatReply: an empty response from Ollama is classified as invalid_json, not silently returned as a reply", async () => {
   await withMockedFetch(
-    async () => ({ ok: true, status: 200, json: async () => ({ message: { content: "" } }) }),
+    async () => ({ ok: true, status: 200, body: ndjsonSuccess("") }),
     async () => {
       await assert.rejects(
         () =>

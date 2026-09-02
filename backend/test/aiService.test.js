@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const aiService = require("../ai/aiService");
 const anthropicProvider = require("../ai/providers/anthropicProvider");
 const { AiAnalysisError } = require("../ai/errors");
+const { ndjsonSuccess } = require("./helpers/ollamaStream");
 
 function withMockedFetch(impl, fn) {
   const original = globalThis.fetch;
@@ -31,7 +32,7 @@ test("rejects submission types other than web-design without calling the provide
   await withMockedFetch(
     async () => {
       fetchCalled = true;
-      return { ok: true, status: 200, json: async () => ({ message: { content: "{}" } }) };
+      return { ok: true, status: 200, body: ndjsonSuccess("{}") };
     },
     async () => {
       await assert.rejects(
@@ -45,7 +46,7 @@ test("rejects submission types other than web-design without calling the provide
 
 test("normalizes an out-of-range confidence (percentage instead of fraction) before validation", async () => {
   await withMockedFetch(
-    async () => ({ ok: true, status: 200, json: async () => ({ message: { content: JSON.stringify({ ...VALID_RESULT, confidence: 85 }) } }) }),
+    async () => ({ ok: true, status: 200, body: ndjsonSuccess(JSON.stringify({ ...VALID_RESULT, confidence: 85 })) }),
     async () => {
       const outcome = await aiService.analyzeSubmission({ type: "web-design", projectDetails: {} });
       assert.equal(outcome.result.confidence, 0.85);
@@ -55,7 +56,7 @@ test("normalizes an out-of-range confidence (percentage instead of fraction) bef
 
 test("a well-formed response passes end-to-end with correct provider/model/promptVersion metadata", async () => {
   await withMockedFetch(
-    async () => ({ ok: true, status: 200, json: async () => ({ message: { content: JSON.stringify(VALID_RESULT) } }) }),
+    async () => ({ ok: true, status: 200, body: ndjsonSuccess(JSON.stringify(VALID_RESULT)) }),
     async () => {
       const outcome = await aiService.analyzeSubmission({ type: "web-design", projectDetails: { goal: "brand" } });
       assert.equal(outcome.provider, "ollama");
@@ -68,7 +69,7 @@ test("a well-formed response passes end-to-end with correct provider/model/promp
 
 test("malformed structured output (missing required fields) is rejected as invalid_schema, not silently stored", async () => {
   await withMockedFetch(
-    async () => ({ ok: true, status: 200, json: async () => ({ message: { content: JSON.stringify({ project_summary: "only this field" }) } }) }),
+    async () => ({ ok: true, status: 200, body: ndjsonSuccess(JSON.stringify({ project_summary: "only this field" })) }),
     async () => {
       await assert.rejects(
         () => aiService.analyzeSubmission({ type: "web-design", projectDetails: {} }),

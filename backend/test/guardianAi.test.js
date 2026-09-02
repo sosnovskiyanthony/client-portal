@@ -4,6 +4,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const aiService = require("../ai/aiService");
 const { AiAnalysisError } = require("../ai/errors");
+const { ndjsonSuccess } = require("./helpers/ollamaStream");
 
 function withMockedFetch(impl, fn) {
   const original = globalThis.fetch;
@@ -33,7 +34,7 @@ const SAMPLE_INPUT = {
 
 test("a well-formed response passes end-to-end with correct provider/model/promptVersion metadata", async () => {
   await withMockedFetch(
-    async () => ({ ok: true, status: 200, json: async () => ({ message: { content: JSON.stringify(VALID_REVIEW_RESULT) } }) }),
+    async () => ({ ok: true, status: 200, body: ndjsonSuccess(JSON.stringify(VALID_REVIEW_RESULT)) }),
     async () => {
       const outcome = await aiService.reviewCodeChange(SAMPLE_INPUT);
       assert.equal(outcome.provider, "ollama");
@@ -46,7 +47,7 @@ test("a well-formed response passes end-to-end with correct provider/model/promp
 
 test("malformed structured output (missing required fields) is rejected as invalid_schema, not silently stored", async () => {
   await withMockedFetch(
-    async () => ({ ok: true, status: 200, json: async () => ({ message: { content: JSON.stringify({ overall: "pass" }) } }) }),
+    async () => ({ ok: true, status: 200, body: ndjsonSuccess(JSON.stringify({ overall: "pass" })) }),
     async () => {
       await assert.rejects(
         () => aiService.reviewCodeChange(SAMPLE_INPUT),
@@ -58,7 +59,7 @@ test("malformed structured output (missing required fields) is rejected as inval
 
 test("a schema-invalid 'overall' value is rejected as invalid_schema", async () => {
   await withMockedFetch(
-    async () => ({ ok: true, status: 200, json: async () => ({ message: { content: JSON.stringify({ ...VALID_REVIEW_RESULT, overall: "definitely fine trust me" }) } }) }),
+    async () => ({ ok: true, status: 200, body: ndjsonSuccess(JSON.stringify({ ...VALID_REVIEW_RESULT, overall: "definitely fine trust me" })) }),
     async () => {
       await assert.rejects(
         () => aiService.reviewCodeChange(SAMPLE_INPUT),
@@ -70,7 +71,7 @@ test("a schema-invalid 'overall' value is rejected as invalid_schema", async () 
 
 test("normalizes an out-of-range confidence (percentage instead of fraction)", async () => {
   await withMockedFetch(
-    async () => ({ ok: true, status: 200, json: async () => ({ message: { content: JSON.stringify({ ...VALID_REVIEW_RESULT, confidence: 85 }) } }) }),
+    async () => ({ ok: true, status: 200, body: ndjsonSuccess(JSON.stringify({ ...VALID_REVIEW_RESULT, confidence: 85 })) }),
     async () => {
       const outcome = await aiService.reviewCodeChange(SAMPLE_INPUT);
       assert.equal(outcome.result.confidence, 0.85);

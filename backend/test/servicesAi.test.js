@@ -5,6 +5,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const aiService = require("../ai/aiService");
 const { AiAnalysisError } = require("../ai/errors");
+const { ndjsonSuccess } = require("./helpers/ollamaStream");
 
 function withMockedFetch(impl, fn) {
   const original = globalThis.fetch;
@@ -29,7 +30,7 @@ test("rejects submission types other than 'services' without calling the provide
   await withMockedFetch(
     async () => {
       fetchCalled = true;
-      return { ok: true, status: 200, json: async () => ({ message: { content: "{}" } }) };
+      return { ok: true, status: 200, body: ndjsonSuccess("{}") };
     },
     async () => {
       await assert.rejects(
@@ -43,7 +44,7 @@ test("rejects submission types other than 'services' without calling the provide
 
 test("a well-formed response passes end-to-end with correct provider/model/promptVersion metadata", async () => {
   await withMockedFetch(
-    async () => ({ ok: true, status: 200, json: async () => ({ message: { content: JSON.stringify(VALID_SERVICES_RESULT) } }) }),
+    async () => ({ ok: true, status: 200, body: ndjsonSuccess(JSON.stringify(VALID_SERVICES_RESULT)) }),
     async () => {
       const outcome = await aiService.analyzeServicesSubmission({
         type: "services",
@@ -59,7 +60,7 @@ test("a well-formed response passes end-to-end with correct provider/model/promp
 
 test("malformed structured output (missing required fields) is rejected as invalid_schema, not silently stored", async () => {
   await withMockedFetch(
-    async () => ({ ok: true, status: 200, json: async () => ({ message: { content: JSON.stringify({ project_summary: "only this field" }) } }) }),
+    async () => ({ ok: true, status: 200, body: ndjsonSuccess(JSON.stringify({ project_summary: "only this field" })) }),
     async () => {
       await assert.rejects(
         () => aiService.analyzeServicesSubmission({ type: "services", projectDetails: { services: ["seo"], seo: {} } }),
@@ -71,7 +72,7 @@ test("malformed structured output (missing required fields) is rejected as inval
 
 test("normalizes an out-of-range top-level confidence (percentage instead of fraction)", async () => {
   await withMockedFetch(
-    async () => ({ ok: true, status: 200, json: async () => ({ message: { content: JSON.stringify({ ...VALID_SERVICES_RESULT, confidence: 85 }) } }) }),
+    async () => ({ ok: true, status: 200, body: ndjsonSuccess(JSON.stringify({ ...VALID_SERVICES_RESULT, confidence: 85 })) }),
     async () => {
       const outcome = await aiService.analyzeServicesSubmission({ type: "services", projectDetails: { services: ["seo"], seo: {} } });
       assert.equal(outcome.result.confidence, 0.85);
@@ -90,7 +91,7 @@ test("normalizes an out-of-range confidence inside a recommendation entry too", 
     ],
   };
   await withMockedFetch(
-    async () => ({ ok: true, status: 200, json: async () => ({ message: { content: JSON.stringify(withBadRecommendationConfidence) } }) }),
+    async () => ({ ok: true, status: 200, body: ndjsonSuccess(JSON.stringify(withBadRecommendationConfidence)) }),
     async () => {
       const outcome = await aiService.analyzeServicesSubmission({ type: "services", projectDetails: { services: ["seo"], seo: {} } });
       assert.equal(outcome.result.recommendations[0].confidence, 0.9);

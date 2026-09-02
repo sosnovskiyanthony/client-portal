@@ -10,6 +10,7 @@ const { pool } = require("../config/database");
 const aiService = require("../ai/aiService");
 const aiControl = require("../guardian/aiControl");
 const { AiAnalysisError } = require("../ai/errors");
+const { ndjsonSuccess } = require("./helpers/ollamaStream");
 
 function withMockedFetch(impl, fn) {
   const original = globalThis.fetch;
@@ -48,7 +49,7 @@ test("while ENABLED, a real aiService call reaches the provider (sanity check th
   await withMockedFetch(
     async () => {
       fetchCalled = true;
-      return { ok: true, status: 200, json: async () => ({ message: { content: JSON.stringify(VALID_RESULT) } }) };
+      return { ok: true, status: 200, body: ndjsonSuccess(JSON.stringify(VALID_RESULT)) };
     },
     async () => {
       await aiService.analyzeSubmission({
@@ -66,7 +67,7 @@ test("while DISABLED, analyzeSubmission rejects WITHOUT the provider ever being 
   await withMockedFetch(
     async () => {
       fetchCalled = true;
-      return { ok: true, status: 200, json: async () => ({ message: { content: JSON.stringify(VALID_RESULT) } }) };
+      return { ok: true, status: 200, body: ndjsonSuccess(JSON.stringify(VALID_RESULT)) };
     },
     async () => {
       await assert.rejects(
@@ -87,7 +88,7 @@ test("while LOCKDOWN, chatReply rejects WITHOUT the provider ever being called",
   await withMockedFetch(
     async () => {
       fetchCalled = true;
-      return { ok: true, status: 200, json: async () => ({ message: { content: "hi" } }) };
+      return { ok: true, status: 200, body: ndjsonSuccess("hi") };
     },
     async () => {
       await assert.rejects(
@@ -105,7 +106,7 @@ test("while LOCKDOWN, reviewCodeChange (the Guardian AI reviewer itself) also re
   await withMockedFetch(
     async () => {
       fetchCalled = true;
-      return { ok: true, status: 200, json: async () => ({ message: { content: "{}" } }) };
+      return { ok: true, status: 200, body: ndjsonSuccess("{}") };
     },
     async () => {
       await assert.rejects(
@@ -142,7 +143,7 @@ test("re-enabling makes the provider reachable again", async () => {
   await withMockedFetch(
     async () => {
       fetchCalled = true;
-      return { ok: true, status: 200, json: async () => ({ message: { content: JSON.stringify(VALID_RESULT) } }) };
+      return { ok: true, status: 200, body: ndjsonSuccess(JSON.stringify(VALID_RESULT)) };
     },
     async () => {
       await aiService.analyzeSubmission({

@@ -74,6 +74,88 @@ const FIRST_ATTEMPT_TIMEOUT_MS = 45 * 1000;
 // above even kicks in.
 const MAX_OUTPUT_TOKENS = 4096;
 
+// generateStructuredAnalysis and generateChatReply both request a streamed
+// response (stream: true) rather than Ollama's default single-lump reply,
+// specifically so the connection carries real, continuous data while a
+// generation is in progress. This isn't a performance optimization — it's
+// the actual fix for a real production pattern (2026-09-02): the
+// non-streaming request, which sends literally zero bytes back until the
+// entire generation is done, never once succeeded in any incident on this
+// thread, while every short/fast call (a plain health-check GET, a raw
+// `tailscale ping`) always did. That asymmetry pointed at something on the
+// Railway-container-to-Mac path treating a connection that's alive but
+// silent for too long as dead — the same class of bug already found and
+// fixed on the browser-to-Railway leg (see chatController.js). Streaming
+// means the connection is never actually silent while Ollama is working,
+// which sidesteps that regardless of exactly what's enforcing it.
+//
+// This timeout governs inactivity specifically — no bytes of ANY kind
+// (not even a partial line) for this long — not total generation time
+// (REQUEST_TIMEOUT_MS above is still the hard ceiling on that). Real token
+// generation, even on slow local hardware, produces some output well
+// within a minute when it's actually working; going fully silent for a
+// full minute during active generation is the real stall signal.
+const STREAM_INACTIVITY_TIMEOUT_MS = 60 * 1000;
+
+// Consumes an Ollama streamed /api/chat response — newline-delimited JSON,
+// one object per token/chunk, a final line marked done:true carrying the
+// generation's stats — and accumulates it into one result shaped like
+// Ollama's old single-lump response body, so callers work with it exactly
+// the same way regardless of which mode fetched it. Calls onChunk() on
+// every raw chunk received (before it's even known to contain a complete
+// JSON line) so callers can reset an inactivity timer on real proof of
+// activity, not just on fully-parsed data.
+//
+// Deliberately does NOT catch/reclassify errors from the network read
+// itself (a mid-stream abort, a dropped connection) — those propagate as
+// whatever raw error type they already are (e.g. AbortError), so the
+// existing retry-then-classify logic in each caller below, built around
+// exactly those raw error shapes, keeps working unchanged. Only a
+// genuinely malformed/incomplete STREAM (bad JSON on a line, or the
+// stream ending with no done:true marker at all) is wrapped as an
+// AiAnalysisError here — that's a real-response-but-broken-content case,
+// not a connectivity one, and callers let it propagate straight through
+// rather than folding it into the connectivity retry/classification path
+// (see the `if (err instanceof AiAnalysisError) throw err;` guard in
+// each attempt() below).
+async function consumeOllamaStream(body, onChunk) {
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let content = "";
+  let toolCalls = null;
+  let finalLine = null;
+
+  for await (const rawChunk of body) {
+    onChunk();
+    buffer += decoder.decode(rawChunk, { stream: true });
+    let newlineIndex;
+    while ((newlineIndex = buffer.indexOf("\n")) !== -1) {
+      const line = buffer.slice(0, newlineIndex).trim();
+      buffer = buffer.slice(newlineIndex + 1);
+      if (!line) continue;
+      let parsed;
+      try {
+        parsed = JSON.parse(line);
+      } catch (parseErr) {
+        throw new AiAnalysisError("invalid_json", "Ollama's streamed response contained a malformed line.", parseErr);
+      }
+      if (typeof parsed?.message?.content === "string") content += parsed.message.content;
+      if (Array.isArray(parsed?.message?.tool_calls) && parsed.message.tool_calls.length > 0) {
+        toolCalls = parsed.message.tool_calls;
+      }
+      if (parsed?.done) finalLine = parsed;
+    }
+  }
+
+  if (!finalLine) {
+    throw new AiAnalysisError("invalid_json", "Ollama's streamed response ended without a completion marker.");
+  }
+  return {
+    ...finalLine,
+    message: { ...(finalLine.message || {}), content, ...(toolCalls ? { tool_calls: toolCalls } : {}) },
+  };
+}
+
 async function generateStructuredAnalysis({ systemPrompt, userMessage, zodSchema, model, onProgress }) {
   const url = `${env.ollamaBaseUrl}/api/chat`;
   const jsonSchema = z.toJSONSchema(zodSchema);
@@ -103,17 +185,33 @@ async function generateStructuredAnalysis({ systemPrompt, userMessage, zodSchema
     // the Zod schema afterward regardless (see ai/aiService.js) — this
     // constrains generation, it doesn't replace validation.
     format: jsonSchema,
-    stream: false,
+    stream: true,
     options: { temperature: 0.2, num_predict: MAX_OUTPUT_TOKENS },
   });
 
   // One attempt = one fresh connection with its own timeout/AbortController,
   // so a retry genuinely starts over rather than reusing whatever the first
-  // attempt's connection was doing. Returns { res } or { err }, never
-  // throws — the caller decides what a failure means at each stage.
+  // attempt's connection was doing. Returns { res, body } on a full success,
+  // { res } for a non-2xx status (no stream to consume — the caller's
+  // status-code handling deals with it), or { err } for anything that never
+  // produced a usable response at all. Never throws for a connectivity-
+  // shaped failure — the caller decides what that means at each stage —
+  // but DOES throw directly for a malformed/incomplete stream (see
+  // consumeOllamaStream's own comment on why that's not folded into { err }).
   async function attempt(timeoutMs) {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    let timer = setTimeout(() => controller.abort(), timeoutMs);
+    // Swaps the fixed connect-phase timer for a per-chunk inactivity timer
+    // once real data starts arriving — a connection that's already proven
+    // itself alive by delivering bytes deserves the (looser, generation-
+    // appropriate) STREAM_INACTIVITY_TIMEOUT_MS budget per gap, not the
+    // (tighter, dead-connection-detecting) budget this attempt started
+    // with, still bounded by the overall deadline regardless.
+    const resetInactivityTimer = () => {
+      clearTimeout(timer);
+      const remainingMs = Math.max(1000, overallDeadline - Date.now());
+      timer = setTimeout(() => controller.abort(), Math.min(STREAM_INACTIVITY_TIMEOUT_MS, remainingMs));
+    };
     try {
       const res = await fetch(url, {
         method: "POST",
@@ -122,28 +220,34 @@ async function generateStructuredAnalysis({ systemPrompt, userMessage, zodSchema
         signal: controller.signal,
         dispatcher: tailscaleDispatcher,
       });
-      return { res };
+      if (!res.ok) return { res };
+      console.log(`[ollamaProvider] Ollama accepted the request after ${Date.now() - startedAt}ms — streaming response (HTTP ${res.status})...`);
+      const body = await consumeOllamaStream(res.body, resetInactivityTimer);
+      console.log(`[ollamaProvider] Ollama finished streaming after ${Date.now() - startedAt}ms.`);
+      return { res, body };
     } catch (err) {
+      if (err instanceof AiAnalysisError) throw err;
       return { err };
     } finally {
       clearTimeout(timer);
     }
   }
 
-  let { res, err } = await attempt(Math.min(FIRST_ATTEMPT_TIMEOUT_MS, REQUEST_TIMEOUT_MS));
+  let { res, body, err } = await attempt(Math.min(FIRST_ATTEMPT_TIMEOUT_MS, REQUEST_TIMEOUT_MS));
 
   // Retry once, with a fresh connection, on anything that isn't a clean
-  // success: a hang (err.name === "AbortError" — the bounded first-attempt
-  // timeout above firing, not the overall one), a connection-level error, or
-  // a 502 (see the comment on the 502 branch further below). A real,
-  // non-502 HTTP response — even an error one like 404/500 — is Ollama
-  // itself actually answering, which a retry can't fix, so that's left to
-  // the normal status handling after this block.
+  // success: a hang (err.name === "AbortError" — either the connect-phase
+  // timeout or the streaming inactivity timeout above firing, not the
+  // overall one), a connection-level error, or a 502 (see the comment on
+  // the 502 branch further below). A real, non-502 HTTP response — even an
+  // error one like 404/500 — is Ollama itself actually answering, which a
+  // retry can't fix, so that's left to the normal status handling after
+  // this block.
   if (err || (res && res.status === 502)) {
-    const reason = err ? (err.name === "AbortError" ? `no response within ${FIRST_ATTEMPT_TIMEOUT_MS}ms` : err.message) : "HTTP 502";
+    const reason = err ? (err.name === "AbortError" ? `timed out waiting on Ollama (${Date.now() - startedAt}ms elapsed)` : err.message) : "HTTP 502";
     const remainingMs = Math.max(5000, overallDeadline - Date.now());
     console.log(`[ollamaProvider] First attempt failed (${reason}) — retrying once with a fresh connection (${Math.round(remainingMs / 1000)}s left)...`);
-    ({ res, err } = await attempt(remainingMs));
+    ({ res, body, err } = await attempt(remainingMs));
   }
 
   if (err) {
@@ -162,7 +266,6 @@ async function generateStructuredAnalysis({ systemPrompt, userMessage, zodSchema
       err
     );
   }
-  console.log(`[ollamaProvider] Ollama responded after ${Date.now() - startedAt}ms (HTTP ${res.status}).`);
 
   if (res.status === 404) {
     throw new AiAnalysisError(
@@ -171,7 +274,7 @@ async function generateStructuredAnalysis({ systemPrompt, userMessage, zodSchema
     );
   }
   if (!res.ok) {
-    const body = await res.text().catch(() => "");
+    const errorBody = await res.text().catch(() => "");
     // A 502 here is Tailscale's own proxy reporting it couldn't reach the
     // Ollama host (see the retry above) — never a response Ollama itself
     // sent. "Ollama returned HTTP 502" would be actively misleading (it
@@ -181,15 +284,11 @@ async function generateStructuredAnalysis({ systemPrompt, userMessage, zodSchema
       throw new AiAnalysisError(
         "ollama_unavailable",
         `Could not reach Ollama at ${env.ollamaBaseUrl} through the Tailscale connection (tried twice). Is it running, and is the connection stable?`,
-        body
+        errorBody
       );
     }
-    throw new AiAnalysisError("provider_error", `Ollama returned HTTP ${res.status}.`, body);
+    throw new AiAnalysisError("provider_error", `Ollama returned HTTP ${res.status}.`, errorBody);
   }
-
-  const body = await res.json().catch((err) => {
-    throw new AiAnalysisError("invalid_json", "Ollama's response body was not valid JSON.", err);
-  });
 
   const content = body?.message?.content;
   if (typeof content !== "string" || !content.trim()) {
@@ -199,8 +298,8 @@ async function generateStructuredAnalysis({ systemPrompt, userMessage, zodSchema
   let parsed;
   try {
     parsed = JSON.parse(content);
-  } catch (err) {
-    throw new AiAnalysisError("invalid_json", "Ollama's response content was not valid JSON.", err);
+  } catch (parseErr) {
+    throw new AiAnalysisError("invalid_json", "Ollama's response content was not valid JSON.", parseErr);
   }
 
   return { parsed, raw: body };
@@ -225,13 +324,18 @@ async function generateChatReply({ systemPrompt, messages, model, onProgress, te
   const requestBody = JSON.stringify({
     model,
     messages: [{ role: "system", content: systemPrompt }, ...messages],
-    stream: false,
+    stream: true,
     options: { temperature, num_predict: MAX_OUTPUT_TOKENS },
   });
 
   async function attempt(timeoutMs) {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    let timer = setTimeout(() => controller.abort(), timeoutMs);
+    const resetInactivityTimer = () => {
+      clearTimeout(timer);
+      const remainingMs = Math.max(1000, overallDeadline - Date.now());
+      timer = setTimeout(() => controller.abort(), Math.min(STREAM_INACTIVITY_TIMEOUT_MS, remainingMs));
+    };
     try {
       const res = await fetch(url, {
         method: "POST",
@@ -240,21 +344,26 @@ async function generateChatReply({ systemPrompt, messages, model, onProgress, te
         signal: controller.signal,
         dispatcher: tailscaleDispatcher,
       });
-      return { res };
+      if (!res.ok) return { res };
+      console.log(`[ollamaProvider] Ollama accepted the chat request after ${Date.now() - startedAt}ms — streaming response (HTTP ${res.status})...`);
+      const body = await consumeOllamaStream(res.body, resetInactivityTimer);
+      console.log(`[ollamaProvider] Ollama finished streaming the chat reply after ${Date.now() - startedAt}ms.`);
+      return { res, body };
     } catch (err) {
+      if (err instanceof AiAnalysisError) throw err;
       return { err };
     } finally {
       clearTimeout(timer);
     }
   }
 
-  let { res, err } = await attempt(Math.min(FIRST_ATTEMPT_TIMEOUT_MS, REQUEST_TIMEOUT_MS));
+  let { res, body, err } = await attempt(Math.min(FIRST_ATTEMPT_TIMEOUT_MS, REQUEST_TIMEOUT_MS));
 
   if (err || (res && res.status === 502)) {
-    const reason = err ? (err.name === "AbortError" ? `no response within ${FIRST_ATTEMPT_TIMEOUT_MS}ms` : err.message) : "HTTP 502";
+    const reason = err ? (err.name === "AbortError" ? `timed out waiting on Ollama (${Date.now() - startedAt}ms elapsed)` : err.message) : "HTTP 502";
     const remainingMs = Math.max(5000, overallDeadline - Date.now());
     console.log(`[ollamaProvider] First chat attempt failed (${reason}) — retrying once with a fresh connection (${Math.round(remainingMs / 1000)}s left)...`);
-    ({ res, err } = await attempt(remainingMs));
+    ({ res, body, err } = await attempt(remainingMs));
   }
 
   if (err) {
@@ -270,7 +379,6 @@ async function generateChatReply({ systemPrompt, messages, model, onProgress, te
       err
     );
   }
-  console.log(`[ollamaProvider] Ollama chat responded after ${Date.now() - startedAt}ms (HTTP ${res.status}).`);
 
   if (res.status === 404) {
     throw new AiAnalysisError(
@@ -279,20 +387,16 @@ async function generateChatReply({ systemPrompt, messages, model, onProgress, te
     );
   }
   if (!res.ok) {
-    const body = await res.text().catch(() => "");
+    const errorBody = await res.text().catch(() => "");
     if (res.status === 502) {
       throw new AiAnalysisError(
         "ollama_unavailable",
         `Could not reach Ollama at ${env.ollamaBaseUrl} through the Tailscale connection (tried twice). Is it running, and is the connection stable?`,
-        body
+        errorBody
       );
     }
-    throw new AiAnalysisError("provider_error", `Ollama returned HTTP ${res.status}.`, body);
+    throw new AiAnalysisError("provider_error", `Ollama returned HTTP ${res.status}.`, errorBody);
   }
-
-  const body = await res.json().catch((err) => {
-    throw new AiAnalysisError("invalid_json", "Ollama's response body was not valid JSON.", err);
-  });
 
   const content = body?.message?.content;
   if (typeof content !== "string" || !content.trim()) {
