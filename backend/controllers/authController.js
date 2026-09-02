@@ -3,6 +3,7 @@ const jwt = require("jsonwebtoken");
 const env = require("../config/env");
 const User = require("../models/User");
 const { EMAIL_RE } = require("../lib/validators");
+const { logSecurityEvent } = require("../guardian/securityEvents");
 
 // bcrypt.compareSync takes roughly the same time regardless of whether it
 // matches. Comparing against this fixed hash when no user exists — instead
@@ -24,6 +25,18 @@ async function login(req, res) {
   const user = await User.findByEmail(email);
   const passwordMatches = bcrypt.compareSync(password, user ? user.password_hash : DUMMY_HASH);
   if (!user || !passwordMatches) {
+    // Fire-and-forget, never awaited — logging a failed attempt must not
+    // add any timing variance on top of the fixed-cost bcrypt comparison
+    // above, or it would reopen exactly the enumeration side-channel
+    // DUMMY_HASH exists to close. Never logs the attempted password.
+    logSecurityEvent({
+      severity: "WARNING",
+      eventType: "auth_login_failed",
+      actorType: "unauthenticated",
+      source: "authController",
+      description: "Failed admin login attempt.",
+      metadata: { attemptedEmail: email },
+    }).catch(() => {});
     return res.status(401).json({ error: "Incorrect email or password." });
   }
 
@@ -32,6 +45,15 @@ async function login(req, res) {
     env.jwtSecret,
     { expiresIn: env.jwtExpiresIn }
   );
+
+  logSecurityEvent({
+    severity: "INFO",
+    eventType: "auth_login_success",
+    actorType: "admin",
+    actorId: user.id,
+    source: "authController",
+    description: `Admin login: ${user.email}.`,
+  }).catch(() => {});
 
   res.json({
     token,

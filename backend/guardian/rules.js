@@ -38,6 +38,19 @@ const RULES = [
   { id: "no-fabricated-marketing-claims", rule: "Public marketing pages never fabricate client projects, testimonials, statistics, or portfolio work that doesn't exist yet." },
   { id: "csp-no-inline", rule: "The app's Content-Security-Policy has no 'unsafe-inline' — every script/style lives in a real file loaded via <script src>/<link>, never an inline <script> or onclick= attribute." },
   { id: "same-origin-only", rule: "No CORS middleware is present by design — frontend and API share one origin; a change should not reintroduce a wildcard CORS policy." },
+
+  // AI safety control plane — see guardian/aiControl.js, aiCapabilities.js,
+  // circuitBreaker.js. These codify the "AI is untrusted, never possesses
+  // authority merely by requesting it" boundary so a future change can't
+  // accidentally erode it, and so the AI reviewer itself is told to watch
+  // for exactly this class of regression.
+  { id: "ai-central-control", rule: "Every real AI operation in ai/aiService.js must call guardian/aiControl.js's assertAiAllowed() as its first statement — a new AI operation added without this call is a bug, not a stylistic omission." },
+  { id: "ai-fail-closed", rule: "guardian/aiControl.js's getAiState()/assertAiAllowed() must fail closed: any error determining the current AI state (a DB query throwing, an unexpected shape) resolves to DISABLED, never ENABLED. A change that adds a code path where an unknown state defaults to permitting an AI call is a critical regression." },
+  { id: "ai-no-self-authorization", rule: "An AI response is never treated as authorization for anything — not for re-enabling itself, not for bypassing the capability firewall, not for approving a consequential operation. Only a human (via the admin dashboard or guardian/setAiState.js) or the deterministic circuit breaker may change AI state." },
+  { id: "ai-no-execution-capability", rule: "No AI-facing code path may gain access to fs, child_process, exec, spawn, shell commands, git write operations, deployment/infrastructure changes, environment variables, or secrets. guardian/aiCapabilities.js's execute/modifyCode/modifyInfrastructure flags must stay false for every operation unless a human deliberately and visibly changes this architecture — never as an incidental side effect of an unrelated change." },
+  { id: "ai-tool-allowlist", rule: "ai/providers/ollamaProvider.js's tool-calling loop only ever executes a tool whose name is in its ALLOWED_TOOL_NAMES allowlist; any other requested tool name is rejected, logged as a capability violation, and never silently ignored or executed." },
+  { id: "consequential-ops-need-human-approval", rule: "Consequential operations (modifying production code, changing production data, deleting information, changing infrastructure/credentials/security policy, deploying, changing Guardian's own configuration, modifying AI permissions) always require an explicit, separate human-triggered action — an AI-generated suggestion or proposal is never sufficient authorization on its own, even for a 'safe-looking' automated version of one of these." },
+  { id: "circuit-breaker-human-reset-only", rule: "Once the circuit breaker locks AI into LOCKDOWN, only a human (admin dashboard or guardian/setAiState.js CLI) can re-enable it, and only after acknowledging the CRITICAL security event that caused it — AI can never reset its own circuit breaker." },
 ];
 
 function findRule(id) {
