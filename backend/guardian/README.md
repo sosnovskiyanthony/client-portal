@@ -1,137 +1,274 @@
 # BrindLeaf Guardian
 
-Guardian is a layered safety net around BrindLeaf: deterministic checks (tests, coverage, lint, dependency audit, secret scanning, CodeQL) as the mandatory gate, an Ollama-based AI code reviewer as an additional advisory layer, and production health/smoke monitoring. It does not prove BrindLeaf is bug-free or perfectly secure — it reduces risk, and it says so honestly rather than claiming more than it can.
+Guardian is BrindLeaf's security, reliability, and AI safety control plane: deterministic CI checks (tests, coverage, lint, dependency audit, secret scanning, CodeQL) as the mandatory gate, production health/smoke monitoring, an Ollama-based AI code reviewer as an advisory layer, and — the newest layer — a real AI kill switch, capability firewall, and circuit breaker sitting between the AI and the rest of the application.
+
+**Core principle: the AI is an untrusted component.** It may hallucinate, be prompt-injected, receive malicious input, produce malformed output, or request an operation it has no business requesting. Guardian assumes all of that is possible and never lets the AI possess authority merely because it asked for something — every consequential decision is made by deterministic application code, not by the model.
+
+Guardian does not prove BrindLeaf is bug-free or perfectly secure. It reduces risk, and says so honestly rather than claiming more than it can.
+
+---
+
+## Emergency runbook: "I think the AI is behaving dangerously — what do I do right now?"
+
+You do not need to read any code to do this. Pick whichever is fastest for your situation:
+
+1. **Fastest, works even if the website is down, no redeploy needed:** from any machine with the production database connection string,
+   ```bash
+   node guardian/setAiState.js lockdown --reason "Emergency: <what you saw>"
+   ```
+   (Using Railway's CLI: `railway run node guardian/setAiState.js lockdown --reason "..."`.) This takes effect on the very next AI request the live server handles — there is no cache to wait out.
+
+2. **If you have the admin dashboard open:** go to the Guardian panel and click **"Lockdown All AI"**. One click, immediate.
+
+3. **If neither of the above is reachable** (e.g. the database itself is also having problems): set the Railway environment variable `BRINDLEAF_AI_ENABLED=false` and redeploy/restart. This is a hard floor — it overrides the database state unconditionally, but it needs a restart to take effect, so it's the slowest of the three.
+
+4. **It might already be locked down for you:** Guardian's circuit breaker automatically locks AI down if it detects a burst of schema-validation failures or capability violations — check the admin dashboard's Guardian panel or run `node guardian/setAiState.js status` to see the current state and why.
+
+**What "lockdown" actually does:** every one of the 10 real AI operations in `ai/aiService.js` — analysis, chat, contract review/drafting, email drafting, the code reviewer, everything — starts rejecting immediately with a clear error, before any request ever reaches Ollama or Anthropic. No AI feature partially works. Nothing else in the app is affected: public pages, intake forms, submissions, admin login, and every non-AI admin feature keep working normally.
+
+**Re-enabling afterward:** requires a deliberate action (the CLI's `enable` command or the dashboard's "Re-enable AI" button, which shows you why it was disabled first) — and if the lockdown was triggered by a CRITICAL security event (the circuit breaker, or a manual lockdown), you must acknowledge that event first. AI never re-enables itself.
+
+---
+
+## The AI trust hierarchy
+
+```
+HUMAN / EXTERNAL INFRASTRUCTURE
+        |
+GUARDIAN CONTROL PLANE   (guardian/aiControl.js)
+        |
+DETERMINISTIC POLICY     (guardian/aiCapabilities.js, circuitBreaker.js, rules.js)
+        |
+APPLICATION               (controllers/, services/)
+        |
+AI SERVICE                (ai/aiService.js)
+        |
+MODEL                     (Ollama / Anthropic)
+```
+
+The model is the least-trusted component in this stack. It never decides whether it's allowed to run, never grants itself a capability, and never approves anything on its own output alone.
 
 ## The three tiers
 
 Guardian runs in three places, matched to what's actually available in each:
 
-1. **CI-time** (`.github/workflows/ci.yml`, `codeql.yml`, `smoke.yml`, `.github/dependabot.yml`) — runs on every push/PR to GitHub-hosted runners. Tests/coverage/lint/audit are mandatory gates. CodeQL and Dependabot run separately. The AI review step is advisory and usually reports "unavailable" here — see [Why CI-based AI review is usually unavailable](#why-ci-based-ai-review-is-usually-unavailable).
-2. **Local** (`npm run guardian`, `npm run guardian:ai`, `npm run guardian:smoke`) — the same checks, runnable on a developer machine before pushing. `guardian:ai` *can* reach a local Ollama instance.
-3. **Production** (the admin dashboard's Guardian panel, `GET/POST /api/admin/guardian/*`) — lightweight, JWT-protected deep diagnostics (database/storage/Ollama/Resend/Tavily reachability), stored in the `guardian_checks` table. This tier deliberately does **not** run tests, lint, or code review against the live Railway container — see [Why production Guardian is diagnostics-only](#why-production-guardian-is-diagnostics-only).
+1. **CI-time** (`.github/workflows/ci.yml`, `codeql.yml`, `smoke.yml`, `.github/dependabot.yml`) — runs on every push/PR to GitHub-hosted runners. Tests/coverage/lint/audit/integrity-manifest are mandatory gates. CodeQL and Dependabot run separately. The AI review step is advisory and usually reports "unavailable" here — see [Why CI-based AI review is usually unavailable](#why-ci-based-ai-review-is-usually-unavailable).
+2. **Local** (`npm run guardian:ai`, `npm run guardian:smoke`, `npm run guardian:ai-control`, `npm run guardian:integrity:*`) — the same checks, runnable on a developer machine before pushing.
+3. **Production** (the admin dashboard's Guardian panel, `GET/POST /api/admin/guardian/*`) — lightweight, JWT-protected deep diagnostics plus the AI control plane itself (kill switch, security events). This tier deliberately does **not** run tests, lint, or code review against the live Railway container — see [Why production Guardian is diagnostics-only](#why-production-guardian-is-diagnostics-only).
 
 ## What each check does
 
 | Check | Where | What it does |
 |---|---|---|
-| Tests | CI + local (`npm test` / `npm run test:coverage`) | `node --test`, the existing 218+ tests plus Guardian's own. A failure blocks CI. |
+| Tests | CI + local (`npm test` / `npm run test:coverage`) | `node --test` via `scripts/run-tests.sh` (see [Running tests locally](#running-guardian-and-the-test-suite-locally) for why two files run in isolation). ~300 tests. A failure blocks CI. |
 | Coverage | CI + local (`npm run test:coverage`) | Node's built-in `--experimental-test-coverage`, gated on `--test-coverage-lines/-functions/-branches` thresholds (see [Coverage thresholds](#coverage-thresholds)). |
-| Lint | CI + local (`npm run lint`) | ESLint, flat config (`eslint.config.js`), `eslint:recommended` only — no Prettier, no style rules. See [Lint policy](#lint-policy). |
-| Dependency audit | CI + local (`npm audit --audit-level=high`) | Fails CI on a high/critical severity finding. Never auto-upgrades — a human reviews and applies the fix. |
-| Secret scanning | GitHub (built-in secret scanning + push protection, free for this public repo) | Blocks a push containing a recognizable credential pattern. **Requires enabling in the repo's Settings → Security → Code security page — this is a one-time manual toggle, not something a file in this repo can turn on for you.** |
-| Security scanning | GitHub (`codeql.yml`) | CodeQL's default JavaScript/TypeScript query pack, on push/PR + weekly. Findings appear under the repo's Security tab. |
-| AI code review | CI (advisory) + local (`npm run guardian:ai`) | Ollama reviews the diff against `guardian/rules.js`'s architecture rules. Never blocks unless run with `--strict` and the result is `fail`. |
+| Lint | CI + local (`npm run lint`) | ESLint, flat config (`eslint.config.js`), `eslint:recommended` only. See [Lint policy](#lint-policy). |
+| Dependency audit | CI + local (`npm audit --audit-level=high`) | Fails CI on a high/critical severity finding. Never auto-upgrades. |
+| Integrity manifest | CI + local (`npm run guardian:integrity:check`) | SHA-256 tripwire on security-critical files. See [Production code integrity](#production-code-integrity). |
+| Secret scanning | GitHub (built-in, free for this public repo) | Blocks a push containing a recognizable credential pattern. **Requires a one-time manual toggle in Settings → Security → Code security.** |
+| Security scanning | GitHub (`codeql.yml`) | CodeQL's default JavaScript/TypeScript query pack, on push/PR + weekly. |
+| AI code review | CI (advisory) + local (`npm run guardian:ai`) | Ollama reviews the diff against `guardian/rules.js`'s architecture rules and `guardian/aiCapabilities.js`'s capability map. Never blocks unless run with `--strict`. |
 | Production diagnostics | Admin dashboard ("Run Guardian Check") | DB/storage/Ollama/Resend/Tavily configured+reachable status, stored in `guardian_checks`. |
-| Production smoke test | CI (`smoke.yml`, scheduled) + local (`npm run guardian:smoke`) | Read-only GET checks against the live public site. Never submits a form or touches real customer data. |
-| Frontend error monitoring | Always-on (`frontend/js/common.js`) | `window.onerror`/`unhandledrejection` → `POST /api/client-error` → the existing Sentry pipe. |
-| Server error monitoring | Always-on (already existed before Guardian) | Sentry, wired in `server.js`/`instrument.js`. Guardian didn't change this — see [What Guardian reused vs. added](#what-guardian-reused-vs-added). |
+| Production smoke test | CI (`smoke.yml`, scheduled) + local (`npm run guardian:smoke`) | Read-only GET checks against the live public site. |
+| **AI kill switch** | Always-on (`ai/aiService.js` + `guardian/aiControl.js`) | ENABLED/DISABLED/LOCKDOWN, checked before every real AI call. See [The AI kill switch](#the-ai-kill-switch). |
+| **AI capability firewall** | Always-on (`guardian/aiCapabilities.js`, `ai/providers/ollamaProvider.js`) | Deterministic allowlist of what each AI operation can read/write/execute. See [Capability firewall](#capability-firewall). |
+| **AI circuit breaker** | Always-on (`guardian/circuitBreaker.js`) | Automatic LOCKDOWN on a burst of schema failures or capability violations. See [Circuit breaker](#circuit-breaker). |
+| **Security event log** | Always-on (`security_events` table) | Every AI state change, rejection, violation, and auth attempt. See [Security event log and audit trail](#security-event-log-and-audit-trail). |
+| Frontend error monitoring | Always-on (`frontend/js/common.js`) | `window.onerror`/`unhandledrejection` → `POST /api/client-error` → the Sentry pipe. |
+| Server error monitoring | Always-on (Sentry) | `instrument.js`'s `beforeSend` scrubs secret-shaped substrings — see [Sentry privacy](#sentry-privacy). |
 
-## Running Guardian locally
+## Running Guardian and the test suite locally
 
 ```bash
-npm test                 # existing + Guardian tests
-npm run lint              # ESLint
-npm run test:coverage     # tests + coverage thresholds
+npm test                  # scripts/run-tests.sh — see below for why
+npm run lint
+npm run test:coverage
 npm audit --audit-level=high
-npm run guardian:ai       # AI code review against origin/main...HEAD (needs local Ollama)
+npm run guardian:integrity:check
+npm run guardian:ai              # AI code review against origin/main...HEAD (needs local Ollama)
 npm run guardian:ai -- --base <ref> --head <ref> --strict
-npm run guardian:smoke    # production smoke test (SITE_URL env var to override)
+npm run guardian:smoke           # production smoke test (SITE_URL env var to override)
+npm run guardian:ai-control       # the CLI kill switch — see the emergency runbook above
 ```
 
-There is no single `npm run guardian` that bundles all of the above into one command with pass/warn/fail aggregation — deliberately: CodeQL and GitHub's secret scanning have no clean local equivalent, and re-implementing that aggregation logic locally would be a second, drifting copy of what CI already does. `npm test && npm run lint && npm run test:coverage && npm audit --audit-level=high` is the real local-parity command; `npm run guardian:ai` and `npm run guardian:smoke` are separate because they hit real external systems (Ollama, the live site) that a plain `npm test` shouldn't depend on.
+`npm test`/`npm run test:coverage` run via `scripts/run-tests.sh`, not a bare `node --test`. Reason: `test/aiControl.test.js` and `test/aiControlRoutes.test.js` deliberately write real ENABLED/DISABLED/LOCKDOWN rows to the shared `ai_control_state` table to prove the real database-backed kill switch works (as opposed to `test/circuitBreaker.test.js`, which mocks that same boundary specifically to avoid this). Since `node --test` runs different test files concurrently by default against one shared local Postgres database, a real LOCKDOWN written by one file was observed, repeatedly, to make another concurrently-running file's real AI call fail for an unrelated reason. The script runs those two files alone, sequentially, first, then the rest of the suite together at normal speed — a couple of seconds slower than one unified invocation, nowhere near the ~5x cost a blanket `--test-concurrency=1` for the whole suite would add.
+
+There is no single `npm run guardian` that bundles everything into one pass/warn/fail command — deliberately: CodeQL and GitHub's secret scanning have no clean local equivalent.
 
 ## How CI works
 
-`ci.yml` runs on every push to `main` and every pull request: `npm ci` → lint → `test:coverage` → `npm audit --audit-level=high`, against a real Postgres service container (matching what the integration tests actually need — no mocking). Any of these failing fails the workflow. A separate `ai-review` job (needs the deterministic job to pass first) runs `guardian:ai` with `continue-on-error: true` — it can never fail the workflow, by design.
+`ci.yml`: `npm ci` → lint → `test:coverage` → `npm audit --audit-level=high` → integrity manifest check, against a real Postgres service container. Any of these failing fails the workflow. A separate `ai-review` job (`continue-on-error: true`) runs `guardian:ai` and can never fail the workflow.
 
-`codeql.yml` and `smoke.yml` are separate workflows on their own schedules, independent of `ci.yml`.
+`codeql.yml` and `smoke.yml` are separate workflows on their own schedules.
 
 ## How to interpret failures
 
-- **`ci.yml` failed on the deterministic job** — a real test/lint/coverage/audit regression. Fix it; don't disable the check.
-- **`ci.yml`'s `ai-review` job shows a red X** — this can only happen from an infrastructure problem in the job itself (e.g. `npm ci` failing), never from the AI review's own verdict — see `guardian/reviewCli.js`, which always exits 0 for a `pass`/`warn`/`fail`/`unavailable` result. Check the job log's last lines for what actually broke.
-- **CodeQL flags something** — read the finding on the repo's Security tab. If it's a genuine false positive for this codebase's actual data flow, document why in a code comment near the flagged line rather than suppressing it blindly.
-- **`smoke.yml` failed** — the live site (or a specific page) is down or returned unexpected content. GitHub's own failure-email notification is the alert mechanism for this first pass (see [Alerting](#alerting)).
-- **The admin dashboard's Guardian panel shows WARNING** — an optional integration (Ollama, Resend, Tavily, Supabase Storage) is unreachable or unconfigured. This is expected and normal for Ollama specifically (it runs on the owner's local machine). It only shows FAILED if the database itself is unreachable — that's the one dependency Guardian treats as mandatory.
+- **`ci.yml` failed on the deterministic job** — a real regression. Fix it; don't disable the check.
+- **Integrity manifest check failed** — either real tampering (investigate before anything else) or you legitimately edited a protected file and forgot to run `npm run guardian:integrity:update` — see [Production code integrity](#production-code-integrity).
+- **`ci.yml`'s `ai-review` job shows a red X** — an infrastructure problem in the job itself, never the AI review's own verdict (`guardian/reviewCli.js` always exits 0).
+- **CodeQL flags something** — read the finding on the repo's Security tab; document a genuine false positive near the flagged line rather than suppressing it blindly.
+- **`smoke.yml` failed** — the live site is down or returned unexpected content; GitHub's failure-email is the alert.
+- **The admin dashboard's Guardian panel shows WARNING** — an optional integration is unreachable/unconfigured; only FAILED means the database itself is down.
+- **The admin dashboard shows AI: LOCKDOWN and you didn't do it** — the circuit breaker tripped automatically. Check Recent Security Events for the CRITICAL entry that explains why before acknowledging/re-enabling.
 
 ## Coverage thresholds
 
-Measured baseline at the time Guardian was added: **67.9% lines, 70.1% branches, 46.6% functions** (`node --test --experimental-test-coverage`, no flags). The configured gate (`package.json`'s `test:coverage` script) is set a few points below that — **65% lines, 65% branches, 42% functions** — to catch a real regression without being so tight that ordinary, non-regressive changes fail it. Function coverage is the lowest of the three because several files (`config/database.js`'s seed helpers, some provider error branches) are exercised more by manual/live testing than by the automated suite; that's a known, accepted gap, not a new one Guardian introduced.
+Real measured baseline as of the AI-safety-control-plane work: **~70% lines, ~69% branches, ~52% functions**. The configured gate is **65% lines, 65% branches, 42% functions** — a few points below, to catch a real regression without failing on ordinary non-regressive changes.
 
-**To raise a threshold**: run `npm run test:coverage`, note the new real percentage, and only then raise the corresponding `--test-coverage-*` flag in `package.json` to a few points below it — never guess a number, and never raise it past what's currently actually covered (that would just make CI permanently red).
+**To raise a threshold**: run `npm run test:coverage`, note the new real percentage, then raise the flag in `package.json` to a few points below it — never guess, never raise past what's actually covered.
 
 ## Lint policy
 
-`eslint.config.js` uses `eslint:recommended` only, split across three file groups (Node backend, browser-global frontend scripts, tests) because this project has no bundler and no `type: module` — `frontend/js/*.js` files share globals across `<script>` tags the way a pre-module-system site always has, and the config's frontend block explicitly lists `common.js`'s cross-file exports as known globals for that reason (see the comment in `eslint.config.js` itself).
-
-Two rules were deliberately scoped down rather than left at their default `eslint:recommended` severity, both documented inline in `eslint.config.js`:
-- **`preserve-caught-error`** (new in ESLint 10) → downgraded to `warn`. ~15 pre-existing, intentional "catch a raw fetch failure, throw a cleaner user-facing message" call sites in `frontend/js/common.js` trip it; fixing all of them was out of scope for the change that introduced linting. New code is still expected to pass `{ cause: err }` when rethrowing.
-- **`no-unused-vars`** on `frontend/js/common.js` specifically → scoped to local-only (`vars: "local"`). That file's entire purpose is declaring functions/consts consumed by sibling `<script>` tags, so nearly everything it declares looks "unused" from ESLint's single-file perspective.
-
-**To add a rule**: edit `eslint.config.js`'s `rules` block. Run `npx eslint .` against the whole repo first — if it surfaces a wall of pre-existing findings, investigate whether they're real (fix them, ideally in a focused follow-up) or a structural false positive like the two above (scope the rule, document why, same as this file does).
+`eslint.config.js` uses `eslint:recommended` only, split across Node backend / browser-global frontend / test file groups (no bundler, no `type: module`). Two rules are deliberately scoped down, both documented inline: `preserve-caught-error` → `warn` (pre-existing intentional call sites), and `no-unused-vars` on `frontend/js/common.js` → local-only (that file exists to declare cross-`<script>`-tag globals).
 
 ## How the AI reviewer works
 
-`guardian/collectDiff.js` runs `git diff <base>...<head>`, filtered to changed `.js` files (excluding `node_modules`/lockfiles), and best-effort-matches existing `test/*.test.js` files by name for "relevant tests" context. `ai/guardianPrompt.js` builds a fixed system prompt (embedding `guardian/rules.js`'s real, audit-derived architecture rules) plus a user message wrapping the diff/file-list/tests in `<CODE_DIFF>`/`<CHANGED_FILES>`/`<RELEVANT_TESTS>` delimiter tags — the exact same "data, never instructions" defense every other AI prompt in this codebase already uses (see `ai/prompt.js`). `ai/aiService.js`'s `reviewCodeChange` runs this through the same `PROVIDERS` dispatch, confidence-normalization, and `GuardianReviewSchema.safeParse()` validation every other AI call in this app goes through — not a second AI architecture.
+`guardian/collectDiff.js` builds a size-budgeted diff + matched tests. `ai/guardianPrompt.js` embeds `guardian/rules.js`'s rules AND `guardian/aiCapabilities.js`'s capability map, wrapped in the same delimiter-tag "data, never instructions" defense every other AI prompt in this app uses. `ai/aiService.js`'s `reviewCodeChange` runs through the exact same provider dispatch/validation infrastructure as every other AI operation.
 
 ### Why CI-based AI review is usually unavailable
 
-Ollama runs on the owner's local machine, reachable from Railway (production) only via Tailscale. A standard GitHub-hosted Actions runner has no route into that Tailscale network, so `guardian:ai` in `ci.yml` will almost always report `AI REVIEW: unavailable — ollama_unavailable: ...` — this is expected, not a bug, and the job is explicitly `continue-on-error: true` so it never blocks anything. A self-hosted runner joined to the same Tailscale network (or a Tailscale GitHub Action establishing a route) could change this in the future; that setup work is out of scope for this pass.
+Ollama is reachable from production only via Tailscale; a GitHub-hosted runner has no route into that network, so `guardian:ai` in CI will almost always report `unavailable` — expected, and `continue-on-error: true` means it never blocks.
 
 ### What the AI reviewer can and cannot guarantee
 
-It can: identify suspicious patterns, flag likely architecture-rule violations, suggest missing tests, and explain its reasoning with cited evidence. It cannot: prove code is secure, replace CodeQL or the test suite, replace a human reviewer, or override a deterministic check's failure. Its `overall` verdict only blocks anything when the CLI is explicitly run with `--strict` — the default is fully advisory, matching the mandatory-vs-advisory split in [CI gating policy](#ci-gating-policy) below.
+It can identify suspicious patterns, flag architecture-rule violations, and suggest missing tests. It cannot prove code is secure, replace CodeQL/tests/human review, or override a deterministic failure — its verdict only blocks anything when explicitly run with `--strict`.
 
 ### CI gating policy
 
-- **Mandatory** (blocks): tests, coverage thresholds, ESLint errors (not warnings), `npm audit --audit-level=high` findings.
-- **Advisory** (visible, never blocks): the AI reviewer's findings/verdict when run without `--strict`, CodeQL findings (unless branch protection is separately configured to require the check), an available-but-not-yet-applied Dependabot update, ESLint warnings.
+- **Mandatory** (blocks): tests, coverage thresholds, ESLint errors, `npm audit --audit-level=high` findings, integrity manifest drift.
+- **Advisory** (visible, never blocks): the AI reviewer without `--strict`, CodeQL findings, Dependabot updates, ESLint warnings.
 
-## How to add a Guardian rule
+---
 
-Edit `guardian/rules.js`'s `RULES` array — one `{ id, rule }` entry, id in kebab-case, `rule` a single factual sentence describing something actually true of the codebase right now (verify against the real code, don't describe an aspiration). It's automatically included in the AI reviewer's system prompt via `renderRulesForPrompt()` — no other wiring needed. Delete or edit a rule the moment the code it describes changes, or the reviewer will start flagging correct code as a violation.
+# The AI safety control plane
 
-## Production diagnostics
+## The AI kill switch
 
-`GET /api/admin/guardian/diagnostics` (read-only) and `POST /api/admin/guardian/run` (same checks, persists a row) both live under the existing JWT-protected admin router (`routes/admin.js` already applies `authenticate`+`requireAdmin` once at the top — Guardian's routes inherit it, no second auth system). Each dependency reports one of five states:
+Three states, tracked in the `ai_control_state` table (append-only — every row is a transition, current state = the latest row):
 
-- **HEALTHY** — working normally.
-- **WARNING** *(only as the overall status, not a per-dependency one)* — something optional is degraded; the app itself is fine.
-- **FAILED** — the database is unreachable. The only dependency Guardian treats as mandatory; everything else degrading only ever produces an overall `WARNING`, never `FAILED` (see `guardian/rules.js`'s `graceful-degradation` rule).
-- **UNAVAILABLE** — configured, but not currently reachable (e.g. Ollama, or Supabase Storage down).
-- **NOT_CONFIGURED** — an optional integration (Storage, Resend, Tavily) simply isn't set up on this deployment.
+- **ENABLED** — normal operation.
+- **DISABLED** — every AI operation rejects immediately with a clear error. Used for routine "I want AI off for a while" situations.
+- **LOCKDOWN** — same rejection behavior as DISABLED, but implies a security-relevant reason (manual or circuit-breaker-triggered) and requires acknowledging the triggering CRITICAL event before re-enabling.
 
-None of these checks ever send a real email, ever run against the local `git` history (the deployed Railway container has no working tree to diff), or run the test suite/lint on the live server — see [Why production Guardian is diagnostics-only](#why-production-guardian-is-diagnostics-only).
+`guardian/aiControl.js`'s `assertAiAllowed(operationName)` is called as the literal first line of all 10 real operations in `ai/aiService.js` (`analyzeSubmission`, `analyzeServicesSubmission`, `analyzeRawText`, `chatReply`, `chatReplyWithResearch`, `updateAnalysisFromConversation`, `draftEmail`, `reviewContract`, `generateContract`, `reviewCodeChange`) — not a controller-level check, because a controller-level check could be forgotten by a future call site. `ai/aiService.js` itself is the chokepoint. When not ENABLED, it throws before any provider request is built — Ollama/Anthropic never see the request.
 
-### Why production Guardian is diagnostics-only
+**Fail closed, by design and by test** (`test/aiControl.test.js`'s "fails closed when the control database is unreachable" test proves this directly): if the state can't be determined — a DB query throws, an unexpected row shape — `getAiState()` returns DISABLED, never ENABLED. There is deliberately no caching layer: every check queries fresh, since this app's AI calls are already multi-second operations where one more ~5-50ms query is negligible, and a cache would risk serving a stale "enabled" value past a real lockdown.
 
-Two structural reasons, not an oversight:
-1. **No git history in production.** Railway's deployed container doesn't carry the `.git` directory or working tree needed for `guardian/collectDiff.js` to produce a diff — code review fundamentally needs a source-controlled checkout, which only CI and local development actually have.
-2. **`npm ci --omit=dev` in production.** ESLint (a `devDependency`) isn't even installed on the deployed server, and running the full test suite against the live database on every "health check" click would be wasteful and risky. Tests/lint/coverage/audit are CI-time and local-time concerns by design.
+### The three ways to change it, and the one way you can't
 
-CI results are not synced into the `guardian_checks` table for the same reason described in the original design: doing so would mean inventing a second, non-JWT authentication path (a CI-to-server webhook secret) for marginal benefit, when GitHub Actions already gives free, complete history and logs for every CI run. Production's Guardian panel and CI's checks are two genuinely separate systems, on purpose.
+| Method | Needs the website? | Needs a redeploy? | Speed |
+|---|---|---|---|
+| `node guardian/setAiState.js <enable\|disable\|lockdown>` | No | No | Fastest — next AI call sees it |
+| Admin dashboard Guardian panel | Yes | No | Fast |
+| `BRINDLEAF_AI_ENABLED=false` env var | No | Yes (restart needed — `config/env.js` reads `process.env` once at boot) | Slowest, but a hard floor no DB state can override |
+| The AI itself | **Never.** No code path lets an AI response set, modify, or bypass any of the above. | — | — |
 
-## Alerting
+## Capability firewall
 
-`smoke.yml`'s scheduled run failing trips GitHub Actions' own built-in failure-email notification to the repository's watchers — no additional service (PagerDuty, a custom Resend-based alert, etc.) is wired up in this first pass. If that turns out to be too noisy or too easy to miss, `services/email.js`'s existing Resend integration (`notifyNewSubmission`'s pattern) is the natural next step to reuse for a dedicated "Guardian alert" email — not a new email provider.
+`guardian/aiCapabilities.js` is a declarative map — `{ read, write, execute, modifyCode, modifyInfrastructure }` per operation. As of this writing, every single operation has `execute`/`modifyCode`/`modifyInfrastructure` = `false`. This reflects reality, not aspiration: direct code inspection confirms there is no `fs`/`child_process`/`exec`/`spawn` anywhere near the AI code path in this app. The only "tool" any AI operation can invoke is `web_search` (`ai/researchTool.js`, a read-only Tavily HTTP call), gated by `ai/providers/ollamaProvider.js`'s `ALLOWED_TOOL_NAMES` allowlist.
 
-## How to safely disable or repair a broken check
+**What changed with this work isn't revoking a real privilege — it's making the already-safe default observable.** Before, if a model hallucinated a tool call outside `web_search` (e.g. requesting `execute_shell_command`), the tool loop silently no-op'd: safe, but invisible — no log, no event, nothing for a human or the circuit breaker to see. Now, an unrecognized tool name is explicitly detected, logged as an `ai_capability_violation` security event (HIGH severity, counted by the circuit breaker), and the model receives a plain "that tool is not available" message so the conversation continues safely instead of hanging.
 
-- **A lint rule is newly noisy after an ESLint version bump**: downgrade it to `warn` in `eslint.config.js` with a comment explaining why (see [Lint policy](#lint-policy) for the two existing examples) — don't remove the rule outright unless it's genuinely wrong for this codebase.
-- **Coverage threshold suddenly fails after a legitimate refactor** (code moved, not lost coverage): re-measure with `npm run test:coverage`, confirm the real percentage, and adjust the threshold to match — see [Coverage thresholds](#coverage-thresholds).
-- **CI's Postgres service container itself is unstable**: this is GitHub Actions infrastructure, not Guardian's logic — check the Actions status page before assuming a code regression.
-- **`guardian:smoke` is flaky against a slow-but-healthy deploy**: the `SLOW_MS` constant in `guardian/smokeTest.js` only annotates a slow response, it doesn't fail the check — a genuine failure is a non-2xx status or a missing content marker, not raw latency. If a specific page's content marker is too brittle (e.g. copy changes often), pick a more stable marker rather than removing the check for that page.
-- **Never**: delete a test to make CI pass, weaken a security check's threshold to make a finding disappear, or silence a whole rule/category just because one instance was inconvenient — see `guardian/rules.js`'s `no-weakening-security` and `no-deleting-tests` rules, which the AI reviewer is specifically told to watch for.
+**The map is deterministic and consumed, never asked.** The application never queries the AI about whether an operation should be allowed — `aiCapabilities.js` and the actual code are the only authorities. The map is also embedded in the AI reviewer's own system prompt, so a future PR that would set any of these flags to `true`, or add a new AI operation without a corresponding entry, gets flagged by the reviewer itself.
+
+## Human approval policy
+
+BrindLeaf has no code today that autonomously executes a consequential operation (deploying, modifying production code/infrastructure/credentials, deleting data) — and this work didn't add one, per the explicit instruction it was built against. What it does add is the *policy boundary* so a future feature can't accidentally cross it without noticing:
+
+- **Safe, can stay automatic**: analyzing a lead, drafting an email, suggesting features, reviewing code, reviewing a contract, producing a proposed change.
+- **Consequential, always needs a separate, explicit human-triggered action**: modifying production code, changing production data, deleting information, changing infrastructure/credentials/security policy, deploying, changing Guardian's own configuration, modifying AI permissions.
+- An AI response is **never** treated as authorization for anything in the second category — see `guardian/rules.js`'s `ai-no-self-authorization` and `consequential-ops-need-human-approval` rules, both embedded in the AI reviewer's prompt so it watches for violations in future PRs too.
+
+## Security event log and audit trail
+
+One table, `security_events`, deliberately serves both the security-incident log and the routine AI-operation audit trail — they're the same underlying concept (an event, at a severity) rather than two near-duplicate tables. Severities:
+
+- **INFO** — routine (a successful AI state change to ENABLED, a rejected call while merely DISABLED, an admin login success).
+- **WARNING** — worth noticing but not alarming (a login failure, a schema-validation failure, a rejected call while LOCKDOWN).
+- **HIGH** — a capability violation (the model asked for something outside its allowlist).
+- **CRITICAL** — an automatic circuit-breaker lockdown, or a manual lockdown. Triggers an email alert (see below) and blocks re-enabling until acknowledged.
+
+Write sites: `controllers/authController.js` (login success/failure — fire-and-forget, never adds timing variance to the fixed-cost bcrypt comparison that already protects against email enumeration), `guardian/aiControl.js` (every state change and every rejected call), `ai/providers/ollamaProvider.js` (capability violations), `ai/aiService.js` (schema-validation failures at all 8 relevant call sites), `server.js` (an optional boot-time integrity-check failure).
+
+**Never logged**: full prompts/responses, API keys, JWTs, passwords, cookies, signed URLs, database credentials, raw Authorization headers. Metadata is small, structured, identifier-based fields only.
+
+## Circuit breaker
+
+Deterministic, not AI-judged — `guardian/circuitBreaker.js` never asks a model whether another model is behaving dangerously; it's a plain count-over-a-time-window SQL query compared to a fixed threshold. After a schema-validation-failure or capability-violation event is logged, it checks the last 15 minutes:
+
+- **5 `ai_schema_validation_failed` events** → LOCKDOWN.
+- **3 `ai_capability_violation` events** → LOCKDOWN (lower threshold — a capability violation is a more serious signal than a malformed response).
+
+State is derived from a real database query (not an in-memory counter), so it survives a Railway restart. **Ordinary Ollama downtime never trips this** — provider-connectivity error codes (`ollama_unavailable`, `timeout`, `model_unavailable`, `network_error`, `research_unavailable`) are a completely different code path from schema failures/capability violations and are never counted; Ollama running on the owner's local machine is understood to be intermittently offline by design.
+
+**Disabled entirely when `NODE_ENV=test`** (see `scripts/run-tests.sh`) — the existing test suite deliberately triggers `invalid_schema` errors many times across many files to prove the app rejects them correctly, which is expected test behavior, not a real attack pattern, and must never cascade into a real lockdown that breaks unrelated tests. The real trip logic still has its own direct test coverage (`test/circuitBreaker.test.js`, which mocks the DB boundary and explicitly overrides `NODE_ENV` for the duration of each test).
+
+**AI can never reset it.** Only `guardian/setAiState.js` or the admin dashboard (both human-driven) can move out of LOCKDOWN, and only after the triggering CRITICAL event is acknowledged.
+
+## Critical incidents and email alerting
+
+A CRITICAL security event (circuit-breaker lockdown, or a manual one) does all of the following automatically: persists the event, sends an email alert (below), surfaces in the admin dashboard's Recent Security Events list, and blocks AI from being re-enabled until a human explicitly acknowledges that specific event via the dashboard's "Acknowledge" button or `models/SecurityEvent.js`'s `acknowledge()`.
+
+`services/email.js`'s `sendSecurityAlertEmail` reuses the existing Resend client/config (no new email provider) and is fire-and-forget, matching `notifyNewSubmission`'s style, not `sendContractEmail`'s throw-on-failure style — **a failed or unconfigured email never crashes the app, and the security event already exists in the database/dashboard regardless of whether the email sends.** The email states: severity, event type, when, a description, and relevant metadata (never secrets). It never claims AI is safe again — re-enabling is always a separate, deliberate step.
+
+## Admin dashboard
+
+The Guardian panel (extended, not a new page) shows: overall diagnostics status, AI state (ENABLED/DISABLED/LOCKDOWN + why), and Recent Security Events (severity/time/type/description/acknowledgement). Controls: **Disable All AI** / **Lockdown All AI** (one click each, behind a `window.confirm()` like every other consequential action in this admin UI), **Re-enable AI** (shows the current reason before confirming, and the server rejects it with a clear, linkable error if an unacknowledged CRITICAL event is blocking it), and **Acknowledge** per unacknowledged event. New routes (`GET/POST /api/admin/guardian/ai/*`, `GET /api/admin/guardian/events`, `POST /api/admin/guardian/events/:id/acknowledge`) all inherit the existing JWT+admin gate from `routes/admin.js` — no second auth system.
+
+## Production code integrity
+
+`guardian/integrityCheck.js` computes SHA-256 hashes of ~14 security-critical files (the AI control plane itself, `ai/aiService.js`, `ai/providers/ollamaProvider.js`, `server.js`, `instrument.js`, `middleware/auth.js`, `middleware/rateLimit.js`, `config/env.js`, `package.json` — the full list is `guardian/integrityCheck.js`'s `PROTECTED_FILES`) and compares them to a committed manifest (`guardian/integrity-manifest.json`).
+
+- `npm run guardian:integrity:check` — CI-time gate; fails on any drift.
+- `npm run guardian:integrity:update` — regenerates the manifest; run this and commit the result whenever you legitimately change a protected file.
+- An **optional** boot-time check (`GUARDIAN_INTEGRITY_CHECK_ON_BOOT=true`, off by default) — a mismatch at boot logs a CRITICAL event and locks AI down, but never blocks the app from starting or serving non-AI traffic. Off by default specifically so enabling it is a deliberate operator decision, not a default that could surprise an existing deploy.
+
+**This is a tripwire, not a guarantee.** It detects unexpected drift between what's on disk and what was deliberately shipped and reviewed — a tampered deploy pipeline, a supply-chain issue, a file modified after the fact. It does not defend against a sophisticated attacker who also updates the manifest.
+
+## Sentry privacy
+
+`instrument.js`'s `Sentry.init()` now has a `beforeSend` hook (`guardian/sentryScrub.js`) — regex-based redaction of Bearer tokens, JWT-shaped strings, known provider key prefixes (Resend/Anthropic/Tavily/generic `sk-`), Postgres connection-string credentials, and Supabase signed-URL tokens, applied to `event.message`, exception values, breadcrumbs, and `extra`. Authorization/Cookie headers are dropped entirely if ever present on request data. This closes a real gap: the three raw `Sentry.captureException(err)` call sites in `server.js` (the global error handler, `uncaughtException`, `unhandledRejection`) previously forwarded whatever a caught error's message happened to contain, with zero scrubbing — `controllers/errorController.js`'s frontend-error path was already safe by construction (an explicit field allowlist), but nothing protected the other three.
+
+## Storage security
+
+`getAssetSignedUrl` (`controllers/adminController.js`) is now submission-scoped (`POST /api/admin/submissions/:id/storage/signed-url`), mirroring the ownership check its sibling `removeAsset` already had. Previously, the route took no submission id at all — any valid admin JWT plus any well-formed brand-asset UUID path was sufficient to get a signed URL, regardless of which submission (if any) it actually belonged to. Not a live incident (this app has exactly one admin, and asset paths are random UUIDs from `crypto.randomUUID()`, not guessable), but real defense-in-depth against a leaked/stolen admin token or a future bug being used to enumerate arbitrary client files. `BRAND_ASSET_PATH_RE` (`lib/validators.js`) remains the path-traversal defense underneath.
+
+Confirmed elsewhere in the storage layer: uploaded file paths are always server-generated random UUIDs (never user-supplied filenames), signed URLs expire after 300 seconds at every call site, `services/storage.js` never treats uploaded content as executable, and bucket privacy itself is an out-of-band Supabase dashboard setting (not represented in this codebase — verify it directly in the Supabase project if you haven't).
+
+## Ollama/Tailscale boundary
+
+Production reaches Ollama through `scripts/start-with-tailscale.sh`, which runs `tailscaled` in **userspace networking mode**, not the normal TUN-based mode (confirmed via a real deploy: this container has neither a TUN device nor `NET_ADMIN`). This matters: userspace mode gives the container **no transparent network route to any tailnet peer** — only an explicit outbound HTTP proxy (`TAILSCALE_HTTP_PROXY`, started by that same script) can reach the tailnet at all, and only two call sites in this entire codebase reference it: `ai/providers/ollamaProvider.js` (talking to Ollama for real AI calls) and `controllers/adminController.js`'s admin-triggered remote Ollama start/stop control. Confirmed by direct grep — no other code path uses it.
+
+Practically: **Ollama itself has no way to execute commands on the BrindLeaf server, modify BrindLeaf files, modify Guardian state, or reach any other machine on the tailnet through this application** — the only thing that ever crosses that boundary is an HTTP request/response carrying text, and the capability firewall above governs everything that happens with the response on this side. Model output is never trusted merely because Ollama is "local."
+
+**Recommended operator-side hardening** (outside this repo, in the Tailscale admin console — cannot be configured from code here): scope this node's ACL tags to allow outbound access **only** to the specific Ollama host's port (and the remote-control helper's port, if used), not general tailnet reachability. The application-level boundary above is already real and already the primary defense; an ACL is deliberately narrower defense-in-depth on top of it, not a replacement for it.
+
+## Authentication and session security
+
+Reviewed, findings below. `middleware/auth.js`'s `authenticate` verifies a JWT (`Authorization: Bearer`) and `requireAdmin` checks `role === "admin"`; `controllers/authController.js`'s login already used a timing-safe dummy-hash comparison to prevent email enumeration (existing code, not new) and is now also rate-limited (`loginLimiter`, 5/15min) and every attempt (success and failure) is logged to `security_events`.
+
+**Known gap, documented rather than silently fixed or silently ignored**: there is no logout/token-revocation mechanism. Sessions are pure JWT expiry (`JWT_EXPIRES_IN`, default 12h) — no server-side session store, no blacklist, no `jti`/token-version field. Building real revocation is a meaningfully separate initiative (it touches the shape of every authenticated request, not just login) and was judged out of scope for this pass rather than bolted on hastily. **Recommendation for a future pass**: add a `jti` claim at sign time plus a short-lived revocation table (or a `token_version` column on `users`, bumped on demand) checked in `authenticate` — either is a small, well-understood addition when it's actually prioritized.
+
+## Data security review
+
+Sensitive fields identified: client contact info and project details (`submissions`), AI analysis results and chat contents (`submission_analyses`, `submission_chats`), contract PII and financial terms (`contracts` and related tables), uploaded files (Supabase Storage), admin credentials (bcrypt-hashed, never logged — confirmed via grep, no call site anywhere prints a raw password/token/header).
+
+**No field-level application encryption was added, deliberately.** Data is already encrypted at rest (Supabase) and in transit (TLS/HTTPS, enforced via `Strict-Transport-Security`). Field-level encryption of e.g. client email or project details would break the extensive search/filter/CSV-export functionality already built directly on plain-text SQL queries throughout the admin dashboard — a significant, invasive change — for a threat model (someone with raw, direct database access bypassing the app entirely) that JWT+admin gating and Postgres's own access control already address. This is a reviewed-and-declined outcome with reasoning, not an oversight — homemade or bolted-on cryptography for its own sake was explicitly out of scope.
+
+---
 
 ## What Guardian reused vs. added
 
-Reused, unmodified in spirit: `ai/aiService.js`'s `PROVIDERS` dispatch and confidence-normalization pattern, the delimiter-tag injection defense (`ai/prompt.js`'s exact wording, replicated in `ai/guardianPrompt.js`), Zod central validation via `.safeParse()`, the idempotent `CREATE TABLE IF NOT EXISTS` migration convention (`config/database.js`), the existing JWT/`requireAdmin` admin router, `middleware/rateLimit.js`'s limiter pattern, and the already-wired Sentry integration (`instrument.js`, the global error handler) — Guardian's frontend error monitoring feeds into this existing pipe rather than adding the Sentry browser SDK or a second log store.
+Reused, unmodified in spirit: `ai/aiService.js`'s `PROVIDERS` dispatch and confidence-normalization pattern, the delimiter-tag injection defense, Zod central validation, the idempotent `CREATE TABLE IF NOT EXISTS` convention, the existing JWT/admin router, `middleware/rateLimit.js`'s limiter pattern, the already-wired Sentry integration, and `services/contractAudit.js`'s exact fire-and-forget audit-log pattern (mirrored by `guardian/securityEvents.js`).
 
-Genuinely new: the `guardian_checks` table/model, the Guardian admin routes/controller, `ai/guardianSchema.js`/`ai/guardianPrompt.js` (a structurally distinct schema/prompt, same infrastructure), the diff collector and CLI, the smoke test script, ESLint + coverage tooling (previously entirely absent), and the four GitHub Actions workflows + Dependabot config (previously no `.github/` directory existed at all).
+Genuinely new: `guardian/aiControl.js`, `circuitBreaker.js`, `aiCapabilities.js`, `securityEvents.js`, `sentryScrub.js`, `integrityCheck.js`, `setAiState.js`; the `ai_control_state` and `security_events` tables; the admin AI-control routes/UI; the storage ownership fix; the Sentry `beforeSend` hook; and the integrity manifest + CI gate.
 
 ## Known limitations
 
-- CI-based AI review is realistically unavailable most of the time (see above) — it's a local/optional-self-hosted-runner capability today, not a CI guarantee.
-- CodeQL and pattern-based secret scanning are best-effort, not a formal proof of security — a determined, novel attack can still slip past both.
-- The AI reviewer is a small local model (`qwen2.5:7b` by default) reviewing a size-budgeted diff — it can miss things a careful human reviewer, or a larger model, would catch. Treat its findings as a second opinion, not a verdict.
-- Guardian cannot guarantee zero bugs, cannot guarantee perfect security, and does not replace human code review before a meaningful production change ships.
+- CI-based AI review is realistically unavailable most of the time (no Tailscale route from GitHub-hosted runners).
+- CodeQL, pattern-based secret scanning, and the integrity manifest are all best-effort tripwires, not formal proofs.
+- The AI reviewer is a small local model reviewing a size-budgeted diff — treat its findings as a second opinion, not a verdict.
+- No token revocation exists yet (see [Authentication and session security](#authentication-and-session-security)) — documented, not silently patched over.
+- The Tailscale ACL hardening recommended above has not been applied from this repo — it requires action in the Tailscale admin console, outside what code here can configure.
+- If Guardian's own database tables become unavailable, the AI kill switch fails closed (AI disabled) but the rest of the app — including Guardian's own diagnostics/history UI — may itself be degraded, since they share the same database. There is no fully independent-of-the-database fallback beyond the `BRINDLEAF_AI_ENABLED` env var.
+- Guardian cannot guarantee zero bugs, cannot guarantee perfect security, and does not replace human judgment or human code review.
