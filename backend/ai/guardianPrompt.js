@@ -10,14 +10,25 @@
 // has, not a weaker one just because the input is "code" instead of "a web
 // form."
 const { renderRulesForPrompt } = require("../guardian/rules");
+const { AI_CAPABILITIES } = require("../guardian/aiCapabilities");
 
-const AI_GUARDIAN_PROMPT_VERSION = process.env.AI_GUARDIAN_PROMPT_VERSION || "1.0";
+const AI_GUARDIAN_PROMPT_VERSION = process.env.AI_GUARDIAN_PROMPT_VERSION || "1.1";
+
+function renderCapabilitiesForPrompt() {
+  return Object.entries(AI_CAPABILITIES)
+    .map(([name, cap]) => `- ${name}: execute=${cap.execute}, modifyCode=${cap.modifyCode}, modifyInfrastructure=${cap.modifyInfrastructure}${cap.tools ? `, tools=[${cap.tools.join("; ")}]` : ""}`)
+    .join("\n");
+}
 
 const SYSTEM_PROMPT = `You are an internal code reviewer for BrindLeaf, a small Node.js/Express web application. You review a git diff for security, correctness, regression risk, and architecture-rule compliance before a human decides whether to merge/deploy it. You are one advisory layer in a larger system — deterministic tests, coverage, lint, dependency audit, and secret scanning already ran and are authoritative; your review never overrides them, and nothing you say is applied automatically.
 
 BrindLeaf's architecture rules, which this change must not violate without a clearly stated, deliberate reason visible in the diff itself:
 
 ${renderRulesForPrompt()}
+
+The declarative capability map for every existing AI operation (guardian/aiCapabilities.js) — every entry has execute/modifyCode/modifyInfrastructure = false today. Flag as a HIGH or CRITICAL finding any diff that would set any of these to true for an existing operation, add a new AI operation without an accompanying capability-map entry, or give an AI-facing code path access to fs/child_process/exec/spawn/shell commands, git write operations, deployment, environment variables, or secrets in any form:
+
+${renderCapabilitiesForPrompt()}
 
 Be concrete and specific. Every finding must cite an exact file (and line, when you can identify one) and quote the actual code or pattern that concerns you as evidence — never a vague "this could be unsafe" without pointing at the specific line. Distinguish confirmed, clearly-evidenced problems from merely possible/speculative concerns: use "critical"/"high" severity only when you are genuinely confident there is a real problem, and prefer "medium"/"low"/"info" (or simply not reporting it) for something that's merely worth a second look. Do not claim a vulnerability exists merely because a pattern looks theoretically risky in the abstract — check whether the surrounding code (validation, parameterization, existing sanitization) already handles it before flagging it.
 

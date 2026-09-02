@@ -17,6 +17,18 @@ const { AiAnalysisError } = require("../errors");
 // Calling the bare `fetch` identifier below (no local binding) always
 // resolves to whatever globalThis.fetch currently is.
 const { tailscaleDispatcher } = require("../../lib/tailscaleDispatcher");
+const { logSecurityEvent } = require("../../guardian/securityEvents");
+const { checkCircuitBreaker } = require("../../guardian/circuitBreaker");
+
+// The complete allowlist of tool names this app will ever actually execute
+// for the model — see guardian/aiCapabilities.js for the declarative
+// capability map this mirrors. Anything else the model asks for is a
+// capability violation: not because a real dangerous capability was almost
+// granted (there is no fs/exec/shell tool wired up anywhere near this loop
+// to begin with — see guardian/rules.js), but because a model requesting
+// something outside its declared toolset is exactly the kind of anomaly
+// Guardian's circuit breaker needs visibility into.
+const ALLOWED_TOOL_NAMES = ["web_search"];
 
 // Local CPU inference on a 7B-class model generating a large structured JSON
 // object realistically takes much longer than a hosted API call — a fixed
@@ -387,6 +399,33 @@ async function generateChatReplyWithTools({ systemPrompt, messages, model, onPro
 
     for (const call of toolCalls) {
       const name = call?.function?.name;
+
+      if (!ALLOWED_TOOL_NAMES.includes(name)) {
+        // Previously a silent no-op (the model got back an empty-array
+        // "success" for a tool that never ran, with no record anywhere
+        // that it happened) — now explicit, logged, and visible to the
+        // circuit breaker. The model itself has no way to act on this
+        // beyond seeing the plain-text refusal below; nothing here grants
+        // it anything.
+        logSecurityEvent({
+          severity: "HIGH",
+          eventType: "ai_capability_violation",
+          actorType: "ai_caller",
+          source: "ollamaProvider",
+          resourceType: "tool_call",
+          resourceId: name || "(unnamed)",
+          description: `Model requested a tool call outside its declared capability set: "${name}".`,
+          metadata: { allowedTools: ALLOWED_TOOL_NAMES },
+        }).then(() => checkCircuitBreaker()).catch(() => {});
+
+        workingMessages.push({
+          role: "tool",
+          tool_name: name || "unknown",
+          content: `Tool "${name}" is not available. Only these tools may be used: ${ALLOWED_TOOL_NAMES.join(", ")}.`,
+        });
+        continue;
+      }
+
       let results = [];
       try {
         if (name === "web_search") {
