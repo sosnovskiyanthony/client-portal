@@ -53,6 +53,12 @@ const {
   CONTRACT_PROMPT_VERSION,
   buildContractUserMessage,
 } = require("./contractPrompt");
+const { GuardianReviewSchema } = require("./guardianSchema");
+const {
+  AI_GUARDIAN_PROMPT_VERSION,
+  SYSTEM_PROMPT: GUARDIAN_SYSTEM_PROMPT,
+  buildGuardianUserMessage,
+} = require("./guardianPrompt");
 const { AiAnalysisError } = require("./errors");
 const ollamaProvider = require("./providers/ollamaProvider");
 const anthropicProvider = require("./providers/anthropicProvider");
@@ -588,6 +594,61 @@ async function generateContract(approvedData, templateSections, { client, onProg
   };
 }
 
+// Guardian's AI code reviewer (see guardian/collectDiff.js,
+// guardian/reviewCli.js) — same PROVIDERS dispatch, same confidence
+// normalization, same central `.safeParse` validation, same
+// AiAnalysisError handling as every analysis function above. This is
+// deliberately NOT a separate AI architecture: it's one more structured
+// call type through the exact same infrastructure, the same way
+// analyzeServicesSubmission was added alongside analyzeSubmission.
+async function reviewCodeChange({ diff, changedFiles, relevantTests, baseRef, headRef, truncatedDiff }, { client, onProgress } = {}) {
+  const providerName = env.aiProvider;
+  const provider = PROVIDERS[providerName];
+  if (!provider) {
+    throw new AiAnalysisError(
+      "unknown_provider",
+      `AI_PROVIDER "${providerName}" is not recognized. Expected one of: ${Object.keys(PROVIDERS).join(", ")}.`
+    );
+  }
+
+  onProgress?.("preparing");
+  const userMessage = buildGuardianUserMessage({ diff, changedFiles, relevantTests, baseRef, headRef, truncatedDiff });
+  const model = provider.model();
+
+  onProgress?.("sending");
+  const { parsed } = await provider.impl.generateStructuredAnalysis({
+    systemPrompt: GUARDIAN_SYSTEM_PROMPT,
+    userMessage,
+    zodSchema: GuardianReviewSchema,
+    model,
+    client,
+    onProgress,
+  });
+  onProgress?.("validating");
+
+  // Same defensive normalization as every analysis function above — a local
+  // model can return confidence as a 0-100 percentage instead of a 0-1
+  // fraction.
+  if (typeof parsed?.confidence === "number" && parsed.confidence > 1) {
+    parsed.confidence = Math.max(0, Math.min(1, parsed.confidence / 100));
+  }
+
+  const validation = GuardianReviewSchema.safeParse(parsed);
+  if (!validation.success) {
+    throw new AiAnalysisError(
+      "invalid_schema",
+      `AI response did not match the required Guardian review schema: ${validation.error.issues.map((i) => i.path.join(".") + " " + i.message).join("; ")}`
+    );
+  }
+
+  return {
+    result: validation.data,
+    model,
+    provider: providerName,
+    promptVersion: AI_GUARDIAN_PROMPT_VERSION,
+  };
+}
+
 // Synchronous — lets callers record which provider/model an attempt is
 // about to use (or used, on failure) without needing to complete a request.
 function getActiveProviderInfo() {
@@ -607,6 +668,7 @@ module.exports = {
   draftEmail,
   reviewContract,
   generateContract,
+  reviewCodeChange,
   getActiveProviderInfo,
   AiAnalysisError,
 };
