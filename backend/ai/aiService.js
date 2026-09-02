@@ -62,6 +62,9 @@ const {
 const { AiAnalysisError } = require("./errors");
 const ollamaProvider = require("./providers/ollamaProvider");
 const anthropicProvider = require("./providers/anthropicProvider");
+const { assertAiAllowed } = require("../guardian/aiControl");
+const { logSecurityEvent } = require("../guardian/securityEvents");
+const { checkCircuitBreaker } = require("../guardian/circuitBreaker");
 
 const PROVIDERS = {
   ollama: { impl: ollamaProvider, model: () => env.ollamaModel },
@@ -75,6 +78,7 @@ const PROVIDERS = {
 // (including every existing test) works unchanged, since every call below
 // is guarded with `?.`.
 async function analyzeSubmission(submission, { client, onProgress } = {}) {
+  await assertAiAllowed("analyzeSubmission");
   // Scoped to web-design intake submissions only — the only type whose
   // fields (goals, features, brand status, etc.) this analysis, its
   // sanitizer, and its schema are built around. seo/contact submissions are
@@ -127,6 +131,16 @@ async function analyzeSubmission(submission, { client, onProgress } = {}) {
   // rather than trusting each provider's internal validation differently.
   const validation = AnalysisSchema.safeParse(parsed);
   if (!validation.success) {
+    logSecurityEvent({
+      severity: "WARNING",
+      eventType: "ai_schema_validation_failed",
+      actorType: "ai_caller",
+      source: "aiService",
+      resourceType: "ai_operation",
+      resourceId: "analyzeSubmission",
+      description: `Schema validation failed for analyzeSubmission.`,
+      metadata: { issueCount: validation.error.issues.length },
+    }).then(() => checkCircuitBreaker()).catch(() => {});
     throw new AiAnalysisError(
       "invalid_schema",
       `AI response did not match the required analysis schema: ${validation.error.issues.map((i) => i.path.join(".") + " " + i.message).join("; ")}`
@@ -148,6 +162,7 @@ async function analyzeSubmission(submission, { client, onProgress } = {}) {
 // structural shape as analyzeSubmission(): sanitize → build user message →
 // provider dispatch → central validation → confidence normalization.
 async function analyzeServicesSubmission(submission, { client, onProgress } = {}) {
+  await assertAiAllowed("analyzeServicesSubmission");
   if (submission.type !== "services") {
     throw new AiAnalysisError(
       "unsupported_type",
@@ -196,6 +211,16 @@ async function analyzeServicesSubmission(submission, { client, onProgress } = {}
 
   const validation = ServicesAnalysisSchema.safeParse(parsed);
   if (!validation.success) {
+    logSecurityEvent({
+      severity: "WARNING",
+      eventType: "ai_schema_validation_failed",
+      actorType: "ai_caller",
+      source: "aiService",
+      resourceType: "ai_operation",
+      resourceId: "analyzeServicesSubmission",
+      description: `Schema validation failed for analyzeServicesSubmission.`,
+      metadata: { issueCount: validation.error.issues.length },
+    }).then(() => checkCircuitBreaker()).catch(() => {});
     throw new AiAnalysisError(
       "invalid_schema",
       `AI response did not match the required services-analysis schema: ${validation.error.issues.map((i) => i.path.join(".") + " " + i.message).join("; ")}`
@@ -219,6 +244,7 @@ async function analyzeServicesSubmission(submission, { client, onProgress } = {}
 // sanitizeWebDesignSubmission()+buildUserMessage(), since there's no
 // structured form data to sanitize — just a blob of pasted text.
 async function analyzeRawText(rawText, { client, onProgress } = {}) {
+  await assertAiAllowed("analyzeRawText");
   const providerName = env.aiProvider;
   const provider = PROVIDERS[providerName];
   if (!provider) {
@@ -252,6 +278,16 @@ async function analyzeRawText(rawText, { client, onProgress } = {}) {
 
   const validation = AnalysisSchema.safeParse(parsed);
   if (!validation.success) {
+    logSecurityEvent({
+      severity: "WARNING",
+      eventType: "ai_schema_validation_failed",
+      actorType: "ai_caller",
+      source: "aiService",
+      resourceType: "ai_operation",
+      resourceId: "analyzeRawText",
+      description: `Schema validation failed for analyzeRawText.`,
+      metadata: { issueCount: validation.error.issues.length },
+    }).then(() => checkCircuitBreaker()).catch(() => {});
     throw new AiAnalysisError(
       "invalid_schema",
       `AI response did not match the required analysis schema: ${validation.error.issues.map((i) => i.path.join(".") + " " + i.message).join("; ")}`
@@ -291,6 +327,7 @@ const MAX_CHAT_HISTORY_TURNS = 20;
 // temperature so a "give me a different take" retry isn't just a near-
 // identical rerun of the same deterministic-ish output.
 async function chatReply({ sanitizedIntake, analysisResult, history, userMessage, regenerate = false }, { client, onProgress } = {}) {
+  await assertAiAllowed("chatReply");
   const providerName = env.aiProvider;
   const provider = PROVIDERS[providerName];
   if (!provider) {
@@ -350,6 +387,7 @@ function isResearchAvailable() {
 // model actually searches at all is still its own decision, made per call
 // by its own tool-use judgment — this only makes the tool available.
 async function chatReplyWithResearch({ sanitizedIntake, analysisResult, history, userMessage }, { onProgress } = {}) {
+  await assertAiAllowed("chatReplyWithResearch");
   if (!isResearchAvailable()) {
     throw new AiAnalysisError(
       "research_unavailable",
@@ -403,6 +441,7 @@ async function chatReplyWithResearch({ sanitizedIntake, analysisResult, history,
 // is never saved automatically by this function — same "admin explicitly
 // reviews and saves" discipline as analyzeRawText.
 async function updateAnalysisFromConversation(currentAnalysis, sanitizedIntake, conversationTurns, { client, onProgress, submissionType = "web-design" } = {}) {
+  await assertAiAllowed("updateAnalysisFromConversation");
   const providerName = env.aiProvider;
   const provider = PROVIDERS[providerName];
   if (!provider) {
@@ -435,6 +474,16 @@ async function updateAnalysisFromConversation(currentAnalysis, sanitizedIntake, 
 
   const validation = zodSchema.safeParse(parsed);
   if (!validation.success) {
+    logSecurityEvent({
+      severity: "WARNING",
+      eventType: "ai_schema_validation_failed",
+      actorType: "ai_caller",
+      source: "aiService",
+      resourceType: "ai_operation",
+      resourceId: "updateAnalysisFromConversation",
+      description: `Schema validation failed for updateAnalysisFromConversation.`,
+      metadata: { issueCount: validation.error.issues.length },
+    }).then(() => checkCircuitBreaker()).catch(() => {});
     throw new AiAnalysisError(
       "invalid_schema",
       `AI response did not match the required analysis schema: ${validation.error.issues.map((i) => i.path.join(".") + " " + i.message).join("; ")}`
@@ -453,6 +502,7 @@ async function updateAnalysisFromConversation(currentAnalysis, sanitizedIntake, 
 // ever called once an analysis exists and succeeded (see
 // services/draftEmail.js) — there's nothing useful to draft from otherwise.
 async function draftEmail(submission, analysis, { client, onProgress } = {}) {
+  await assertAiAllowed("draftEmail");
   if (!analysis || analysis.status !== "completed" || !analysis.result) {
     throw new AiAnalysisError(
       "no_analysis",
@@ -487,6 +537,16 @@ async function draftEmail(submission, analysis, { client, onProgress } = {}) {
 
   const validation = EmailDraftSchema.safeParse(parsed);
   if (!validation.success) {
+    logSecurityEvent({
+      severity: "WARNING",
+      eventType: "ai_schema_validation_failed",
+      actorType: "ai_caller",
+      source: "aiService",
+      resourceType: "ai_operation",
+      resourceId: "draftEmail",
+      description: `Schema validation failed for draftEmail.`,
+      metadata: { issueCount: validation.error.issues.length },
+    }).then(() => checkCircuitBreaker()).catch(() => {});
     throw new AiAnalysisError(
       "invalid_schema",
       `AI response did not match the required email schema: ${validation.error.issues.map((i) => i.path.join(".") + " " + i.message).join("; ")}`
@@ -508,6 +568,7 @@ async function draftEmail(submission, analysis, { client, onProgress } = {}) {
 // database or knows what a "contract" is beyond that shape, matching
 // analyzeSubmission/draftEmail's own separation of concerns.
 async function reviewContract(approvedData, { client, onProgress } = {}) {
+  await assertAiAllowed("reviewContract");
   const providerName = env.aiProvider;
   const provider = PROVIDERS[providerName];
   if (!provider) {
@@ -534,6 +595,16 @@ async function reviewContract(approvedData, { client, onProgress } = {}) {
 
   const validation = ContractReviewSchema.safeParse(parsed);
   if (!validation.success) {
+    logSecurityEvent({
+      severity: "WARNING",
+      eventType: "ai_schema_validation_failed",
+      actorType: "ai_caller",
+      source: "aiService",
+      resourceType: "ai_operation",
+      resourceId: "reviewContract",
+      description: `Schema validation failed for reviewContract.`,
+      metadata: { issueCount: validation.error.issues.length },
+    }).then(() => checkCircuitBreaker()).catch(() => {});
     throw new AiAnalysisError(
       "invalid_schema",
       `AI response did not match the required contract-review schema: ${validation.error.issues.map((i) => i.path.join(".") + " " + i.message).join("; ")}`
@@ -554,6 +625,7 @@ async function reviewContract(approvedData, { client, onProgress } = {}) {
 // (key/title/body_template) — never hardcoded here, so an admin editing
 // the template changes what gets drafted without a code change.
 async function generateContract(approvedData, templateSections, { client, onProgress } = {}) {
+  await assertAiAllowed("generateContract");
   const providerName = env.aiProvider;
   const provider = PROVIDERS[providerName];
   if (!provider) {
@@ -580,6 +652,16 @@ async function generateContract(approvedData, templateSections, { client, onProg
 
   const validation = ContractDraftSchema.safeParse(parsed);
   if (!validation.success) {
+    logSecurityEvent({
+      severity: "WARNING",
+      eventType: "ai_schema_validation_failed",
+      actorType: "ai_caller",
+      source: "aiService",
+      resourceType: "ai_operation",
+      resourceId: "generateContract",
+      description: `Schema validation failed for generateContract.`,
+      metadata: { issueCount: validation.error.issues.length },
+    }).then(() => checkCircuitBreaker()).catch(() => {});
     throw new AiAnalysisError(
       "invalid_schema",
       `AI response did not match the required contract-draft schema: ${validation.error.issues.map((i) => i.path.join(".") + " " + i.message).join("; ")}`
@@ -602,6 +684,7 @@ async function generateContract(approvedData, templateSections, { client, onProg
 // call type through the exact same infrastructure, the same way
 // analyzeServicesSubmission was added alongside analyzeSubmission.
 async function reviewCodeChange({ diff, changedFiles, relevantTests, baseRef, headRef, truncatedDiff }, { client, onProgress } = {}) {
+  await assertAiAllowed("reviewCodeChange");
   const providerName = env.aiProvider;
   const provider = PROVIDERS[providerName];
   if (!provider) {
@@ -635,6 +718,16 @@ async function reviewCodeChange({ diff, changedFiles, relevantTests, baseRef, he
 
   const validation = GuardianReviewSchema.safeParse(parsed);
   if (!validation.success) {
+    logSecurityEvent({
+      severity: "WARNING",
+      eventType: "ai_schema_validation_failed",
+      actorType: "ai_caller",
+      source: "aiService",
+      resourceType: "ai_operation",
+      resourceId: "reviewCodeChange",
+      description: `Schema validation failed for reviewCodeChange.`,
+      metadata: { issueCount: validation.error.issues.length },
+    }).then(() => checkCircuitBreaker()).catch(() => {});
     throw new AiAnalysisError(
       "invalid_schema",
       `AI response did not match the required Guardian review schema: ${validation.error.issues.map((i) => i.path.join(".") + " " + i.message).join("; ")}`

@@ -74,6 +74,59 @@ async function sendContractEmail({ to, subject, html, pdfBuffer, pdfFilename }) 
   }
 }
 
+// BrindLeaf Guardian's security alert email (see guardian/securityEvents.js
+// — triggered automatically for a CRITICAL-severity security_events row).
+// Fire-and-forget like notifyNewSubmission, deliberately NOT like
+// sendContractEmail: a failure to send an alert email must never crash the
+// application or block the security event itself from being persisted —
+// the event already exists in the database and is visible in the admin
+// dashboard regardless of whether this succeeds. Never includes secrets,
+// tokens, or raw prompts/responses — only the same allowlisted fields
+// already stored on the security_events row.
+async function sendSecurityAlertEmail(event) {
+  if (!resend || !env.notifyEmail) {
+    console.log(`[email] Security alert email skipped (RESEND_API_KEY/NOTIFY_EMAIL not set) — event #${event.id}`);
+    return;
+  }
+
+  try {
+    const { error } = await resend.emails.send({
+      from: env.notifyFromEmail,
+      to: env.notifyEmail,
+      subject: `BRINDLEAF GUARDIAN — ${event.severity}: ${event.eventType}`,
+      html: buildSecurityAlertHtml(event),
+    });
+    if (error) {
+      console.error(`[email] Resend rejected security alert for event #${event.id} (${error.name}):`, error.message);
+      return;
+    }
+    console.log(`[email] Sent security alert for event #${event.id} to ${env.notifyEmail}`);
+  } catch (err) {
+    console.error(`[email] Failed to send security alert for event #${event.id}:`, err.message);
+  }
+}
+
+function buildSecurityAlertHtml(event) {
+  const metadataRows = Object.entries(event.metadata || {})
+    .filter(([, value]) => value !== null && value !== undefined && value !== "")
+    .map(
+      ([key, value]) =>
+        `<tr><td style="padding:4px 12px 4px 0;color:#71717a;font-size:13px;white-space:nowrap;">${escapeHtml(key)}</td><td style="padding:4px 0;font-size:13px;color:#18181b;">${escapeHtml(typeof value === "object" ? JSON.stringify(value) : String(value))}</td></tr>`
+    )
+    .join("");
+
+  return `
+    <div style="font-family:sans-serif;max-width:520px;">
+      <h2 style="margin:0 0 4px;color:#b91c1c;">BRINDLEAF GUARDIAN — ${escapeHtml(event.severity)}</h2>
+      <p style="margin:0 0 4px;font-size:15px;color:#18181b;"><strong>${escapeHtml(event.eventType)}</strong></p>
+      <p style="margin:0 0 16px;color:#71717a;font-size:13px;">Event #${event.id} · ${escapeHtml(String(event.createdAt))}</p>
+      <p style="margin:0 0 16px;font-size:14px;color:#18181b;">${escapeHtml(event.description || "")}</p>
+      ${metadataRows ? `<table style="border-collapse:collapse;margin-bottom:16px;">${metadataRows}</table>` : ""}
+      <p style="margin:0;font-size:13px;color:#71717a;">Review this incident and, if it triggered an AI lockdown, acknowledge it in the admin dashboard's Guardian panel before re-enabling AI.</p>
+    </div>
+  `;
+}
+
 function buildEmailHtml(submission, typeLabel) {
   const rows = Object.entries(submission.projectDetails || {})
     .filter(([, value]) => value !== null && value !== undefined && value !== "")
@@ -108,4 +161,4 @@ function escapeHtml(str) {
     .replace(/"/g, "&quot;");
 }
 
-module.exports = { notifyNewSubmission, sendContractEmail, buildEmailHtml };
+module.exports = { notifyNewSubmission, sendContractEmail, sendSecurityAlertEmail, buildEmailHtml };

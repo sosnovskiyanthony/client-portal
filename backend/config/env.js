@@ -126,4 +126,27 @@ module.exports = {
   // toggle just shows "not configured" until both are set.
   ollamaControlUrl: process.env.OLLAMA_CONTROL_URL || null,
   ollamaControlSecret: process.env.OLLAMA_CONTROL_SECRET || null,
+
+  // Guardian's AI safety control plane (see guardian/aiControl.js) —
+  // an infrastructure-level emergency override for disabling every AI
+  // feature without needing the website to be reachable at all. Checked
+  // BEFORE the database-backed ai_control_state, and wins unconditionally
+  // when set to the literal string "false": no DB state can re-enable AI
+  // while this is set. Unset (the default) means "defer to the database."
+  // Only ever read once at boot (like every other env var here), so
+  // changing it on Railway requires a redeploy/restart to take effect —
+  // documented in guardian/README.md as the tradeoff against the faster,
+  // no-redeploy `guardian/setAiState.js` CLI method.
+  aiEnabledOverride: process.env.BRINDLEAF_AI_ENABLED || null,
+
+  // Off by default — see guardian/integrityCheck.js and server.js's start().
+  // A boot-time hash check of security-critical files against the committed
+  // manifest; a mismatch logs a CRITICAL security event and locks down AI.
+  // Deliberately opt-in rather than always-on: enabling it changes what a
+  // normal deploy does (it can now fail closed on a false-positive manifest
+  // drift, e.g. a legitimate hotfix that forgot to run
+  // `npm run guardian:integrity:update`), so this is a decision for the
+  // operator to make explicitly, not a default that could surprise an
+  // existing deploy the moment this code ships.
+  integrityCheckOnBoot: process.env.GUARDIAN_INTEGRITY_CHECK_ON_BOOT === "true",
 };

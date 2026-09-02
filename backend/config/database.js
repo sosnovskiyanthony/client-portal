@@ -337,6 +337,60 @@ async function init() {
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS guardian_checks_created_at_idx ON guardian_checks (created_at DESC);`);
 
+  // Guardian's AI safety control plane (see guardian/aiControl.js). Append-
+  // only, on purpose — never UPDATEd. "Current state" is always just the
+  // most recent row (ORDER BY created_at DESC LIMIT 1), so the full history
+  // of every enable/disable/lockdown transition (who/what triggered it, and
+  // why) is free, auditable, and can never be silently overwritten. Seeded
+  // with one ENABLED row below so "the table has zero rows" can never be
+  // confused with "the table/DB is unreachable" — aiControl.js treats a
+  // genuine query failure (not merely an empty result) as the fail-closed
+  // case.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ai_control_state (
+      id SERIAL PRIMARY KEY,
+      state TEXT NOT NULL,
+      reason TEXT,
+      source TEXT NOT NULL,
+      actor_user_id INTEGER REFERENCES users(id),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS ai_control_state_created_at_idx ON ai_control_state (created_at DESC);`);
+  await pool.query(`
+    INSERT INTO ai_control_state (state, reason, source)
+    SELECT 'ENABLED', 'Initial state on first boot.', 'system'
+    WHERE NOT EXISTS (SELECT 1 FROM ai_control_state);
+  `);
+
+  // Guardian's security/audit event log (see guardian/securityEvents.js).
+  // Serves two roles deliberately merged into one table rather than two
+  // near-duplicates: routine AI-operation audit entries (severity INFO) and
+  // genuine security incidents (WARNING/HIGH/CRITICAL) are the same
+  // underlying concept — "something happened, here's the evidence" — just
+  // at different severities. Never stores secrets/tokens/full prompts or
+  // responses; metadata is small, structured, and identifier-based only.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS security_events (
+      id SERIAL PRIMARY KEY,
+      severity TEXT NOT NULL,
+      event_type TEXT NOT NULL,
+      actor_type TEXT NOT NULL,
+      actor_id TEXT,
+      source TEXT,
+      resource_type TEXT,
+      resource_id TEXT,
+      description TEXT,
+      metadata JSONB,
+      acknowledged_at TIMESTAMPTZ,
+      acknowledged_by INTEGER REFERENCES users(id),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS security_events_created_at_idx ON security_events (created_at DESC);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS security_events_severity_idx ON security_events (severity);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS security_events_event_type_idx ON security_events (event_type);`);
+
   await seedContractTemplate();
   await seedContractFeatures();
 
