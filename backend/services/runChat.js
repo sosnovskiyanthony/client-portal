@@ -13,12 +13,27 @@ const SubmissionChat = require("../models/SubmissionChat");
 const aiService = require("../ai/aiService");
 const analysisProgress = require("../lib/analysisProgress");
 const { sanitizeWebDesignSubmission } = require("../ai/prompt");
+const { sanitizeServicesSubmission } = require("../ai/servicesPrompt");
 
 // Distinct from AiAnalysisError (a provider/AI failure, → 502) — this is a
 // bad-state precondition (nothing to regenerate, or history got into a
 // shape regenerateLastReply can't make sense of), so the controller maps
 // it to 400 instead.
 class RegenerateValidationError extends Error {}
+
+// A "services" submission's projectDetails has a completely different
+// shape (services[] + one nested sub-object per selected service — see
+// lib/services.js) than a web-design one's (goal/summary/brandStatus/...
+// flat). Using the wrong sanitizer wouldn't error — sanitizeWebDesignSubmission
+// would just quietly return "Unknown / needs clarification" for nearly
+// every field, since none of the expected keys exist on a services
+// submission's projectDetails — so this has to dispatch on type, not just
+// pick one and hope.
+function sanitizeIntakeForChat(submission) {
+  return submission.type === "services"
+    ? sanitizeServicesSubmission(submission.projectDetails)
+    : sanitizeWebDesignSubmission(submission.projectDetails);
+}
 
 // `research: true` is the "Research & Send" button — same turn, same
 // persistence discipline, just routed through aiService.chatReplyWithResearch
@@ -34,7 +49,7 @@ async function runChat(submission, analysis, existingMessages, userMessage, { re
 
   analysisProgress.start("chat", submission.id, { model: aiService.getActiveProviderInfo().model });
   try {
-    const sanitizedIntake = sanitizeWebDesignSubmission(submission.projectDetails);
+    const sanitizedIntake = sanitizeIntakeForChat(submission);
     const analysisResult = analysis && analysis.status === "completed" ? analysis.result : null;
     const onProgress = (stage) => analysisProgress.setStage("chat", submission.id, stage);
 
@@ -103,7 +118,7 @@ async function regenerateLastReply(submission, analysis, currentMessages) {
 
   analysisProgress.start("chat", submission.id, { model: aiService.getActiveProviderInfo().model });
   try {
-    const sanitizedIntake = sanitizeWebDesignSubmission(submission.projectDetails);
+    const sanitizedIntake = sanitizeIntakeForChat(submission);
     const analysisResult = analysis && analysis.status === "completed" ? analysis.result : null;
 
     const outcome = await aiService.chatReply(
