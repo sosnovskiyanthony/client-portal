@@ -105,6 +105,11 @@
     ollamaDot: document.getElementById("ollama-status-dot"),
     ollamaText: document.getElementById("ollama-status-text"),
     ollamaToggleBtn: document.getElementById("ollama-toggle-btn"),
+    guardianDot: document.getElementById("guardian-status-dot"),
+    guardianText: document.getElementById("guardian-status-text"),
+    guardianLastCheck: document.getElementById("guardian-last-check"),
+    guardianRunBtn: document.getElementById("guardian-run-btn"),
+    guardianHistory: document.getElementById("guardian-history"),
   };
 
   // Filtering and pagination are both server-driven (see GET
@@ -304,6 +309,7 @@
     els.dashboard.hidden = false;
     await loadSubmissions();
     refreshOllamaStatus();
+    refreshGuardianPanel();
   }
 
   const ANALYSIS_STATUS_LABELS = {
@@ -1476,6 +1482,78 @@
     });
   }
 
+  // BrindLeaf Guardian's production diagnostics panel — same
+  // fetch-on-load/refetch-after-action shape as
+  // refreshOllamaStatus()/initOllamaControl() above, reporting a distinct
+  // thing (overall app health via GET/POST /api/admin/guardian/*) rather
+  // than duplicating that logic.
+  function renderGuardianStatus(overall, lastCheckIso) {
+    if (!els.guardianDot) return;
+    els.guardianDot.classList.remove("is-healthy", "is-warning", "is-failed");
+    const labelByStatus = { HEALTHY: "Healthy", WARNING: "Warning", FAILED: "Failed" };
+    const classByStatus = { HEALTHY: "is-healthy", WARNING: "is-warning", FAILED: "is-failed" };
+    if (classByStatus[overall]) els.guardianDot.classList.add(classByStatus[overall]);
+    els.guardianText.textContent = `Guardian: ${labelByStatus[overall] || "Unknown"}`;
+    els.guardianLastCheck.textContent = lastCheckIso ? `Last checked ${new Date(lastCheckIso).toLocaleString()}` : "";
+  }
+
+  function renderGuardianHistory(rows) {
+    if (!els.guardianHistory) return;
+    if (!rows || rows.length === 0) {
+      els.guardianHistory.hidden = true;
+      els.guardianHistory.innerHTML = "";
+      return;
+    }
+    els.guardianHistory.hidden = false;
+    els.guardianHistory.innerHTML = rows
+      .map(
+        (r) =>
+          `<div class="guardian-history-item"><span class="guardian-history-time">${escapeHtml(new Date(r.createdAt).toLocaleString())}</span><span>${escapeHtml(r.status)} — ${escapeHtml(r.summary || "")}</span></div>`
+      )
+      .join("");
+  }
+
+  async function refreshGuardianPanel() {
+    if (!els.guardianDot) return;
+    try {
+      const rows = await getGuardianHistory(5);
+      renderGuardianHistory(rows);
+      if (rows.length > 0) {
+        renderGuardianStatus(rows[0].status, rows[0].createdAt);
+        return;
+      }
+      // No history yet on this install — fall through to a live diagnostics
+      // read so the panel isn't stuck on "checking…" forever before the
+      // first "Run Guardian Check" click.
+      const diagnostics = await getGuardianDiagnostics();
+      renderGuardianStatus(diagnostics.overall, null);
+    } catch (err) {
+      els.guardianText.textContent = "Guardian: unavailable";
+      els.guardianLastCheck.textContent = "";
+    }
+  }
+
+  function initGuardianPanel() {
+    if (!els.guardianRunBtn) return;
+    els.guardianRunBtn.addEventListener("click", async () => {
+      els.guardianRunBtn.disabled = true;
+      const original = els.guardianRunBtn.textContent;
+      els.guardianRunBtn.textContent = "Running…";
+      try {
+        const result = await runGuardianCheck();
+        renderGuardianStatus(result.status, result.createdAt);
+        const rows = await getGuardianHistory(5);
+        renderGuardianHistory(rows);
+      } catch (err) {
+        els.adminSub.textContent = err.message;
+        if (!isAdminLoggedIn()) render();
+      } finally {
+        els.guardianRunBtn.disabled = false;
+        els.guardianRunBtn.textContent = original;
+      }
+    });
+  }
+
   function initCleanupOrphans() {
     if (!els.cleanupBtn) return;
     els.cleanupBtn.addEventListener("click", async () => {
@@ -1542,6 +1620,7 @@
     initExport();
     initCleanupOrphans();
     initOllamaControl();
+    initGuardianPanel();
     initContractCreation();
 
     els.btnLogin.addEventListener("click", () => openModal("login"));

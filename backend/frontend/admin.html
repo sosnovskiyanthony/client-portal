@@ -97,6 +97,21 @@
     </div>
   </div>
 
+  <!-- BrindLeaf Guardian — production diagnostics panel. Reuses the
+       #ollama-control widget's status-dot/text/button shape above, just a
+       distinct set of ids/classes since it reports a different thing
+       (overall app health, not just Ollama). See js/admin.js's
+       initGuardianPanel and controllers/guardianController.js. -->
+  <div class="guardian-panel" id="guardian-panel">
+    <div class="guardian-panel-status">
+      <span class="guardian-status-dot" id="guardian-status-dot" aria-hidden="true"></span>
+      <span id="guardian-status-text">Guardian: checking…</span>
+      <span class="guardian-last-check" id="guardian-last-check"></span>
+    </div>
+    <button class="btn btn-ghost" id="guardian-run-btn" type="button">Run Guardian Check</button>
+  </div>
+  <div class="guardian-history" id="guardian-history" hidden></div>
+
   <div class="admin-filters" id="admin-filters">
     <button class="pill selected" data-filter="all" type="button">All</button>
     <button class="pill" data-filter="web-design" type="button">Web Design</button>
