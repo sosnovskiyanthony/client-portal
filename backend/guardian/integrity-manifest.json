@@ -1,0 +1,16 @@
+{
+  "guardian/aiControl.js": "0180f67903bf072ca80a6ed09c71d75510ec03c5a47f3be869b8d91459637e30",
+  "guardian/circuitBreaker.js": "11f48108e3ada8ebe4ed88a5ba64da835e4961886086669dbe7fd6bba7a5a684",
+  "guardian/securityEvents.js": "7ec305da75be896c387eae7fbc2b41a8ad56fd9c6703a249d66eb3ad0fee583b",
+  "guardian/aiCapabilities.js": "5166d1fee02193a2922eacd52df79629258040aaa9638c0be713b5f2f0ea6181",
+  "guardian/rules.js": "75e7267cb84bf866994b51f465aec9835eff99ab880ab493d603ff33b1186334",
+  "guardian/sentryScrub.js": "a03bbb735625b469072203148b2c045349cb9402d201c78640dd23d8417333b8",
+  "ai/aiService.js": "4c16b888c8afdfb3c264ffedd66bf18866433ea9886a841a847ef20085ab8b6f",
+  "ai/providers/ollamaProvider.js": "0978229275655ba73946e86f8b20b28df93983323d3c76ee9c92160bf7411412",
+  "server.js": "b3d64f1f732610021d8f378f11106d70bfc1dc62f64152a84dc955bb7aa4fb87",
+  "instrument.js": "a0dc1f8a261c1c3ad1bb3813f1a92fcd0289b9d59d9fd9b3624cce817a2560ff",
+  "middleware/auth.js": "a5dc23fee8c59081d287d6356811e382370de626f37005fe6141510bdcbd031b",
+  "middleware/rateLimit.js": "a9aa07ba1d6a0480ee0e80ffd8a03e9fa63bee1cb105b536266dafbf6e50b699",
+  "config/env.js": "79879843bc02b4c74c45a0fabba0d770abc8099e6bb03bd6a52ec95954f7542e",
+  "package.json": "1d9d7e076ead0427314bfc05aa6546fade1035d08e1540a2db2552d5585370c3"
+}

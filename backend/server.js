@@ -225,6 +225,38 @@ async function start() {
   // Runs schema migrations + seeds the admin user before accepting traffic.
   await init();
 
+  // Opt-in (see config/env.js's integrityCheckOnBoot) — a mismatch here
+  // means a security-critical file (the AI control plane, auth, rate
+  // limiting) doesn't match what was actually committed and reviewed.
+  // Never blocks boot itself (a false positive here must not take the
+  // whole site down) — logs CRITICAL and locks AI down, the same response
+  // as any other CRITICAL security event, and lets the rest of the app
+  // (public pages, intake forms, admin dashboard) keep serving traffic.
+  if (env.integrityCheckOnBoot) {
+    const { checkIntegrity } = require("./guardian/integrityCheck");
+    const { logSecurityEvent } = require("./guardian/securityEvents");
+    const aiControl = require("./guardian/aiControl");
+    const result = checkIntegrity();
+    if (!result.ok) {
+      console.error("[integrity] DRIFT DETECTED on boot:", result.drifted, result.missing, result.extra);
+      await logSecurityEvent({
+        severity: "CRITICAL",
+        eventType: "integrity_check_failed",
+        actorType: "system",
+        source: "server_boot",
+        description: `Boot-time integrity check found ${result.drifted.length} modified and ${result.missing.length} missing protected file(s).`,
+        metadata: { drifted: result.drifted, missing: result.missing, extra: result.extra },
+      });
+      await aiControl.setAiState({
+        state: "LOCKDOWN",
+        reason: "Boot-time integrity check detected unexpected changes to security-critical files.",
+        source: "integrity_check",
+      });
+    } else {
+      console.log("[integrity] Boot-time check passed — all protected files match the committed manifest.");
+    }
+  }
+
   app.listen(env.port, () => {
     console.log(`Client portal running at http://localhost:${env.port}`);
     console.log(`Admin login: ${env.adminEmail} / (password from .env)`);

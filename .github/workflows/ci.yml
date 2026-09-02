@@ -67,6 +67,15 @@ jobs:
       - name: Dependency audit
         run: npm audit --audit-level=high
 
+      # Fails if a security-critical file (the AI control plane, auth,
+      # rate limiting, etc. — see backend/guardian/integrityCheck.js's
+      # PROTECTED_FILES list) doesn't match the committed manifest. A
+      # legitimate change to one of these files must include running
+      # `npm run guardian:integrity:update` and committing the result —
+      # this step is what enforces that, not a suggestion.
+      - name: Integrity manifest check
+        run: npm run guardian:integrity:check
+
   # Advisory only — see backend/guardian/reviewCli.js and rules.js. Runs on
   # every push/PR but is expected to usually report "unavailable": GitHub-
   # hosted runners have no Tailscale route to the owner's local Ollama
