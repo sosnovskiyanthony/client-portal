@@ -1808,6 +1808,131 @@ a:focus-visible {
   flex-shrink: 0;
 }
 
+.ai-control-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  margin-bottom: 16px;
+  font-size: 13px;
+  flex-wrap: wrap;
+}
+
+.ai-control-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+}
+
+.ai-control-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--text-tertiary);
+  flex-shrink: 0;
+}
+
+.ai-control-dot.is-enabled {
+  background: #4ade80;
+  box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.18);
+}
+
+.ai-control-dot.is-disabled {
+  background: #fbbf24;
+  box-shadow: 0 0 0 3px rgba(251, 191, 36, 0.18);
+}
+
+.ai-control-dot.is-lockdown {
+  background: #f87171;
+  box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.18);
+}
+
+.ai-control-reason {
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.ai-control-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.security-events-panel {
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+}
+
+.security-events-panel[hidden] {
+  display: none;
+}
+
+.security-events-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin: 0 0 8px;
+}
+
+.security-event-item {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.security-event-item:last-child {
+  border-bottom: none;
+}
+
+.security-event-time {
+  color: var(--text-tertiary);
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.security-event-severity {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  flex-shrink: 0;
+}
+
+.security-event-severity.sev-info {
+  color: #a1a1aa;
+  background: rgba(161, 161, 170, 0.15);
+}
+
+.security-event-severity.sev-warning {
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.15);
+}
+
+.security-event-severity.sev-high {
+  color: #fb923c;
+  background: rgba(251, 146, 60, 0.15);
+}
+
+.security-event-severity.sev-critical {
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.18);
+}
+
+.security-event-ack-btn {
+  margin-left: auto;
+  font-size: 12px;
+  padding: 2px 10px;
+}
+
 .admin-title {
   font-size: 28px;
   font-weight: 700;

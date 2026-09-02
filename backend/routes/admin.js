@@ -19,7 +19,7 @@ router.post("/submissions/:id/draft-email", analysisLimiter, asyncHandler(adminC
 router.get("/submissions/:id/draft-email/progress", asyncHandler(adminController.getEmailDraftProgress));
 router.put("/submissions/:id/outcome", asyncHandler(adminController.upsertOutcome));
 router.delete("/submissions/:id", asyncHandler(adminController.deleteSubmission));
-router.post("/storage/signed-url", asyncHandler(adminController.getAssetSignedUrl));
+router.post("/submissions/:id/storage/signed-url", asyncHandler(adminController.getAssetSignedUrl));
 router.delete("/submissions/:id/assets", asyncHandler(adminController.removeAsset));
 router.post("/storage/cleanup-orphans", asyncHandler(adminController.cleanupAssets));
 router.get("/ollama/status", asyncHandler(adminController.getOllamaStatus));
@@ -55,5 +55,16 @@ router.post("/submissions/:id/chat/analyze/save", asyncHandler(chatController.sa
 router.get("/guardian/diagnostics", asyncHandler(guardianController.getDiagnostics));
 router.post("/guardian/run", asyncHandler(guardianController.runGuardianCheck));
 router.get("/guardian/history", asyncHandler(guardianController.getGuardianHistory));
+
+// AI safety control plane — see guardian/aiControl.js. Same JWT+admin gate
+// as everything else on this router; no dedicated rate limiter, matching
+// the other lightweight Guardian/Ollama-control routes above (these are
+// state reads/writes, not AI-generation calls).
+router.get("/guardian/ai/state", asyncHandler(guardianController.getAiControlState));
+router.post("/guardian/ai/disable", asyncHandler(guardianController.disableAi));
+router.post("/guardian/ai/lockdown", asyncHandler(guardianController.lockdownAi));
+router.post("/guardian/ai/enable", asyncHandler(guardianController.enableAi));
+router.get("/guardian/events", asyncHandler(guardianController.getSecurityEvents));
+router.post("/guardian/events/:id/acknowledge", asyncHandler(guardianController.acknowledgeSecurityEvent));
 
 module.exports = router;

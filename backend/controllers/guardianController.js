@@ -13,6 +13,8 @@ const { pool } = require("../config/database");
 const env = require("../config/env");
 const storage = require("../services/storage");
 const GuardianCheck = require("../models/GuardianCheck");
+const SecurityEvent = require("../models/SecurityEvent");
+const aiControl = require("../guardian/aiControl");
 const { tailscaleDispatcher } = require("../lib/tailscaleDispatcher");
 
 // Every dependency check returns one of these — distinct meanings, per
@@ -139,4 +141,89 @@ async function getGuardianHistory(req, res) {
   res.json({ history: rows });
 }
 
-module.exports = { getDiagnostics, runGuardianCheck, getGuardianHistory, STATUS };
+// AI safety control plane surface — see guardian/aiControl.js for the
+// actual chokepoint every AI operation passes through. These endpoints
+// only ever write via aiControl.setAiState() (never directly to the
+// table), so the same "blocked while an unacknowledged CRITICAL event
+// exists" and audit-logging behavior applies here exactly as it does to
+// guardian/setAiState.js's CLI path.
+async function getAiControlState(req, res) {
+  const state = await aiControl.getAiState();
+  res.json(state);
+}
+
+async function disableAi(req, res) {
+  const { reason } = req.body || {};
+  const result = await aiControl.setAiState({
+    state: "DISABLED",
+    reason: reason || "Disabled from the admin dashboard.",
+    source: "admin",
+    actorUserId: req.user?.sub,
+  });
+  res.json(result);
+}
+
+async function lockdownAi(req, res) {
+  const { reason } = req.body || {};
+  const result = await aiControl.setAiState({
+    state: "LOCKDOWN",
+    reason: reason || "Manually locked down from the admin dashboard.",
+    source: "admin",
+    actorUserId: req.user?.sub,
+  });
+  res.json(result);
+}
+
+// Deliberately the one control action that can fail with a specific,
+// actionable error (see aiControl.js's setAiState) — an unacknowledged
+// CRITICAL event blocks this, and the response includes which event is
+// blocking it so the admin UI can link straight to it.
+async function enableAi(req, res) {
+  const { reason } = req.body || {};
+  try {
+    const result = await aiControl.setAiState({
+      state: "ENABLED",
+      reason: reason || "Re-enabled from the admin dashboard.",
+      source: "admin",
+      actorUserId: req.user?.sub,
+    });
+    res.json(result);
+  } catch (err) {
+    if (err.code === "unacknowledged_critical_event") {
+      return res.status(409).json({ error: err.message, blockingEvent: err.blockingEvent });
+    }
+    throw err;
+  }
+}
+
+async function getSecurityEvents(req, res) {
+  const rows = req.query.unacknowledgedOnly === "true"
+    ? await SecurityEvent.findUnacknowledged({ limit: req.query.limit })
+    : await SecurityEvent.findRecent(req.query.limit);
+  res.json({ events: rows });
+}
+
+async function acknowledgeSecurityEvent(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) {
+    return res.status(400).json({ error: "Invalid event id." });
+  }
+  const event = await SecurityEvent.acknowledge(id, req.user?.sub);
+  if (!event) {
+    return res.status(404).json({ error: "Security event not found." });
+  }
+  res.json(event);
+}
+
+module.exports = {
+  getDiagnostics,
+  runGuardianCheck,
+  getGuardianHistory,
+  getAiControlState,
+  disableAi,
+  lockdownAi,
+  enableAi,
+  getSecurityEvents,
+  acknowledgeSecurityEvent,
+  STATUS,
+};

@@ -165,14 +165,36 @@ async function exportSubmissions(req, res) {
 // every path this app itself ever writes has (see lib/validators.js; a bare
 // prefix check here was previously bypassable with a path like
 // "brand-assets/../../../etc/passwd", which also starts with
-// "brand-assets/").
+// "brand-assets/"). Submission-scoped (mirrors removeAsset's exact
+// ownership check below) — a Guardian security review found the previous
+// route (POST /storage/signed-url, no submission id) let any valid admin
+// JWT request a signed URL for ANY well-formed brand-asset UUID path, not
+// just one actually attached to the submission being viewed. Not a live
+// incident (this app has exactly one admin, and asset paths are random
+// UUIDs, not guessable), but real defense-in-depth: a leaked/stolen admin
+// token, or a future bug elsewhere, should not be able to enumerate
+// arbitrary client files just because it can enumerate UUIDs.
 async function getAssetSignedUrl(req, res) {
+  const id = Number(req.params.id);
   const { path } = req.body || {};
+  if (!Number.isInteger(id)) {
+    return res.status(400).json({ error: "Invalid submission id." });
+  }
   if (typeof path !== "string" || !BRAND_ASSET_PATH_RE.test(path)) {
     return res.status(400).json({ error: "Invalid asset path." });
   }
   if (!storage.isConfigured()) {
     return res.status(503).json({ error: "File storage is not configured on this server." });
+  }
+
+  const submission = await Submission.findById(id);
+  if (!submission) {
+    return res.status(404).json({ error: "Submission not found." });
+  }
+
+  const assets = (submission.projectDetails && submission.projectDetails.brandAssets) || [];
+  if (!Array.isArray(assets) || !assets.some((a) => a && a.path === path)) {
+    return res.status(404).json({ error: "This submission has no attached file at that path." });
   }
 
   let url;

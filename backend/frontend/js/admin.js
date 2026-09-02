@@ -110,6 +110,14 @@
     guardianLastCheck: document.getElementById("guardian-last-check"),
     guardianRunBtn: document.getElementById("guardian-run-btn"),
     guardianHistory: document.getElementById("guardian-history"),
+    aiControlDot: document.getElementById("ai-control-dot"),
+    aiControlText: document.getElementById("ai-control-text"),
+    aiControlReason: document.getElementById("ai-control-reason"),
+    aiDisableBtn: document.getElementById("ai-disable-btn"),
+    aiLockdownBtn: document.getElementById("ai-lockdown-btn"),
+    aiEnableBtn: document.getElementById("ai-enable-btn"),
+    securityEventsPanel: document.getElementById("security-events-panel"),
+    securityEventsList: document.getElementById("security-events-list"),
   };
 
   // Filtering and pagination are both server-driven (see GET
@@ -310,6 +318,7 @@
     await loadSubmissions();
     refreshOllamaStatus();
     refreshGuardianPanel();
+    refreshAiControlPanel();
   }
 
   const ANALYSIS_STATUS_LABELS = {
@@ -847,7 +856,7 @@
             <li class="submission-asset-item">
               <span class="submission-asset-name">${escapeHtml(a.filename || a.path)}</span>
               <div class="submission-asset-actions">
-                <button class="btn btn-ghost submission-asset-view-btn" data-asset-path="${escapeHtml(a.path)}" type="button">View</button>
+                <button class="btn btn-ghost submission-asset-view-btn" data-asset-path="${escapeHtml(a.path)}" data-submission-id="${submission.id}" type="button">View</button>
                 <button class="btn btn-ghost submission-asset-remove-btn" data-asset-path="${escapeHtml(a.path)}" data-submission-id="${submission.id}" type="button">Remove</button>
               </div>
             </li>
@@ -1258,6 +1267,7 @@
       const viewBtn = e.target.closest(".submission-asset-view-btn[data-asset-path]");
       if (viewBtn) {
         const path = viewBtn.dataset.assetPath;
+        const submissionId = Number(viewBtn.dataset.submissionId);
         const original = viewBtn.textContent;
         viewBtn.disabled = true;
         viewBtn.textContent = "Loading…";
@@ -1270,7 +1280,7 @@
         const win = window.open("", "_blank", "noopener");
 
         try {
-          const url = await getAssetSignedUrl(path);
+          const url = await getAssetSignedUrl(submissionId, path);
           if (win) {
             win.location = url;
           } else {
@@ -1554,6 +1564,121 @@
     });
   }
 
+  // BrindLeaf Guardian's AI safety control plane panel — the kill switch
+  // UI. Disable/lockdown are one click each (still behind a native
+  // confirm(), matching this file's existing pattern for consequential
+  // actions — see the Remove/Delete/Finalize handlers elsewhere in this
+  // file); re-enable is deliberately more involved: it shows why AI was
+  // disabled before confirming, and if the server reports an
+  // unacknowledged CRITICAL event is blocking it (409), that's surfaced
+  // directly rather than as a generic error.
+  function renderAiControlStatus(state) {
+    if (!els.aiControlDot) return;
+    els.aiControlDot.classList.remove("is-enabled", "is-disabled", "is-lockdown");
+    const classByState = { ENABLED: "is-enabled", DISABLED: "is-disabled", LOCKDOWN: "is-lockdown" };
+    if (classByState[state.state]) els.aiControlDot.classList.add(classByState[state.state]);
+    els.aiControlText.textContent = `AI: ${state.state}`;
+    els.aiControlReason.textContent = state.reason || "";
+
+    const isEnabled = state.state === "ENABLED";
+    els.aiDisableBtn.hidden = !isEnabled;
+    els.aiLockdownBtn.hidden = !isEnabled;
+    els.aiEnableBtn.hidden = isEnabled;
+  }
+
+  function renderSecurityEvents(events) {
+    if (!els.securityEventsList) return;
+    if (!events || events.length === 0) {
+      els.securityEventsPanel.hidden = true;
+      els.securityEventsList.innerHTML = "";
+      return;
+    }
+    els.securityEventsPanel.hidden = false;
+    els.securityEventsList.innerHTML = events
+      .map((e) => {
+        const sevClass = `sev-${e.severity.toLowerCase()}`;
+        const ackBtn = !e.acknowledgedAt
+          ? `<button class="btn btn-ghost security-event-ack-btn" data-event-id="${e.id}" type="button">Acknowledge</button>`
+          : `<span class="security-event-time">acknowledged</span>`;
+        return `<div class="security-event-item">
+          <span class="security-event-severity ${sevClass}">${escapeHtml(e.severity)}</span>
+          <span class="security-event-time">${escapeHtml(new Date(e.createdAt).toLocaleString())}</span>
+          <span>${escapeHtml(e.eventType)} — ${escapeHtml(e.description || "")}</span>
+          ${ackBtn}
+        </div>`;
+      })
+      .join("");
+  }
+
+  async function refreshAiControlPanel() {
+    if (!els.aiControlDot) return;
+    try {
+      const [state, events] = await Promise.all([getAiControlState(), getSecurityEvents(10)]);
+      renderAiControlStatus(state);
+      renderSecurityEvents(events);
+    } catch (err) {
+      els.aiControlText.textContent = "AI: unavailable";
+      els.aiControlReason.textContent = "";
+    }
+  }
+
+  function initAiControlPanel() {
+    if (!els.aiDisableBtn) return;
+
+    els.aiDisableBtn.addEventListener("click", async () => {
+      if (!window.confirm("Disable all AI features? Every AI operation will be rejected until re-enabled.")) return;
+      try {
+        await disableAi("Disabled from the admin dashboard.");
+        await refreshAiControlPanel();
+      } catch (err) {
+        els.adminSub.textContent = err.message;
+        if (!isAdminLoggedIn()) render();
+      }
+    });
+
+    els.aiLockdownBtn.addEventListener("click", async () => {
+      if (!window.confirm("LOCK DOWN all AI features? This is the same state an automatic security incident would trigger, and re-enabling will require acknowledging it.")) return;
+      try {
+        await lockdownAi("Manually locked down from the admin dashboard.");
+        await refreshAiControlPanel();
+      } catch (err) {
+        els.adminSub.textContent = err.message;
+        if (!isAdminLoggedIn()) render();
+      }
+    });
+
+    els.aiEnableBtn.addEventListener("click", async () => {
+      const currentReason = els.aiControlReason.textContent;
+      if (!window.confirm(`Re-enable AI?\n\nIt was disabled because: ${currentReason || "(no reason recorded)"}\n\nOnly do this once you're confident it's safe to resume.`)) return;
+      try {
+        await enableAi("Re-enabled from the admin dashboard.");
+        await refreshAiControlPanel();
+      } catch (err) {
+        if (err.blockingEvent) {
+          els.adminSub.textContent = `Cannot re-enable: acknowledge security event #${err.blockingEvent.id} (${err.blockingEvent.eventType}) first — see Recent Security Events below.`;
+        } else {
+          els.adminSub.textContent = err.message;
+        }
+        if (!isAdminLoggedIn()) render();
+      }
+    });
+
+    els.securityEventsList.addEventListener("click", async (e) => {
+      const btn = e.target.closest(".security-event-ack-btn[data-event-id]");
+      if (!btn) return;
+      const id = Number(btn.dataset.eventId);
+      btn.disabled = true;
+      try {
+        await acknowledgeSecurityEvent(id);
+        await refreshAiControlPanel();
+      } catch (err) {
+        els.adminSub.textContent = err.message;
+        if (!isAdminLoggedIn()) render();
+        btn.disabled = false;
+      }
+    });
+  }
+
   function initCleanupOrphans() {
     if (!els.cleanupBtn) return;
     els.cleanupBtn.addEventListener("click", async () => {
@@ -1621,6 +1746,7 @@
     initCleanupOrphans();
     initOllamaControl();
     initGuardianPanel();
+    initAiControlPanel();
     initContractCreation();
 
     els.btnLogin.addEventListener("click", () => openModal("login"));

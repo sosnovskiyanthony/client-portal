@@ -112,6 +112,37 @@
   </div>
   <div class="guardian-history" id="guardian-history" hidden></div>
 
+  <!-- BrindLeaf Guardian — AI safety control plane. Distinct from the
+       diagnostics panel above (reachability of DB/storage/Ollama/etc.) —
+       this is the AI kill switch (see guardian/aiControl.js): current
+       ENABLED/DISABLED/LOCKDOWN state, why, and the controls to change it.
+       Disabling/locking down is one click; re-enabling asks for
+       confirmation and is blocked entirely if an unacknowledged CRITICAL
+       security event caused the lockdown — see js/admin.js's
+       initAiControlPanel. -->
+  <div class="ai-control-panel" id="ai-control-panel">
+    <div class="ai-control-status">
+      <span class="ai-control-dot" id="ai-control-dot" aria-hidden="true"></span>
+      <span id="ai-control-text">AI: checking…</span>
+      <span class="ai-control-reason" id="ai-control-reason"></span>
+    </div>
+    <div class="ai-control-actions">
+      <button class="btn btn-ghost" id="ai-disable-btn" type="button">Disable All AI</button>
+      <button class="btn btn-ghost" id="ai-lockdown-btn" type="button">Lockdown All AI</button>
+      <button class="btn btn-primary" id="ai-enable-btn" type="button" hidden>Re-enable AI</button>
+    </div>
+  </div>
+
+  <!-- Recent security events (see models/SecurityEvent.js) — auth
+       failures, AI state changes, capability violations, schema-
+       validation failures, circuit-breaker lockdowns. Unacknowledged
+       events (mainly CRITICAL ones) show an Acknowledge action; a CRITICAL
+       event must be acknowledged before AI can be re-enabled. -->
+  <div class="security-events-panel" id="security-events-panel">
+    <h3 class="security-events-title">Recent Security Events</h3>
+    <div class="security-events-list" id="security-events-list"></div>
+  </div>
+
   <div class="admin-filters" id="admin-filters">
     <button class="pill selected" data-filter="all" type="button">All</button>
     <button class="pill" data-filter="web-design" type="button">Web Design</button>

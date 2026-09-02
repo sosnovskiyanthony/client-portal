@@ -741,10 +741,10 @@ async function exportSubmissionsCsv(type, service) {
 
 // Gets a short-lived signed URL for viewing one brand asset (the storage
 // bucket is private — see services/storage.js). Admin-only server-side.
-async function getAssetSignedUrl(path) {
+async function getAssetSignedUrl(submissionId, path) {
   let res;
   try {
-    res = await fetch("/api/admin/storage/signed-url", {
+    res = await fetch(`/api/admin/submissions/${submissionId}/storage/signed-url`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${getAdminToken()}` },
       body: JSON.stringify({ path }),
@@ -973,6 +973,107 @@ async function getGuardianHistory(limit = 5) {
     throw new Error(body.error || "Couldn't load Guardian history.");
   }
   return body.history || [];
+}
+
+// BrindLeaf Guardian's AI safety control plane (see guardian/aiControl.js)
+// — same request/error shape as the Guardian diagnostics helpers above.
+async function getAiControlState() {
+  let res;
+  try {
+    res = await fetch("/api/admin/guardian/ai/state", {
+      headers: { Authorization: `Bearer ${getAdminToken()}` },
+    });
+  } catch (err) {
+    throw new Error("Can't reach the server. Is the backend running?");
+  }
+  if (res.status === 401 || res.status === 403) {
+    logoutAdmin();
+    throw new Error("Your session expired. Please log in again.");
+  }
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(body.error || "Couldn't load AI control state.");
+  }
+  return body;
+}
+
+// Shared by disableAi/lockdownAi/enableAi below — same request shape, just
+// a different path and (for "enable") a possible 409 with a blockingEvent.
+async function postAiControlAction(action, reason) {
+  let res;
+  try {
+    res = await fetch(`/api/admin/guardian/ai/${action}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${getAdminToken()}` },
+      body: JSON.stringify({ reason }),
+    });
+  } catch (err) {
+    throw new Error("Can't reach the server. Is the backend running?");
+  }
+  if (res.status === 401 || res.status === 403) {
+    logoutAdmin();
+    throw new Error("Your session expired. Please log in again.");
+  }
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const err = new Error(body.error || `Couldn't ${action} AI.`);
+    if (body.blockingEvent) err.blockingEvent = body.blockingEvent;
+    throw err;
+  }
+  return body;
+}
+
+async function disableAi(reason) {
+  return postAiControlAction("disable", reason);
+}
+
+async function lockdownAi(reason) {
+  return postAiControlAction("lockdown", reason);
+}
+
+async function enableAi(reason) {
+  return postAiControlAction("enable", reason);
+}
+
+async function getSecurityEvents(limit = 10) {
+  let res;
+  try {
+    res = await fetch(`/api/admin/guardian/events?limit=${encodeURIComponent(limit)}`, {
+      headers: { Authorization: `Bearer ${getAdminToken()}` },
+    });
+  } catch (err) {
+    throw new Error("Can't reach the server. Is the backend running?");
+  }
+  if (res.status === 401 || res.status === 403) {
+    logoutAdmin();
+    throw new Error("Your session expired. Please log in again.");
+  }
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(body.error || "Couldn't load security events.");
+  }
+  return body.events || [];
+}
+
+async function acknowledgeSecurityEvent(id) {
+  let res;
+  try {
+    res = await fetch(`/api/admin/guardian/events/${id}/acknowledge`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${getAdminToken()}` },
+    });
+  } catch (err) {
+    throw new Error("Can't reach the server. Is the backend running?");
+  }
+  if (res.status === 401 || res.status === 403) {
+    logoutAdmin();
+    throw new Error("Your session expired. Please log in again.");
+  }
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(body.error || "Couldn't acknowledge this event.");
+  }
+  return body;
 }
 
 // Polled every second or two by admin.js while an analysis/draft is in
