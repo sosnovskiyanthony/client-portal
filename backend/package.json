@@ -7,12 +7,14 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "test": "node --test",
+    "test": "sh scripts/run-tests.sh",
     "lint": "eslint .",
-    "test:coverage": "node --test --experimental-test-coverage --test-coverage-lines=65 --test-coverage-branches=65 --test-coverage-functions=42",
-    "guardian": "node guardian/runGuardian.js",
+    "test:coverage": "sh scripts/run-tests.sh --experimental-test-coverage --test-coverage-lines=65 --test-coverage-branches=65 --test-coverage-functions=42",
     "guardian:ai": "node guardian/reviewCli.js",
-    "guardian:smoke": "node guardian/smokeTest.js"
+    "guardian:smoke": "node guardian/smokeTest.js",
+    "guardian:ai-control": "node guardian/setAiState.js",
+    "guardian:integrity:check": "node guardian/integrityCli.js check",
+    "guardian:integrity:update": "node guardian/integrityCli.js update"
   },
   "engines": {
     "node": "26.x"
