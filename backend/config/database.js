@@ -316,6 +316,27 @@ async function init() {
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS contract_audit_log_contract_id_idx ON contract_audit_log (contract_id);`);
 
+  // BrindLeaf Guardian's production diagnostics history (see
+  // controllers/guardianController.js, models/GuardianCheck.js) — one row
+  // per admin-triggered "Run Guardian Check". Deliberately lightweight:
+  // per-dependency configured/reachable status and a short summary, never
+  // secret values or full request/response bodies. Same idempotent
+  // CREATE TABLE IF NOT EXISTS convention as every other table above, no
+  // migration framework.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS guardian_checks (
+      id SERIAL PRIMARY KEY,
+      check_type TEXT NOT NULL,
+      status TEXT NOT NULL,
+      summary TEXT,
+      commit_sha TEXT,
+      findings JSONB,
+      duration_ms INTEGER,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS guardian_checks_created_at_idx ON guardian_checks (created_at DESC);`);
+
   await seedContractTemplate();
   await seedContractFeatures();
 

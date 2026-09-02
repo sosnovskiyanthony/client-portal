@@ -1,6 +1,7 @@
 const express = require("express");
 const adminController = require("../controllers/adminController");
 const chatController = require("../controllers/chatController");
+const guardianController = require("../controllers/guardianController");
 const { authenticate, requireAdmin } = require("../middleware/auth");
 const asyncHandler = require("../middleware/asyncHandler");
 const { analysisLimiter, chatLimiter } = require("../middleware/rateLimit");
@@ -45,5 +46,14 @@ router.get("/submissions/:id/chat/progress", chatController.getChatProgress);
 router.post("/submissions/:id/chat/analyze", chatLimiter, asyncHandler(chatController.analyzePastedTextForSubmission));
 router.get("/submissions/:id/chat/analyze/progress", chatController.getAnalyzePastedProgressForSubmission);
 router.post("/submissions/:id/chat/analyze/save", asyncHandler(chatController.saveChatAnalysis));
+
+// BrindLeaf Guardian — production diagnostics (DB/storage/Ollama/Resend/
+// Tavily) and its short history. See controllers/guardianController.js's
+// module comment for why this is diagnostics-only, not the CI-time
+// deterministic checks. No dedicated limiter: same lightweight-status-check
+// class as /ollama/status above, not an AI-generation call.
+router.get("/guardian/diagnostics", asyncHandler(guardianController.getDiagnostics));
+router.post("/guardian/run", asyncHandler(guardianController.runGuardianCheck));
+router.get("/guardian/history", asyncHandler(guardianController.getGuardianHistory));
 
 module.exports = router;
