@@ -82,6 +82,41 @@
     }, 1000);
   }
 
+  // Paste-and-analyze runs in the background on the server (see
+  // chatController.js) and returns immediately from its own POST — the
+  // actual result only ever arrives through this polling loop, not the
+  // POST's response. Resolves with the analysis result on success, rejects
+  // with a real, specific error (not a generic one) on failure — this is
+  // the whole point: no single request in this flow is held open long
+  // enough for anything ahead of this app to cut it off before the real
+  // outcome is known.
+  function pollForOutcome(fetchProgress) {
+    return new Promise((resolve, reject) => {
+      stopPolling();
+      progressPollHandle = setInterval(async () => {
+        let progress;
+        try {
+          progress = await fetchProgress();
+        } catch (err) {
+          return; // a single dropped poll is transient — the next tick retries
+        }
+        if (!progress) return; // background run hasn't registered itself yet
+        if (progress.active) {
+          if (thinkingEl) thinkingEl.textContent = `${STAGE_LABELS[progress.stage] || "Working"}…`;
+          return;
+        }
+        if (progress.done) {
+          stopPolling();
+          if (progress.ok) {
+            resolve(progress.result);
+          } else {
+            reject(Object.assign(new Error(progress.error || "Request failed."), { code: progress.code }));
+          }
+        }
+      }, 1000);
+    });
+  }
+
   function showThinking(label) {
     removeThinking();
     thinkingEl = document.createElement("div");
@@ -397,20 +432,24 @@
 
     try {
       if (submissionId) {
-        startPolling(() => contractFetch(`/api/admin/submissions/${submissionId}/chat/analyze/progress`));
-        const outcome = await contractFetch(`/api/admin/submissions/${submissionId}/chat/analyze`, {
+        await contractFetch(`/api/admin/submissions/${submissionId}/chat/analyze`, {
           method: "POST",
           body: { text },
         });
+        const outcome = await pollForOutcome(() =>
+          contractFetch(`/api/admin/submissions/${submissionId}/chat/analyze/progress`)
+        );
         messages.push({ role: "analysis", content: outcome, pastedText: text, createdAt: new Date().toISOString() });
         resetPasteForm();
         renderThread();
       } else {
-        startPolling(() => contractFetch(`/api/admin/chat/analyze/progress/${standaloneRequestId}`));
-        const outcome = await contractFetch("/api/admin/chat/analyze", {
+        await contractFetch("/api/admin/chat/analyze", {
           method: "POST",
           body: { text, requestId: standaloneRequestId },
         });
+        const outcome = await pollForOutcome(() =>
+          contractFetch(`/api/admin/chat/analyze/progress/${standaloneRequestId}`)
+        );
         standaloneResult = { outcome, rawText: text };
         renderStandaloneResult();
       }

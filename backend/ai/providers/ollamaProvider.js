@@ -37,20 +37,21 @@ const ALLOWED_TOOL_NAMES = ["web_search"];
 // operation (first attempt + retry combined, see FIRST_ATTEMPT_TIMEOUT_MS
 // below) — a retry never extends it.
 //
-// Deliberately kept under 5 minutes, not just "generous": a real production
-// timeout (2026-09-02) showed this set to exactly 300003ms produce a bare,
-// unhelpful "Request failed." in the browser instead of the specific
-// timeout message this module actually generates — the evidence pointed to
-// something between Railway's edge and the browser giving up on the
-// client-facing connection before our own 502 could still be written back,
-// even though our internal retry logic and error handling all fired
-// correctly server-side (confirmed via logs — see chatController.js's
-// runPastedTextAnalysis, which now also logs whether the client connection
-// was still alive when it tried to send that response). Without a
-// confirmed exact value for whatever platform/edge timeout is actually in
-// front of this app, 4 minutes gives a full minute of margin under the
-// value this incident's evidence centered on, while still leaving real
-// hardware plenty of room to finish.
+// Deliberately kept under 5 minutes, not just "generous" — a real
+// production incident (2026-09-02) showed this set to exactly 300003ms
+// produce a bare, unhelpful "Request failed." in the browser instead of
+// the specific timeout message this module actually generates. Follow-up
+// evidence (server logs confirming the client connection was already gone
+// at both the ~139s and ~240s marks on two separate attempts) showed
+// something ahead of this app was cutting the client-facing connection
+// well under either mark, regardless of exactly where this ceiling sits —
+// so shortening it further wasn't a reliable fix on its own. The actual
+// fix for that reporting gap is chatController.js's paste-and-analyze
+// routes now running this call in the background and returning
+// immediately, so no single HTTP request needs to survive as long as this
+// value allows in the first place. This timeout stays under 5 minutes
+// regardless, as real margin: it still bounds how long a genuinely-stuck
+// Ollama connection is left open, independent of anything client-facing.
 const REQUEST_TIMEOUT_MS = 4 * 60 * 1000;
 
 // Confirmed via a real deploy log: a Tailscale connection attempt (userspace-

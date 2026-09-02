@@ -167,64 +167,82 @@ function getChatProgress(req, res) {
   res.json({ active: true, ...progress });
 }
 
-// Shared by the submission-scoped and standalone "paste client text and
-// analyze" routes below — the only difference between them is what
-// progress-poll key is used and whether a submission exists at all. Returns
-// undefined (having already written the response) on any failure — both a
-// 400 (no text) and a 502 (classified AI-provider failure, same convention
-// as contractController's own AI calls) — so every caller's `if (!outcome)
-// return;` covers both cases without needing to know which one happened.
-async function runPastedTextAnalysis(res, progressKey, rawText) {
-  if (!rawText) {
-    res.status(400).json({ error: "Pasted client text is required." });
-    return undefined;
+// Turns a caught error from the background analysis run into the outcome
+// shape analysisProgress.complete() stores and getAnalyzePastedProgress*
+// hands back to the poller — shared so both the scoped and standalone
+// routes below classify failures identically.
+function outcomeForError(err, logContext) {
+  if (err instanceof AiAnalysisError) {
+    return { ok: false, error: err.message, code: err.code };
   }
-  try {
-    return await runRawTextAnalysis(progressKey, rawText);
-  } catch (err) {
-    if (err instanceof AiAnalysisError) {
-      // A long-running analysis (Ollama over Tailscale can legitimately
-      // take minutes) leaves time for the client-facing connection itself
-      // to have already been dropped by something in front of this app —
-      // in that case this write is a no-op and the browser sees whatever
-      // that intermediary returned instead (a real incident on
-      // 2026-09-02 showed the browser getting a generic "Request failed."
-      // even though this code path ran correctly and produced a real
-      // message). Logging which case happened turns that from a guess
-      // into a fact next time.
-      if (res.writableEnded || res.destroyed) {
-        console.error(`[chatController] Client connection already closed before the ${err.code} error could be sent (progressKey=${progressKey}).`);
-        return undefined;
-      }
-      res.status(502).json({ error: err.message, code: err.code });
-      return undefined;
-    }
-    throw err;
-  }
+  console.error(`[chatController] Unexpected error during background paste-analyze (${logContext}):`, err);
+  return { ok: false, error: "Something went wrong analyzing this text.", code: "internal_error" };
 }
+
+// Both paste-and-analyze routes below respond immediately (202) and run
+// the actual AI call in the background, reporting the eventual result
+// through the existing progress-poll endpoints instead of holding the
+// original HTTP request open for it.
+//
+// This isn't just responsiveness polish: a real production incident
+// (2026-09-02) showed something ahead of this app dropping the
+// client-facing connection well under the 2-minute mark on a slow
+// analysis, well before this app's own (much larger) timeout/retry budget
+// for reaching Ollama over Tailscale had a chance to finish and respond —
+// so the browser saw a bare "Request failed." even when this code path
+// eventually produced a real, specific error. No single HTTP request in
+// this flow — the POST below, or any one poll — needs to survive more
+// than an instant, which makes whatever that external cutoff actually is
+// stop mattering. See ai/providers/ollamaProvider.js's REQUEST_TIMEOUT_MS
+// comment for the fuller incident notes.
+//
+// A real, accepted limitation: if the admin closes/reopens the chat
+// drawer (or the browser) while a run is still in flight, there's no
+// mechanism to resume watching it — for the scoped route the eventual
+// result is still safely persisted to the chat thread regardless (see
+// below); for the standalone route it's held for RESULT_TTL_MS
+// (lib/analysisProgress.js) and lost if nobody polls for it before then,
+// same as it was always lost immediately on a dropped connection before
+// this change — never worse, and usually better.
 
 // Scoped variant also appends the result into this submission's chat
 // thread as an "analysis"-role turn — so it's still there (with the pasted
 // text it came from) if the admin closes and reopens the drawer, even
 // before they've explicitly saved it as the submission's real analysis
 // (see chatController.saveChatAnalysis; this append is never that save —
-// submission_analyses is untouched here).
+// submission_analyses is untouched here). Now happens in the background
+// regardless of whether the admin is still watching, so a slow analysis
+// that finishes after the client's given up is still saved, not lost.
 async function analyzePastedTextForSubmission(req, res) {
   const submission = await loadSubmissionOr404(req, res);
   if (!submission) return;
   const rawText = typeof req.body?.text === "string" ? req.body.text.trim() : "";
-  const outcome = await runPastedTextAnalysis(res, submission.id, rawText);
-  if (!outcome) return; // runPastedTextAnalysis already sent a 400
+  if (!rawText) {
+    return res.status(400).json({ error: "Pasted client text is required." });
+  }
+  const progressKey = submission.id;
+  res.status(202).json({ started: true });
 
-  await SubmissionChat.appendMessages(submission.id, [
-    {
-      role: "analysis",
-      content: outcome,
-      pastedText: rawText,
-      createdAt: new Date().toISOString(),
-    },
-  ]);
-  res.json(outcome);
+  try {
+    const outcome = await runRawTextAnalysis(progressKey, rawText);
+    await SubmissionChat.appendMessages(submission.id, [
+      {
+        role: "analysis",
+        content: outcome,
+        pastedText: rawText,
+        createdAt: new Date().toISOString(),
+      },
+    ]);
+    analysisProgress.complete("chat-analyze", progressKey, { ok: true, result: outcome });
+  } catch (err) {
+    analysisProgress.complete("chat-analyze", progressKey, outcomeForError(err, `submission ${submission.id}`));
+  }
+}
+
+function formatAnalyzeProgress(progress) {
+  if (!progress) return { active: false };
+  if (progress.status === "done") return { active: false, done: true, ...progress.outcome };
+  return { active: true, stage: progress.stage };
 }
 
 function getAnalyzePastedProgressForSubmission(req, res) {
@@ -232,9 +250,7 @@ function getAnalyzePastedProgressForSubmission(req, res) {
   if (!Number.isInteger(id)) {
     return res.status(400).json({ error: "Invalid submission id." });
   }
-  const progress = analysisProgress.get("chat-analyze", id);
-  if (!progress) return res.json({ active: false });
-  res.json({ active: true, ...progress });
+  res.json(formatAnalyzeProgress(analysisProgress.get("chat-analyze", id)));
 }
 
 // Standalone — no submission has to exist yet (e.g. a client who emailed
@@ -247,16 +263,23 @@ async function analyzePastedTextStandalone(req, res) {
   if (!requestId) {
     return res.status(400).json({ error: "A requestId is required." });
   }
-  const outcome = await runPastedTextAnalysis(res, `standalone:${requestId}`, rawText);
-  if (!outcome) return; // runPastedTextAnalysis already sent a 400
-  res.json(outcome);
+  if (!rawText) {
+    return res.status(400).json({ error: "Pasted client text is required." });
+  }
+  const progressKey = `standalone:${requestId}`;
+  res.status(202).json({ started: true });
+
+  try {
+    const outcome = await runRawTextAnalysis(progressKey, rawText);
+    analysisProgress.complete("chat-analyze", progressKey, { ok: true, result: outcome });
+  } catch (err) {
+    analysisProgress.complete("chat-analyze", progressKey, outcomeForError(err, `requestId ${requestId}`));
+  }
 }
 
 function getAnalyzePastedProgressStandalone(req, res) {
   const requestId = req.params.requestId;
-  const progress = analysisProgress.get("chat-analyze", `standalone:${requestId}`);
-  if (!progress) return res.json({ active: false });
-  res.json({ active: true, ...progress });
+  res.json(formatAnalyzeProgress(analysisProgress.get("chat-analyze", `standalone:${requestId}`)));
 }
 
 // Validates and stores an analysis produced via the chat's "paste and

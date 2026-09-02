@@ -66,6 +66,21 @@ async function authed(pathAndQuery, options = {}) {
   });
 }
 
+// Paste-and-analyze's POST now returns immediately (202) and runs in the
+// background — see chatController.js's analyzePastedTextForSubmission /
+// analyzePastedTextStandalone. Tests poll the same progress endpoint the
+// real frontend does until the background run reports done:true.
+async function pollAnalyzeProgress(progressPath, timeoutMs = 10000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const res = await authed(progressPath);
+    const body = await res.json();
+    if (body.done) return body;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  throw new Error(`Timed out waiting for ${progressPath} to report done:true`);
+}
+
 test.before(async () => {
   serverProcess = spawn("node", ["server.js"], {
     cwd: path.join(__dirname, ".."),
@@ -232,12 +247,16 @@ test("sending a chat message with research:true when research isn't configured r
   assert.equal(body.code, "research_unavailable");
 });
 
-test("scoped paste-and-analyze with a broken AI provider returns 502 and saves nothing", async () => {
+test("scoped paste-and-analyze with a broken AI provider: POST returns immediately (202), the error surfaces via polling, and nothing is saved", async () => {
   const res = await authed(`/api/admin/submissions/${testSubmissionId}/chat/analyze`, {
     method: "POST",
     body: JSON.stringify({ text: "Client emailed: we need a new site for our bakery." }),
   });
-  assert.equal(res.status, 502);
+  assert.equal(res.status, 202, "the request runs in the background — see chatController.js's analyzePastedTextForSubmission");
+
+  const progress = await pollAnalyzeProgress(`/api/admin/submissions/${testSubmissionId}/chat/analyze/progress`);
+  assert.equal(progress.ok, false);
+  assert.ok(progress.error);
 
   const historyRes = await authed(`/api/admin/submissions/${testSubmissionId}/chat`);
   const { messages } = await historyRes.json();
@@ -260,12 +279,17 @@ test("standalone paste-and-analyze requires a requestId", async () => {
   assert.equal(res.status, 400);
 });
 
-test("standalone paste-and-analyze with a broken AI provider returns 502", async () => {
+test("standalone paste-and-analyze with a broken AI provider: POST returns immediately (202), the error surfaces via polling", async () => {
+  const requestId = "test-request-1";
   const res = await authed(`/api/admin/chat/analyze`, {
     method: "POST",
-    body: JSON.stringify({ text: "Client emailed: we need a new site.", requestId: "test-request-1" }),
+    body: JSON.stringify({ text: "Client emailed: we need a new site.", requestId }),
   });
-  assert.equal(res.status, 502);
+  assert.equal(res.status, 202, "the request runs in the background — see chatController.js's analyzePastedTextStandalone");
+
+  const progress = await pollAnalyzeProgress(`/api/admin/chat/analyze/progress/${requestId}`);
+  assert.equal(progress.ok, false);
+  assert.ok(progress.error);
 });
 
 test("saveChatAnalysis rejects a result that doesn't match AnalysisSchema", async () => {
