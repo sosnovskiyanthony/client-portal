@@ -12,8 +12,17 @@ require("dotenv").config();
 
 if (process.env.SENTRY_DSN) {
   const Sentry = require("@sentry/node");
+  const { scrubEvent } = require("./guardian/sentryScrub");
   Sentry.init({
     dsn: process.env.SENTRY_DSN,
     environment: process.env.NODE_ENV || "development",
+    // See guardian/sentryScrub.js — every captureException call in this
+    // app (the 3 raw ones in server.js, plus errorController.js's already-
+    // allowlisted frontend path) passes through this before leaving the
+    // process. Applied uniformly rather than trusting every future
+    // captureException call site to remember to scrub itself.
+    beforeSend(event) {
+      return scrubEvent(event);
+    },
   });
 }
