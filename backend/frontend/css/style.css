@@ -1933,6 +1933,15 @@ a:focus-visible {
   padding: 2px 10px;
 }
 
+.admin-search-row {
+  margin-bottom: 16px;
+}
+
+.admin-search-input {
+  width: 100%;
+  max-width: 420px;
+}
+
 .admin-title {
   font-size: 28px;
   font-weight: 700;

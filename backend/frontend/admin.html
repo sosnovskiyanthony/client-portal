@@ -143,6 +143,20 @@
     <div class="security-events-list" id="security-events-list"></div>
   </div>
 
+  <!-- Combines with whatever filter pill below is active — see
+       js/admin.js's initSearch (debounced) and
+       models/Submission.js's buildWhereClause (matches client name,
+       email, and project details). -->
+  <div class="admin-search-row">
+    <input
+      class="field-input admin-search-input"
+      id="admin-search"
+      type="search"
+      placeholder="Search by name, email, or project details…"
+      aria-label="Search submissions"
+    />
+  </div>
+
   <div class="admin-filters" id="admin-filters">
     <button class="pill selected" data-filter="all" type="button">All</button>
     <button class="pill" data-filter="web-design" type="button">Web Design</button>

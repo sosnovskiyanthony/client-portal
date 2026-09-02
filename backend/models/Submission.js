@@ -53,7 +53,16 @@ const PAGE_SIZE = 20;
 // migration time — see config/database.js). Mutually exclusive in the
 // admin UI (one filter pill active at a time — frontend/js/admin.js), but
 // nothing here assumes that; if both are somehow passed, both apply.
-function buildWhereClause({ type, service }) {
+// `search` matches client_name/email with a plain ILIKE, plus
+// project_details cast to text — a simple, no-new-index substring match
+// (there's no full-text/trigram index on this table), not a ranked or
+// tokenized search. Deliberately simple for this table's realistic size
+// (a solo business's lead list, not a high-volume table); a plain ILIKE
+// against project_details::text can surface a false-positive match against
+// a JSON key name rather than a value (e.g. searching "email" matches the
+// literal key in every row), which is an accepted tradeoff for not building
+// field-aware JSONB search across a field set that varies per service type.
+function buildWhereClause({ type, service, search }) {
   const params = [];
   const conditions = [];
   if (type && type !== "all") {
@@ -64,12 +73,18 @@ function buildWhereClause({ type, service }) {
     params.push(service);
     conditions.push(`$${params.length} = ANY(services)`);
   }
+  const trimmedSearch = typeof search === "string" ? search.trim() : "";
+  if (trimmedSearch) {
+    params.push(`%${trimmedSearch}%`);
+    const p = params.length;
+    conditions.push(`(client_name ILIKE $${p} OR email ILIKE $${p} OR project_details::text ILIKE $${p})`);
+  }
   return { whereClause: conditions.length ? `WHERE ${conditions.join(" AND ")}` : "", params };
 }
 
-// type/service: see buildWhereClause above. page: 1-indexed.
-async function findPage({ type, service, page = 1 } = {}) {
-  const { whereClause, params } = buildWhereClause({ type, service });
+// type/service/search: see buildWhereClause above. page: 1-indexed.
+async function findPage({ type, service, search, page = 1 } = {}) {
+  const { whereClause, params } = buildWhereClause({ type, service, search });
 
   const offset = (Math.max(1, page) - 1) * PAGE_SIZE;
   params.push(PAGE_SIZE, offset);
@@ -85,8 +100,8 @@ async function findPage({ type, service, page = 1 } = {}) {
 
 // Unpaginated — used only by the CSV export, which needs every matching row
 // at once. findPage() above stays paginated for the dashboard's own list.
-async function findAll({ type, service } = {}) {
-  const { whereClause, params } = buildWhereClause({ type, service });
+async function findAll({ type, service, search } = {}) {
+  const { whereClause, params } = buildWhereClause({ type, service, search });
   const { rows } = await pool.query(
     `SELECT * FROM submissions ${whereClause} ORDER BY created_at DESC, id DESC`,
     params
@@ -94,8 +109,8 @@ async function findAll({ type, service } = {}) {
   return rows.map(serialize);
 }
 
-async function count({ type, service } = {}) {
-  const { whereClause, params } = buildWhereClause({ type, service });
+async function count({ type, service, search } = {}) {
+  const { whereClause, params } = buildWhereClause({ type, service, search });
   const { rows } = await pool.query(`SELECT COUNT(*)::int AS count FROM submissions ${whereClause}`, params);
   return rows[0].count;
 }

@@ -14,6 +14,12 @@ const { tailscaleDispatcher } = require("../lib/tailscaleDispatcher");
 const analysisProgress = require("../lib/analysisProgress");
 const env = require("../config/env");
 
+// A search box, not a text field with real content limits elsewhere in the
+// app — cap it the same defensive way (see ai/prompt.js's MAX_* constants)
+// so an arbitrarily long query string can't turn into an unnecessarily
+// expensive ILIKE scan.
+const MAX_SEARCH_CHARS = 200;
+
 async function listSubmissions(req, res) {
   const type = typeof req.query.type === "string" ? req.query.type : "all";
   // Filters the new services array (see models/Submission.js) — a
@@ -21,11 +27,12 @@ async function listSubmissions(req, res) {
   // submission can match more than one of these (frontend/js/admin.js's
   // new service-based filter pills use this, not `type`).
   const service = typeof req.query.service === "string" && isValidServiceSlug(req.query.service) ? req.query.service : undefined;
+  const search = typeof req.query.search === "string" ? req.query.search.slice(0, MAX_SEARCH_CHARS) : undefined;
   const page = Math.max(1, parseInt(req.query.page, 10) || 1);
 
   const [submissions, total] = await Promise.all([
-    Submission.findPage({ type, service, page }),
-    Submission.count({ type, service }),
+    Submission.findPage({ type, service, search, page }),
+    Submission.count({ type, service, search }),
   ]);
   const ids = submissions.map((s) => s.id);
   const [analyses, outcomes, emailDrafts, contracts] = await Promise.all([
@@ -125,7 +132,8 @@ const EXPORT_HEADERS = [
 async function exportSubmissions(req, res) {
   const type = typeof req.query.type === "string" ? req.query.type : "all";
   const service = typeof req.query.service === "string" && isValidServiceSlug(req.query.service) ? req.query.service : undefined;
-  const submissions = await Submission.findAll({ type, service });
+  const search = typeof req.query.search === "string" ? req.query.search.slice(0, MAX_SEARCH_CHARS) : undefined;
+  const submissions = await Submission.findAll({ type, service, search });
   const outcomes = await ProjectOutcome.findAllBySubmissionIds(submissions.map((s) => s.id));
 
   const rows = submissions.map((s) => {

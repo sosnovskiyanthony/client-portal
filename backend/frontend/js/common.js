@@ -588,10 +588,11 @@ async function saveSubmission(type, data) {
 // Returns the full paginated response — { submissions, total, page,
 // pageSize, totalPages } — not just the submissions array, since the admin
 // dashboard needs the pagination metadata to render Prev/Next controls.
-async function fetchSubmissions({ type, service, page } = {}) {
+async function fetchSubmissions({ type, service, search, page } = {}) {
   const params = new URLSearchParams();
   if (type) params.set("type", type);
   if (service) params.set("service", service);
+  if (search) params.set("search", search);
   if (page) params.set("page", String(page));
   const query = params.toString() ? `?${params.toString()}` : "";
 
@@ -732,10 +733,11 @@ async function upsertOutcome(id, data) {
 // needs the Authorization header, which a plain <a href> navigation can't
 // send. The caller turns the returned blob into an actual file download
 // (see admin.js's initExport()).
-async function exportSubmissionsCsv(type, service) {
+async function exportSubmissionsCsv(type, service, search) {
   const params = new URLSearchParams();
   if (type) params.set("type", type);
   if (service) params.set("service", service);
+  if (search) params.set("search", search);
   let res;
   try {
     res = await fetch(`/api/admin/submissions/export?${params.toString()}`, {

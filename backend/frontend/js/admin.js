@@ -97,6 +97,7 @@
     btnLogout: document.getElementById("btn-admin-logout"),
     adminSub: document.getElementById("admin-sub"),
     filters: document.getElementById("admin-filters"),
+    search: document.getElementById("admin-search"),
     list: document.getElementById("submission-list"),
     pagination: document.getElementById("admin-pagination"),
     exportBtn: document.getElementById("export-csv-btn"),
@@ -131,6 +132,10 @@
   // them. Selecting a service pill sets currentType back to "all" and vice
   // versa (see initFilters below).
   let currentService = null;
+  // Combines with currentType/currentService (all active filters narrow
+  // together) — see models/Submission.js's buildWhereClause. Debounced on
+  // input (initSearch below), not applied on every keystroke.
+  let currentSearch = "";
   let currentPage = 1;
   let paginationMeta = { total: 0, totalPages: 1, pageSize: 20 };
   let cachedSubmissions = [];
@@ -1058,7 +1063,7 @@
     els.pagination.innerHTML = "";
 
     try {
-      const body = await fetchSubmissions({ type: currentType, service: currentService, page: currentPage });
+      const body = await fetchSubmissions({ type: currentType, service: currentService, search: currentSearch, page: currentPage });
       cachedSubmissions = body.submissions;
       paginationMeta = { total: body.total, totalPages: body.totalPages, pageSize: body.pageSize };
     } catch (err) {
@@ -1123,6 +1128,27 @@
       }
       currentPage = 1;
       loadSubmissions();
+    });
+  }
+
+  // Live-as-you-type, debounced — combines with whatever type/service
+  // filter is currently active (currentSearch is just one more term
+  // fetchSubmissions/exportSubmissionsCsv already thread through, see
+  // models/Submission.js's buildWhereClause). 300ms is long enough that a
+  // normal typing cadence doesn't fire a request per keystroke, short
+  // enough to still feel immediate.
+  const SEARCH_DEBOUNCE_MS = 300;
+  let searchDebounceTimer = null;
+
+  function initSearch() {
+    if (!els.search) return;
+    els.search.addEventListener("input", () => {
+      clearTimeout(searchDebounceTimer);
+      searchDebounceTimer = setTimeout(() => {
+        currentSearch = els.search.value.trim();
+        currentPage = 1;
+        loadSubmissions();
+      }, SEARCH_DEBOUNCE_MS);
     });
   }
 
@@ -1709,7 +1735,7 @@
       els.exportBtn.textContent = "Exporting…";
 
       try {
-        const { blob, filename } = await exportSubmissionsCsv(currentType, currentService);
+        const { blob, filename } = await exportSubmissionsCsv(currentType, currentService, currentSearch);
         // A plain <a href> can't carry the Authorization header the export
         // endpoint requires, so the file arrives as a Blob (see
         // exportSubmissionsCsv in common.js) and this triggers the actual
@@ -1735,6 +1761,7 @@
   function init() {
     initCommon();
     initFilters();
+    initSearch();
     initStatusControls();
     initAnalysisControls();
     initEmailDraftControls();
