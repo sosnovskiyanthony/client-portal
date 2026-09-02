@@ -33,11 +33,25 @@ const ALLOWED_TOOL_NAMES = ["web_search"];
 // Local CPU inference on a 7B-class model generating a large structured JSON
 // object realistically takes much longer than a hosted API call — a fixed
 // 60s budget (reasonable for a hosted provider) would misclassify normal
-// local inference as a timeout. 5 minutes gives real hardware room to finish
-// without leaving a hung request open indefinitely. This is the hard
-// ceiling for the WHOLE operation (first attempt + retry combined, see
-// FIRST_ATTEMPT_TIMEOUT_MS below) — a retry never extends it.
-const REQUEST_TIMEOUT_MS = 5 * 60 * 1000;
+// local inference as a timeout. This is the hard ceiling for the WHOLE
+// operation (first attempt + retry combined, see FIRST_ATTEMPT_TIMEOUT_MS
+// below) — a retry never extends it.
+//
+// Deliberately kept under 5 minutes, not just "generous": a real production
+// timeout (2026-09-02) showed this set to exactly 300003ms produce a bare,
+// unhelpful "Request failed." in the browser instead of the specific
+// timeout message this module actually generates — the evidence pointed to
+// something between Railway's edge and the browser giving up on the
+// client-facing connection before our own 502 could still be written back,
+// even though our internal retry logic and error handling all fired
+// correctly server-side (confirmed via logs — see chatController.js's
+// runPastedTextAnalysis, which now also logs whether the client connection
+// was still alive when it tried to send that response). Without a
+// confirmed exact value for whatever platform/edge timeout is actually in
+// front of this app, 4 minutes gives a full minute of margin under the
+// value this incident's evidence centered on, while still leaving real
+// hardware plenty of room to finish.
+const REQUEST_TIMEOUT_MS = 4 * 60 * 1000;
 
 // Confirmed via a real deploy log: a Tailscale connection attempt (userspace-
 // networking mode, see lib/tailscaleDispatcher.js) to the Ollama host can go

@@ -183,6 +183,19 @@ async function runPastedTextAnalysis(res, progressKey, rawText) {
     return await runRawTextAnalysis(progressKey, rawText);
   } catch (err) {
     if (err instanceof AiAnalysisError) {
+      // A long-running analysis (Ollama over Tailscale can legitimately
+      // take minutes) leaves time for the client-facing connection itself
+      // to have already been dropped by something in front of this app —
+      // in that case this write is a no-op and the browser sees whatever
+      // that intermediary returned instead (a real incident on
+      // 2026-09-02 showed the browser getting a generic "Request failed."
+      // even though this code path ran correctly and produced a real
+      // message). Logging which case happened turns that from a guess
+      // into a fact next time.
+      if (res.writableEnded || res.destroyed) {
+        console.error(`[chatController] Client connection already closed before the ${err.code} error could be sent (progressKey=${progressKey}).`);
+        return undefined;
+      }
       res.status(502).json({ error: err.message, code: err.code });
       return undefined;
     }
