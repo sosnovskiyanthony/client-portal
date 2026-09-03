@@ -318,9 +318,10 @@ async function cleanupAssets(req, res) {
 
 // Mirrors the STUCK_THRESHOLD_MS used in frontend/js/admin.js to decide when
 // a "processing" row shows a retry button instead of a passive message —
-// same reasoning applies here: Ollama's own request timeout is 5 minutes, so
-// anything still "processing" past 6 has no live request behind it anymore.
-const STALE_PROCESSING_MS = 6 * 60 * 1000;
+// same reasoning applies here: ollamaProvider.js's own REQUEST_TIMEOUT_MS is
+// 8 minutes, so this needs real margin above that or a still-genuinely-
+// running analysis could get treated as abandoned while it's still working.
+const STALE_PROCESSING_MS = 10 * 60 * 1000;
 
 // Admin-only (see routes/admin.js: authenticate + requireAdmin run first),
 // rate-limited, and works whether this is the first analysis attempt or a
@@ -328,10 +329,25 @@ const STALE_PROCESSING_MS = 6 * 60 * 1000;
 //
 // If an analysis is already genuinely in flight for this submission (a real
 // request that hasn't had time to finish yet — not an abandoned one), this
-// does NOT start a second one. It just returns the existing in-progress row,
-// so reloading the page, closing a tab, or clicking Analyze again from a
-// second tab always shows the true current state instead of racing a
-// duplicate request that would silently overwrite whichever finishes last.
+// does NOT start a second one — reloading the page, closing a tab, or
+// clicking Analyze again from a second tab always converges on the same
+// real run instead of racing a duplicate that would silently overwrite
+// whichever finishes last.
+//
+// Responds immediately (202) and runs the actual analysis in the
+// background, reporting the eventual result through getAnalysisProgress
+// below instead of holding this request open for it — the same fire-and-
+// poll shape as chatController.js's paste-and-analyze routes, and for the
+// same reason: a real production incident (2026-09-02/03) showed something
+// ahead of this app dropping a long-held client connection well under
+// Ollama's own multi-minute budget, so the browser saw a stale-looking
+// timeout even when the real analysis was still genuinely working. No
+// single request in this flow needs to survive more than an instant.
+//
+// runAnalysis() itself never throws (see services/runAnalysis.js) — every
+// outcome, success or failure, is written to submission_analyses as a
+// normal completed/failed row, so nothing here needs its own error
+// classification the way chatController's routes do.
 async function analyzeSubmission(req, res) {
   const id = Number(req.params.id);
   if (!Number.isInteger(id)) {
@@ -350,14 +366,22 @@ async function analyzeSubmission(req, res) {
   if (existing && existing.status === "processing") {
     const ageMs = Date.now() - new Date(existing.updatedAt).getTime();
     if (ageMs < STALE_PROCESSING_MS) {
-      return res.json({ analysis: existing });
+      // Already genuinely running — nothing new to start. The client polls
+      // getAnalysisProgress the same way regardless of which branch got it
+      // here, so there's nothing else to distinguish in the response.
+      return res.status(202).json({ started: false });
     }
     // Past the threshold — treat as abandoned (e.g. a server restart
     // interrupted it) and fall through to start a fresh run.
   }
 
-  const analysis = await runAnalysis(submission);
-  res.json({ analysis });
+  res.status(202).json({ started: true });
+  runAnalysis(submission).catch((err) => {
+    // Last-resort net, not the expected path — runAnalysis is designed to
+    // catch and record every real failure itself. A bug there throwing
+    // anyway should log loudly, not take the process down.
+    console.error(`[adminController] Unexpected error running background analysis for submission ${id}:`, err);
+  });
 }
 
 // Admin-only, rate-limited (same limiter as /analyze — this is also a real
@@ -414,7 +438,52 @@ function makeProgressHandler(kind) {
   };
 }
 
-const getAnalysisProgress = makeProgressHandler("analysis");
+// Analysis gets its own handler rather than makeProgressHandler("analysis")
+// above — unlike an email draft (which the client still awaits directly,
+// see draftEmail above), analyzeSubmission now responds before the real
+// work even starts (see its own comment), so this is the only place the
+// eventual result — success or failure — ever reaches the browser. Once
+// nothing is running in this process for this submission, it falls back to
+// the durable submission_analyses row itself (unlike chatController's
+// paste-and-analyze routes, which have no other persistence to fall back
+// on for their standalone case — see lib/analysisProgress.js's complete()).
+async function getAnalysisProgress(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) {
+    return res.status(400).json({ error: "Invalid submission id." });
+  }
+
+  const progress = analysisProgress.get("analysis", id);
+  if (progress) {
+    return res.json({ active: true, stage: progress.stage, model: progress.model });
+  }
+
+  const analysis = await Analysis.findBySubmissionId(id);
+  if (!analysis) {
+    return res.json({ active: false });
+  }
+  if (analysis.status === "completed" || analysis.status === "failed") {
+    return res.json({ active: false, done: true, analysis });
+  }
+  // status is "pending" or "processing" with nothing running in this
+  // process — either a very tight timing window right after the
+  // background task started but before its own analysisProgress.start()
+  // call landed (still genuinely fine, report active), or a server
+  // restart interrupted a real run and nothing is left to ever finish it
+  // (same staleness threshold analyzeSubmission itself uses to decide
+  // "abandoned" — without this, a poller would wait out its own ceiling
+  // with no real answer, same gap chat.js's POLL_TIMEOUT_MS exists for).
+  const ageMs = Date.now() - new Date(analysis.updatedAt).getTime();
+  if (ageMs < STALE_PROCESSING_MS) {
+    return res.json({ active: true, stage: "preparing" });
+  }
+  return res.json({
+    active: false,
+    done: true,
+    error: "Analysis was interrupted (e.g. a server restart) and never completed. Try analyzing again.",
+  });
+}
+
 const getEmailDraftProgress = makeProgressHandler("email");
 
 async function updateSubmissionStatus(req, res) {

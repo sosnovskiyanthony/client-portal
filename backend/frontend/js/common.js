@@ -644,10 +644,15 @@ async function updateSubmissionStatus(id, status) {
   return body.submission;
 }
 
-// Triggers (or re-triggers) the AI project analysis for one web-design
-// submission. Admin-only server-side (see routes/admin.js); the request can
-// legitimately take a couple of minutes against a local Ollama model, so
-// callers should show a loading state rather than assume this resolves fast.
+// Kicks off (or confirms an already-running) AI project analysis for one
+// web-design submission and returns as soon as that's acknowledged (202) —
+// the actual analysis runs in the background and can legitimately take
+// several minutes against a local Ollama model, so this alone is never the
+// full picture. Callers must poll getAnalysisProgress (see admin.js's
+// pollForAnalysisOutcome) for the real, eventual result — same fire-and-
+// poll shape as chat.js's paste-and-analyze flow, and for the same reason:
+// no request in this flow should be held open long enough for anything
+// ahead of this app to cut it off before the real answer is known.
 async function analyzeSubmission(id) {
   let res;
   try {
@@ -668,7 +673,7 @@ async function analyzeSubmission(id) {
   if (!res.ok) {
     throw new Error(body.error || "Analysis request failed.");
   }
-  return body.analysis;
+  return body;
 }
 
 // Triggers (or re-triggers) drafting a client-facing outreach email from a

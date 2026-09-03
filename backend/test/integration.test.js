@@ -72,6 +72,24 @@ async function adminToken() {
   return cachedAdminToken;
 }
 
+// analyzeSubmission's POST now returns immediately (202) and runs in the
+// background — see adminController.js's analyzeSubmission/
+// getAnalysisProgress. Tests poll the same progress endpoint the real
+// admin dashboard does until the background run reports done:true, same
+// pattern as chatIntegration.test.js's pollAnalyzeProgress.
+async function pollAnalysisProgress(submissionId, token, timeoutMs = 10000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const res = await fetch(`${BASE_URL}/api/admin/submissions/${submissionId}/analyze/progress`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const body = await res.json();
+    if (body.done) return body;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  throw new Error(`Timed out waiting for submission ${submissionId}'s analysis progress to report done:true`);
+}
+
 test.before(async () => {
   serverProcess = spawn("node", ["server.js"], {
     cwd: path.join(__dirname, ".."),
@@ -191,10 +209,11 @@ test("admin-triggered analysis: submission survives an AI analysis failure — s
     method: "POST",
     headers: { Authorization: `Bearer ${token}` },
   });
-  const analyzeBody = await analyzeRes.json();
-  assert.equal(analyzeRes.status, 200);
-  assert.equal(analyzeBody.analysis.status, "failed");
-  assert.ok(analyzeBody.analysis.error && analyzeBody.analysis.error.includes("unknown_provider"));
+  assert.equal(analyzeRes.status, 202, "the request runs in the background — see adminController.js's analyzeSubmission");
+
+  const progress = await pollAnalysisProgress(submission.id, token);
+  assert.equal(progress.analysis.status, "failed");
+  assert.ok(progress.analysis.error && progress.analysis.error.includes("unknown_provider"));
 
   // The original submission itself must be completely intact.
   const checkRes = await fetch(`${BASE_URL}/api/admin/submissions`, { headers: { Authorization: `Bearer ${token}` } });
@@ -265,17 +284,18 @@ test("re-analyze (admin-triggered) works on a submission with an existing failed
     method: "POST",
     headers: { Authorization: `Bearer ${token}` },
   });
-  assert.equal(firstRes.status, 200);
+  assert.equal(firstRes.status, 202);
+  await pollAnalysisProgress(submission.id, token);
 
   // Re-analyze — same endpoint, same upsert row.
   const res = await fetch(`${BASE_URL}/api/admin/submissions/${submission.id}/analyze`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}` },
   });
-  const body = await res.json();
-  assert.equal(res.status, 200);
-  assert.equal(body.analysis.status, "failed"); // still the broken provider, but the retry request itself succeeds
-  assert.equal(body.analysis.submissionId, submission.id);
+  assert.equal(res.status, 202);
+  const progress = await pollAnalysisProgress(submission.id, token);
+  assert.equal(progress.analysis.status, "failed"); // still the broken provider, but the retry request itself succeeds
+  assert.equal(progress.analysis.submissionId, submission.id);
 });
 
 test("seo/contact submissions are not analyzed (feature scoped to web-design only)", async () => {

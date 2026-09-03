@@ -311,6 +311,45 @@
     elapsedTickHandle = setInterval(tickElapsedLabels, 1000);
   }
 
+  // Comfortably above adminController.js's own STALE_PROCESSING_MS (10
+  // minutes, itself with real margin over ollamaProvider.js's 8-minute
+  // REQUEST_TIMEOUT_MS) — the backend should always resolve well before
+  // this fires. Exists as a last-resort client-side net regardless, same
+  // reasoning as chat.js's identical POLL_TIMEOUT_MS.
+  const ANALYSIS_POLL_TIMEOUT_MS = 12 * 60 * 1000;
+
+  // analyzeSubmission's POST now just kicks the run off (or confirms one
+  // already in flight) and returns immediately — this is what actually
+  // waits for the real, eventual result via getAnalysisProgress, separate
+  // from tickElapsedLabels' own polling above (that one only ever updates
+  // the live stage LABEL for display; this is what the click handler below
+  // awaits for the final analysis record). Resolves with the analysis
+  // record whether it completed or failed — runAnalysis() treats an AI
+  // failure as a normal recorded outcome, not an exception, and this
+  // preserves that same contract for the caller. Only rejects for a
+  // genuine infrastructure problem: the run was abandoned server-side (a
+  // restart mid-analysis) or this ceiling was reached with no answer.
+  function pollForAnalysisOutcome(id) {
+    const pollStartedAt = Date.now();
+    return new Promise((resolve, reject) => {
+      const handle = setInterval(async () => {
+        if (Date.now() - pollStartedAt > ANALYSIS_POLL_TIMEOUT_MS) {
+          clearInterval(handle);
+          reject(new Error("Lost contact with the analysis — the server may have restarted. Try again."));
+          return;
+        }
+        const progress = await getAnalysisProgress(id);
+        if (!progress || !progress.done) return;
+        clearInterval(handle);
+        if (progress.analysis) {
+          resolve(progress.analysis);
+        } else {
+          reject(new Error(progress.error || "Analysis failed."));
+        }
+      }, 1000);
+    });
+  }
+
   async function render() {
     if (!isAdminLoggedIn()) {
       els.dashboard.hidden = true;
@@ -534,11 +573,12 @@
 
     if (a.status === "pending" || a.status === "processing") {
       // A real analysis run resolves itself (completed or failed) well within
-      // this window — Ollama's own request timeout is 5 minutes. Past 6
-      // minutes, the most likely explanation is the server restarted mid-run
-      // and nothing is left running to ever finish it, so offer a manual
-      // retry instead of leaving the admin stuck on "reload to check".
-      const STUCK_THRESHOLD_MS = 6 * 60 * 1000;
+      // this window — ollamaProvider.js's own REQUEST_TIMEOUT_MS is 8
+      // minutes. Past 10, the most likely explanation is the server
+      // restarted mid-run and nothing is left running to ever finish it, so
+      // offer a manual retry instead of leaving the admin stuck on "reload
+      // to check". Mirrors adminController.js's STALE_PROCESSING_MS.
+      const STUCK_THRESHOLD_MS = 10 * 60 * 1000;
       const elapsedMs = Date.now() - new Date(a.updatedAt).getTime();
       const isStuck = elapsedMs > STUCK_THRESHOLD_MS;
 
@@ -1201,7 +1241,8 @@
       renderList(); // immediately reflect the disabled state, and make it survive any later unrelated re-render
 
       try {
-        const updated = await analyzeSubmission(id);
+        await analyzeSubmission(id);
+        const updated = await pollForAnalysisOutcome(id);
         const idx = cachedSubmissions.findIndex((s) => s.id === id);
         if (idx !== -1) cachedSubmissions[idx] = { ...cachedSubmissions[idx], analysis: updated };
         // #admin-sub is aria-live="polite" — this is what actually announces

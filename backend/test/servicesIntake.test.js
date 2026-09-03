@@ -63,6 +63,20 @@ async function authed(pathAndQuery, options = {}) {
   });
 }
 
+// analyzeSubmission's POST now returns immediately (202) and runs in the
+// background — see adminController.js's analyzeSubmission/
+// getAnalysisProgress.
+async function pollAnalysisProgress(submissionId, timeoutMs = 10000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const res = await authed(`/api/admin/submissions/${submissionId}/analyze/progress`);
+    const body = await res.json();
+    if (body.done) return body;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  throw new Error(`Timed out waiting for submission ${submissionId}'s analysis progress to report done:true`);
+}
+
 test.before(async () => {
   serverProcess = spawn("node", ["server.js"], {
     cwd: path.join(__dirname, ".."),
@@ -269,8 +283,8 @@ test("AI analysis is dispatched correctly for a 'services' submission — no lon
   // have gotten before ANALYSIS_FN_BY_TYPE recognized "services" — is what
   // proves the dispatch actually reached analyzeServicesSubmission.
   const res = await authed(`/api/admin/submissions/${singleServiceSubmissionId}/analyze`, { method: "POST" });
-  assert.equal(res.status, 200);
-  const { analysis } = await res.json();
+  assert.equal(res.status, 202, "the request runs in the background — see adminController.js's analyzeSubmission");
+  const { analysis } = await pollAnalysisProgress(singleServiceSubmissionId);
   assert.equal(analysis.status, "failed");
   assert.ok(analysis.error.includes("unknown_provider"));
 });
