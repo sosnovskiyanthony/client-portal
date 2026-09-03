@@ -325,6 +325,22 @@ button, input, textarea {
   padding: 4px;
   background: rgba(255, 255, 255, 0.03);
   border-radius: var(--radius-pill);
+  /* On the header's 7-tab nav (Home/Web Design/SEO/AI Integration/App
+     Building/Web Management/Contact), the full-label row is wider than
+     most phone viewports — this lets it scroll horizontally within the
+     pill instead of pushing the pill itself off-screen. A no-op on
+     desktop and on the shorter in-page section-nav (questionnaire steps),
+     which already fits and never needs to scroll. min-width:0 is required
+     for a flex child to actually respect overflow-x here rather than
+     stretching to fit its content regardless of available space. */
+  overflow-x: auto;
+  min-width: 0;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.nav-tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .nav-tab {
@@ -339,6 +355,8 @@ button, input, textarea {
   font-weight: 600;
   color: var(--text-tertiary);
   cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
   transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
 }
 
@@ -1262,8 +1280,9 @@ button, input, textarea {
   padding-bottom: 20px;
 }
 
-/* Used when a .home-hero-compact already provides top clearance for the
-   fixed nav pill, so .layout doesn't need to double that spacing. */
+/* Used when there's already substantial content above .layout (a hero,
+   an intro section) providing top clearance for the fixed nav pill, so
+   .layout doesn't need to double that spacing with its own full 110px. */
 .layout-tight {
   padding-top: 40px;
 }
@@ -3018,6 +3037,15 @@ a:focus-visible {
   margin: 0 auto;
 }
 
+/* 3-column variant (e.g. homepage "Ways to work together", now 5 real
+   services) — same collapse-on-narrow-screens behavior as .info-grid-2col
+   above, just a wider max-width for the extra column. */
+.info-grid-3col {
+  grid-template-columns: repeat(3, 1fr);
+  max-width: 980px;
+  margin: 0 auto;
+}
+
 .info-grid-spaced {
   margin-top: 24px;
 }
@@ -3153,6 +3181,13 @@ a:focus-visible {
 }
 
 @media (max-width: 640px) {
+  /* The header's 7-tab nav-tabs row (see the .nav-tabs rule above) is wider
+     than the screen at this width — it scrolls internally instead, but the
+     pill itself still needs a hard cap or it stretches to fit that content
+     and pushes past the viewport edge on both sides. Leaves room clear of
+     the fixed menu-toggle button (.menu-root, top-right) so the two never
+     overlap. */
+  .nav-pill { max-width: calc(100vw - 120px); }
   .nav-tab-label { display: none; }
   .nav-tab { padding: 8px; }
   .bento-grid, .toggle-grid, .info-grid { grid-template-columns: 1fr; }
@@ -3191,12 +3226,13 @@ a:focus-visible {
   }
 }
 
-/* Narrow phones (iPhone SE and similar, ~375px and under): four nav-pill
-   tabs at full padding can crowd the separate fixed menu-toggle button in
-   the top-right corner. Shrink the pill's own footprint instead of hiding
-   any nav item. */
+/* Narrow phones (iPhone SE and similar, ~375px and under): shrink the
+   pill's own padding further so more of the scrollable nav-tabs row (see
+   the .nav-tabs rule above) is visible at once, without hiding any nav
+   item — everything stays reachable by swiping the pill itself. */
 @media (max-width: 420px) {
   .nav-pill {
+    max-width: calc(100vw - 96px);
     padding: 6px 6px 6px 12px;
     gap: 6px;
   }

@@ -1571,10 +1571,25 @@ function closeModal() {
 
 // ---------- Entry point ----------
 
+// On narrow viewports the header's nav-tabs row scrolls horizontally
+// instead of fitting every tab on screen (see css/style.css's .nav-tabs) —
+// without this, whichever page you're actually on could load with its own
+// highlighted tab scrolled out of view off to the right, with nothing
+// visible to confirm you're looking at the right page until you swipe to
+// find it. A no-op wherever the row already fits (desktop, or a tab near
+// the start on mobile) — scrollIntoView does nothing when the target is
+// already visible.
+function initNavPillScroll() {
+  const activeTab = document.querySelector(".nav-tabs .nav-tab.active");
+  if (!activeTab) return;
+  activeTab.scrollIntoView({ block: "nearest", inline: "center" });
+}
+
 function initCommon() {
   initSpotlight();
   initCursor();
   initCoordReadout();
   initMenu();
   initModal();
+  initNavPillScroll();
 }
