@@ -3897,6 +3897,178 @@ a:focus-visible {
   min-width: 90px;
 }
 
+/* ---- AI Agreement Editor ---- */
+
+.edit-proposal {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.edit-proposal-summary {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+  line-height: 1.5;
+}
+
+.edit-proposal-clarification {
+  padding: 16px;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  background: rgba(251, 191, 36, 0.05);
+}
+
+.edit-clarification-list {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.edit-proposal-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+  font-weight: 600;
+}
+
+.edit-change-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  margin-bottom: 12px;
+  transition: border-color var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease);
+}
+.edit-change-card.edit-change-approved { border-color: rgba(74, 222, 128, 0.35); }
+.edit-change-card.edit-change-rejected { opacity: 0.55; }
+
+.edit-change-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.edit-change-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.edit-change-checkbox input { accent-color: var(--accent-1); }
+
+.edit-change-type {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 3px 8px;
+  border-radius: var(--radius-pill);
+}
+.edit-change-type-add { background: rgba(74, 222, 128, 0.15); color: #4ade80; }
+.edit-change-type-modify { background: rgba(56, 189, 248, 0.15); color: #38bdf8; }
+.edit-change-type-amend { background: rgba(129, 140, 248, 0.15); color: #818cf8; }
+.edit-change-type-remove { background: rgba(248, 113, 113, 0.15); color: #f87171; }
+
+.edit-change-section-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+  flex: 1;
+}
+
+.edit-change-confidence {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-tertiary);
+}
+.edit-change-confidence-low { color: #fbbf24; }
+
+.edit-change-rationale {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin-bottom: 12px;
+}
+
+.edit-change-diff {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.edit-change-diff:has(.edit-diff-before:only-child),
+.edit-change-diff:has(.edit-diff-after:only-child) {
+  grid-template-columns: 1fr;
+}
+
+.edit-diff-label {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-tertiary);
+  margin-bottom: 6px;
+}
+
+.edit-diff-text {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.edit-change-proposed-text {
+  width: 100%;
+  min-height: 90px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  font-size: 13px;
+  font-family: inherit;
+  line-height: 1.5;
+  color: var(--text-primary);
+  outline: none;
+  resize: vertical;
+  transition: border-color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+.edit-change-proposed-text:focus {
+  border-color: var(--border-selected);
+  background: var(--surface-hover);
+}
+
+.edit-error-text {
+  color: #f87171;
+}
+
+@media (max-width: 720px) {
+  .edit-change-diff {
+    grid-template-columns: 1fr;
+  }
+}
+
 .version-source {
   color: var(--text-tertiary);
   flex: 1;

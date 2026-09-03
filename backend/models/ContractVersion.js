@@ -1,6 +1,11 @@
 const { pool } = require("../config/database");
 
-const VALID_SOURCES = ["ai_generated", "admin_edited", "final"];
+// "ai_assisted_edit" — a version created by applying AI-proposed changes
+// (see controllers/contractController.js's applyContractEditChanges) that
+// an admin explicitly approved, distinct from "ai_generated" (the
+// original full AI draft) and "admin_edited" (a fully manual edit with no
+// AI involvement) — the contract audit log needs to distinguish these.
+const VALID_SOURCES = ["ai_generated", "admin_edited", "ai_assisted_edit", "final"];
 
 // version_number is computed as MAX(existing)+1 for this contract rather
 // than a shared sequence — deliberately not wrapped in a serializable

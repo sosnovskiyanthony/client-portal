@@ -30,6 +30,9 @@ router.get("/contracts/:id/review/progress", asyncHandler(contractController.get
 router.post("/contracts/:id/generate", analysisLimiter, asyncHandler(contractController.generateContract));
 router.get("/contracts/:id/generate/progress", asyncHandler(contractController.getContractGenerationProgress));
 router.patch("/contracts/:id/content", asyncHandler(contractController.saveContractContent));
+router.post("/contracts/:id/edit/interpret", analysisLimiter, asyncHandler(contractController.interpretContractEditInstruction));
+router.get("/contracts/:id/edit/progress", asyncHandler(contractController.getContractEditProgress));
+router.post("/contracts/:id/edit/apply", asyncHandler(contractController.applyContractEditChanges));
 router.get("/contracts/:id/versions", asyncHandler(contractController.getContractVersions));
 router.post("/contracts/:id/pdf", asyncHandler(contractController.generateContractPdfHandler));
 router.get("/contracts/:id/pdf", asyncHandler(contractController.getContractPdfUrl));

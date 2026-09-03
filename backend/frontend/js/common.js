@@ -1364,6 +1364,47 @@ async function saveContractContent(id, sections) {
   return data.contract;
 }
 
+// AI Agreement Editor — interpretation step. Genuinely fire-and-poll on the
+// backend (202 immediately, real result only via getContractEditProgress
+// below) — unlike reviewContractWithAi/generateContractWithAi above, this
+// POST resolves the instant the background run is scheduled, not when the
+// AI call finishes. See services/runContractEditInterpretation.js's
+// comment for why (the same production incident that motivated chat.js's
+// paste-and-analyze polling).
+async function startContractEditInterpretation(id, instruction) {
+  await contractFetch(`/api/admin/contracts/${id}/edit/interpret`, {
+    method: "POST",
+    body: { instruction },
+    errorFallback: "Couldn't start interpreting that instruction.",
+  });
+}
+
+// Fails soft (returns null instead of throwing) — same reasoning as
+// getContractReviewProgress: a missed poll shouldn't force a logout or
+// surface an error, just leave the UI showing its last-known state.
+async function getContractEditProgress(id) {
+  try {
+    const res = await fetch(`/api/admin/contracts/${id}/edit/progress`, {
+      headers: { Authorization: `Bearer ${getAdminToken()}` },
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (err) {
+    return null;
+  }
+}
+
+// Apply step — the only call that actually writes contract content as a
+// result of the AI Agreement Editor, and only for admin-approved changes.
+async function applyContractEditChanges(id, { changes, rejectedChanges, originalInstruction }) {
+  const data = await contractFetch(`/api/admin/contracts/${id}/edit/apply`, {
+    method: "POST",
+    body: { changes, rejectedChanges, originalInstruction },
+    errorFallback: "Couldn't apply the approved changes.",
+  });
+  return data;
+}
+
 async function getContractVersions(id) {
   const data = await contractFetch(`/api/admin/contracts/${id}/versions`, { errorFallback: "Couldn't load version history." });
   return data.versions;

@@ -80,6 +80,15 @@ const AI_CAPABILITIES = {
     modifyCode: false,
     modifyInfrastructure: false,
   },
+  interpretContractEditInstruction: {
+    read: ["contract's current generated_content.sections", "admin's natural-language edit instruction"],
+    write: [
+      "nothing automatically — proposed changes returned to the admin as a review-only structure; only applied to contracts (generated_content, a new contract_versions row) if the admin explicitly approves each change via controllers/contractController.js's applyContractEditChanges, which is the only thing that ever writes",
+    ],
+    execute: false,
+    modifyCode: false,
+    modifyInfrastructure: false,
+  },
   reviewCodeChange: {
     read: ["git diff", "changed file list", "matched test file contents"],
     write: ["nothing — advisory findings only, never applied automatically (see guardian/reviewCli.js)"],

@@ -13,6 +13,10 @@ const { getNextContractNumber } = require("../services/contractNumbering");
 const { logAction } = require("../services/contractAudit");
 const { runContractReview } = require("../services/runContractReview");
 const { runContractGeneration } = require("../services/runContractGeneration");
+const { runContractEditInterpretation } = require("../services/runContractEditInterpretation");
+const { applyContractEditChanges: applyContractEditChangesTx, ContractEditApplyError } = require("../services/applyContractEditChanges");
+const { ContractChangeSchema } = require("../ai/contractEditSchema");
+const aiService = require("../ai/aiService");
 const { generateContractPdf } = require("../services/contractPdf");
 const { buildContractEmailDraft } = require("../services/contractEmail");
 const { sendContractEmail } = require("../services/email");
@@ -396,6 +400,143 @@ async function saveContractContent(req, res) {
   res.json({ contract: updated });
 }
 
+// AI Agreement Editor — interpretation step. Turns an admin's plain-English
+// instruction into a structured, reviewable proposal (ai/contractEditSchema.js);
+// writes nothing (see guardian/rules.js's ai-contract-edit-propose-only
+// rule). Genuinely fire-and-poll from the start (202 + background, result
+// retrieved via getContractEditProgress) — unlike reviewContract/
+// generateContract above, which still hold the request open for the whole
+// AI call. Modeled directly on chatController.js's
+// analyzePastedTextForSubmission, which a real 2026-09 production incident
+// showed is the safer shape for a slow AI call: something ahead of this
+// app was cutting the client connection well before this app's own
+// (much larger) timeout/retry budget had a chance to respond.
+async function interpretContractEditInstruction(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) {
+    return res.status(400).json({ error: "Invalid contract id." });
+  }
+  const contract = await Contract.findById(id);
+  if (!contract) {
+    return res.status(404).json({ error: "Contract not found." });
+  }
+  if (contract.finalizedAt) {
+    return res.status(400).json({ error: "A finalized contract cannot be edited." });
+  }
+  if (!contract.generatedContent || !Array.isArray(contract.generatedContent.sections)) {
+    return res.status(400).json({ error: "This contract has no draft content yet — generate a draft first." });
+  }
+
+  const instruction = typeof req.body?.instruction === "string" ? req.body.instruction.trim() : "";
+  if (!instruction) {
+    return res.status(400).json({ error: "An instruction is required." });
+  }
+
+  // Same dedup reasoning as reviewContract/generateContract above — guards
+  // against a double-click firing two concurrent interpretations for the
+  // same contract.
+  if (analysisProgress.get("contract-edit", id)) {
+    return res.status(409).json({ error: "An interpretation is already in progress for this contract." });
+  }
+
+  const sections = contract.generatedContent.sections;
+  res.status(202).json({ started: true });
+
+  try {
+    const result = await runContractEditInterpretation(id, sections, instruction);
+    analysisProgress.complete("contract-edit", id, { ok: true, result, instruction });
+    await logAction(id, "contract_ai_edit_interpreted", req.user.sub, {
+      instruction,
+      clarificationNeeded: result.clarificationNeeded,
+      changeCount: result.changes.length,
+    });
+  } catch (err) {
+    if (err instanceof AiAnalysisError) {
+      analysisProgress.complete("contract-edit", id, { ok: false, error: err.message, code: err.code });
+    } else {
+      console.error(`[contractController] Unexpected error during background contract-edit interpretation (contract ${id}):`, err);
+      analysisProgress.complete("contract-edit", id, { ok: false, error: "Something went wrong interpreting this instruction.", code: "internal_error" });
+    }
+  }
+}
+
+function getContractEditProgress(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) {
+    return res.status(400).json({ error: "Invalid contract id." });
+  }
+  const progress = analysisProgress.get("contract-edit", id);
+  if (!progress) return res.json({ active: false });
+  if (progress.status === "done") return res.json({ active: false, done: true, ...progress.outcome });
+  return res.json({ active: true, stage: progress.stage });
+}
+
+// AI Agreement Editor — apply step. The ONLY code path that ever writes
+// contract content as a result of the AI Agreement Editor, and only for
+// changes the admin explicitly approved individually (guardian/rules.js's
+// ai-contract-edit-propose-only rule). `changes` is the admin-approved
+// subset of the proposal, using whatever final wording the admin approved
+// (they may have hand-edited proposedText before approving — see the
+// feature spec's manual-edit-before-approval requirement); `edited` on
+// each entry is a client-computed flag (final text != AI's original
+// proposedText) carried through purely for the audit log below.
+async function applyContractEditChanges(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) {
+    return res.status(400).json({ error: "Invalid contract id." });
+  }
+  const contract = await Contract.findById(id);
+  if (!contract) {
+    return res.status(404).json({ error: "Contract not found." });
+  }
+  if (contract.finalizedAt) {
+    return res.status(400).json({ error: "A finalized contract cannot be edited." });
+  }
+  if (!contract.generatedContent || !Array.isArray(contract.generatedContent.sections)) {
+    return res.status(400).json({ error: "This contract has no draft content yet." });
+  }
+
+  const { changes, rejectedChanges, originalInstruction } = req.body || {};
+  if (!Array.isArray(changes) || changes.length === 0) {
+    return res.status(400).json({ error: "At least one approved change is required." });
+  }
+
+  const parsedChanges = [];
+  for (const change of changes) {
+    const parsed = ContractChangeSchema.safeParse(change);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "One or more approved changes are malformed." });
+    }
+    parsedChanges.push({ ...parsed.data, edited: Boolean(change.edited) });
+  }
+
+  let outcome;
+  try {
+    outcome = await applyContractEditChangesTx({
+      contractId: id,
+      currentSections: contract.generatedContent.sections,
+      changes: parsedChanges,
+      actorUserId: req.user.sub,
+    });
+  } catch (err) {
+    if (err instanceof ContractEditApplyError) {
+      return res.status(409).json({ error: err.message, code: err.code });
+    }
+    throw err;
+  }
+
+  await logAction(id, "contract_ai_edit_applied", req.user.sub, {
+    originalInstruction: typeof originalInstruction === "string" ? originalInstruction : null,
+    aiProvider: aiService.getActiveProviderInfo(),
+    approvedChanges: parsedChanges.map((c) => ({ type: c.type, sectionKey: c.sectionKey, edited: c.edited })),
+    rejectedChangeCount: Array.isArray(rejectedChanges) ? rejectedChanges.length : 0,
+    resultingVersionNumber: outcome.version.versionNumber,
+    anyManuallyEdited: parsedChanges.some((c) => c.edited),
+  });
+
+  res.json({ contract: outcome.contract, version: outcome.version });
+}
+
 async function getContractVersions(req, res) {
   const id = Number(req.params.id);
   if (!Number.isInteger(id)) {
@@ -660,6 +801,9 @@ module.exports = {
   generateContract,
   getContractGenerationProgress,
   saveContractContent,
+  interpretContractEditInstruction,
+  getContractEditProgress,
+  applyContractEditChanges,
   getContractVersions,
   generateContractPdfHandler,
   getContractPdfUrl,

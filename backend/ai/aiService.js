@@ -53,6 +53,12 @@ const {
   CONTRACT_PROMPT_VERSION,
   buildContractUserMessage,
 } = require("./contractPrompt");
+const { ContractEditProposalSchema } = require("./contractEditSchema");
+const {
+  CONTRACT_EDIT_SYSTEM_PROMPT,
+  CONTRACT_EDIT_PROMPT_VERSION,
+  buildContractEditUserMessage,
+} = require("./contractEditPrompt");
 const { GuardianReviewSchema } = require("./guardianSchema");
 const {
   AI_GUARDIAN_PROMPT_VERSION,
@@ -676,6 +682,69 @@ async function generateContract(approvedData, templateSections, { client, onProg
   };
 }
 
+// AI Agreement Editor (see ai/contractEditPrompt.js,
+// controllers/contractController.js's interpretContractEditInstruction /
+// applyContractEditChanges) — turns an admin's plain-English instruction
+// about a contract into a structured, reviewable set of proposed changes.
+// This function only ever PROPOSES; it never writes to a contract, never
+// finalizes, never sends — see guardian/aiCapabilities.js's own entry for
+// this operation and guardian/rules.js's consequential-ops-need-human-
+// approval rule, which already covers this without needing a new one.
+// `currentSections` is the contract's current generatedContent.sections
+// array (or [] if no draft exists yet) — the AI is shown exactly what's
+// there today, nothing more, nothing assumed.
+async function interpretContractEditInstruction(currentSections, instruction, { client, onProgress } = {}) {
+  await assertAiAllowed("interpretContractEditInstruction");
+  const providerName = env.aiProvider;
+  const provider = PROVIDERS[providerName];
+  if (!provider) {
+    throw new AiAnalysisError(
+      "unknown_provider",
+      `AI_PROVIDER "${providerName}" is not recognized. Expected one of: ${Object.keys(PROVIDERS).join(", ")}.`
+    );
+  }
+
+  onProgress?.("preparing");
+  const userMessage = buildContractEditUserMessage(currentSections, instruction);
+  const model = provider.model();
+
+  onProgress?.("sending");
+  const { parsed } = await provider.impl.generateStructuredAnalysis({
+    systemPrompt: CONTRACT_EDIT_SYSTEM_PROMPT,
+    userMessage,
+    zodSchema: ContractEditProposalSchema,
+    model,
+    client,
+    onProgress,
+  });
+  onProgress?.("validating");
+
+  const validation = ContractEditProposalSchema.safeParse(parsed);
+  if (!validation.success) {
+    logSecurityEvent({
+      severity: "WARNING",
+      eventType: "ai_schema_validation_failed",
+      actorType: "ai_caller",
+      source: "aiService",
+      resourceType: "ai_operation",
+      resourceId: "interpretContractEditInstruction",
+      description: `Schema validation failed for interpretContractEditInstruction.`,
+      metadata: { issueCount: validation.error.issues.length },
+    }).then(() => checkCircuitBreaker()).catch(() => {});
+    throw new AiAnalysisError(
+      "invalid_schema",
+      `AI response did not match the required contract-edit-proposal schema: ${validation.error.issues.map((i) => i.path.join(".") + " " + i.message).join("; ")}`
+    );
+  }
+
+  return {
+    result: validation.data,
+    model,
+    provider: providerName,
+    promptVersion: CONTRACT_EDIT_PROMPT_VERSION,
+  };
+}
+
 // Guardian's AI code reviewer (see guardian/collectDiff.js,
 // guardian/reviewCli.js) — same PROVIDERS dispatch, same confidence
 // normalization, same central `.safeParse` validation, same
@@ -761,6 +830,7 @@ module.exports = {
   draftEmail,
   reviewContract,
   generateContract,
+  interpretContractEditInstruction,
   reviewCodeChange,
   getActiveProviderInfo,
   AiAnalysisError,

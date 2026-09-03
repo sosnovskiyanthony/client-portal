@@ -294,6 +294,7 @@
       ${renderCustomTermsSection()}
       ${renderReviewSection()}
       ${renderGenerationSection()}
+      ${renderContractEditSection()}
       ${renderPdfSection()}
       ${renderEmailSection()}
     `;
@@ -309,6 +310,7 @@
     wireCustomTermsSection();
     wireReviewSection();
     wireGenerationSection();
+    wireContractEditSection();
     wirePdfSection();
     wireEmailSection();
     loadVersionHistory();
@@ -997,7 +999,287 @@
     });
   }
 
-  const VERSION_SOURCE_LABELS = { ai_generated: "AI Generated", admin_edited: "Edited by Admin", final: "Final" };
+  // ---- AI Agreement Editor ----
+  // Turns a plain-English instruction into a structured, reviewable
+  // proposal (ai/contractEditSchema.js) — nothing is ever applied until the
+  // admin explicitly approves individual changes and clicks "Apply
+  // Approved Changes" below (guardian/rules.js's
+  // ai-contract-edit-propose-only rule). Unlike Review/Generate above,
+  // this genuinely fire-and-polls on the backend (202 + background), so
+  // its polling loop also has to resolve/reject on a final outcome, not
+  // just cosmetically update a stage list — see pollContractEditOutcome.
+  const CONTRACT_EDIT_STAGES = [
+    { key: "preparing", label: "Reading the contract's current sections" },
+    { key: "sending", label: "Sending to Ollama" },
+    { key: "generating", label: "Ollama is interpreting the instruction…" },
+    { key: "validating", label: "Validating AI response" },
+  ];
+  const EDIT_POLL_TIMEOUT_MS = 10 * 60 * 1000; // matches chat.js's POLL_TIMEOUT_MS reasoning exactly
+
+  let editInterpretInFlight = false;
+  let editTickHandle = null;
+  let currentEditProposal = null; // the last AI proposal (or null before one exists)
+  let editChangeState = []; // parallel array to currentEditProposal.changes: [{ approved, proposedText, edited }]
+  let lastEditInstruction = "";
+
+  function pollContractEditOutcome(getProgressContainer) {
+    const pollStartedAt = Date.now();
+    return new Promise((resolve, reject) => {
+      const handle = setInterval(async () => {
+        if (Date.now() - pollStartedAt > EDIT_POLL_TIMEOUT_MS) {
+          clearInterval(handle);
+          reject(new Error("Lost contact with the interpretation — the server may have restarted. Try again."));
+          return;
+        }
+        const progress = await getContractEditProgress(activeContract.id);
+        if (!progress) return; // a single dropped poll is transient — the next tick retries
+        if (progress.active) {
+          applyStageProgress(getProgressContainer(), progress);
+          return;
+        }
+        if (progress.done) {
+          clearInterval(handle);
+          if (progress.ok) resolve(progress.result);
+          else reject(Object.assign(new Error(progress.error || "Interpretation failed."), { code: progress.code }));
+        }
+      }, 1000);
+    });
+  }
+
+  const CHANGE_TYPE_LABELS = { ADD: "Add", MODIFY: "Modify", REMOVE: "Remove", AMEND: "Amend" };
+
+  function renderEditChangeCard(change, i, state) {
+    const isAdd = change.type === "ADD";
+    const isRemove = change.type === "REMOVE";
+    return `
+      <div class="edit-change-card ${state.approved ? "edit-change-approved" : "edit-change-rejected"}" data-change-index="${i}">
+        <div class="edit-change-header">
+          <label class="edit-change-checkbox">
+            <input type="checkbox" class="edit-change-approve-toggle" data-index="${i}" ${state.approved ? "checked" : ""} />
+            <span>Approve</span>
+          </label>
+          <span class="edit-change-type edit-change-type-${change.type.toLowerCase()}">${escapeHtml(CHANGE_TYPE_LABELS[change.type] || change.type)}</span>
+          <span class="edit-change-section-title">${escapeHtml(change.sectionTitle)}</span>
+          <span class="edit-change-confidence edit-change-confidence-${escapeHtml(change.confidence)}">${escapeHtml(change.confidence)} confidence</span>
+        </div>
+        <p class="edit-change-rationale">${escapeHtml(change.rationale)}</p>
+        <div class="edit-change-diff">
+          ${
+            !isAdd
+              ? `<div class="edit-diff-before"><span class="edit-diff-label">Current</span><pre class="edit-diff-text">${escapeHtml(change.currentText || "")}</pre></div>`
+              : ""
+          }
+          ${
+            !isRemove
+              ? `<div class="edit-diff-after"><span class="edit-diff-label" data-proposed-label="${i}">${isAdd ? "New section text" : "Proposed"}${state.edited ? " (edited by you)" : ""}</span><textarea class="edit-change-proposed-text" data-index="${i}" rows="4">${escapeHtml(state.proposedText || "")}</textarea></div>`
+              : ""
+          }
+        </div>
+      </div>
+    `;
+  }
+
+  function editApprovedCount() {
+    return editChangeState.filter((s) => s.approved).length;
+  }
+
+  function renderEditProposal() {
+    if (!currentEditProposal) return "";
+    if (currentEditProposal.clarificationNeeded) {
+      return `
+        <div class="edit-proposal edit-proposal-clarification">
+          <p class="edit-proposal-summary">${escapeHtml(currentEditProposal.summary)}</p>
+          <p class="contract-section-footnote">This instruction is too ambiguous to turn into safe, specific changes. Answer the questions below (in your next instruction) and try again:</p>
+          <ul class="edit-clarification-list">
+            ${currentEditProposal.clarificationQuestions.map((q) => `<li>${escapeHtml(q)}</li>`).join("")}
+          </ul>
+        </div>
+      `;
+    }
+    if (currentEditProposal.changes.length === 0) {
+      return `<p class="contract-section-footnote">The AI didn't propose any changes for that instruction.</p>`;
+    }
+    return `
+      <div class="edit-proposal">
+        <p class="edit-proposal-summary">${escapeHtml(currentEditProposal.summary)}</p>
+        <p class="contract-section-footnote">${escapeHtml(currentEditProposal.interpretation)}</p>
+        <div class="edit-proposal-controls">
+          <span id="edit-approved-count">${editApprovedCount()} of ${editChangeState.length} approved</span>
+          <button class="btn btn-ghost btn-small" id="btn-edit-approve-all" type="button">Approve All</button>
+          <button class="btn btn-ghost btn-small" id="btn-edit-reject-all" type="button">Reject All</button>
+        </div>
+        <div id="edit-change-cards">
+          ${currentEditProposal.changes.map((c, i) => renderEditChangeCard(c, i, editChangeState[i])).join("")}
+        </div>
+        <button class="btn btn-primary" id="btn-apply-edit-changes" type="button" ${editApprovedCount() === 0 ? "disabled" : ""}>Apply Approved Changes</button>
+      </div>
+    `;
+  }
+
+  function renderContractEditSection() {
+    const c = activeContract;
+    const hasDraft = Boolean(c.generatedContent && Array.isArray(c.generatedContent.sections) && c.generatedContent.sections.length > 0);
+    const blocked = c.finalizedAt ? "This contract is finalized and can no longer be edited." : !hasDraft ? "Generate a draft above before using the AI Agreement Editor." : null;
+
+    return sectionCard(
+      "AI Agreement Instructions",
+      `
+      <p class="contract-section-footnote">Describe the change you want in plain English. The AI proposes specific edits below — nothing is applied to the contract until you review and approve each one individually.</p>
+      ${blocked ? `<p class="contract-section-footnote">${escapeHtml(blocked)}</p>` : ""}
+      <label class="contract-field"><span>Instruction</span>
+        <textarea id="edit-instruction-input" rows="3" placeholder="e.g. Add a 2% per month late fee to the payment terms." ${blocked ? "disabled" : ""}></textarea>
+      </label>
+      <button class="btn btn-primary" id="btn-interpret-edit" type="button" ${blocked ? "disabled" : ""}>Interpret Instruction</button>
+      <div id="edit-progress-container"></div>
+      <div id="edit-error-container"></div>
+      <div id="edit-proposal-container">${renderEditProposal()}</div>
+    `
+    );
+  }
+
+  function resetEditProposalState() {
+    currentEditProposal = null;
+    editChangeState = [];
+  }
+
+  function wireEditProposalControls() {
+    const container = document.getElementById("edit-proposal-container");
+    if (!container) return;
+
+    container.querySelectorAll(".edit-change-approve-toggle").forEach((el) => {
+      el.addEventListener("change", (e) => {
+        const i = Number(e.target.dataset.index);
+        editChangeState[i].approved = e.target.checked;
+        e.target.closest(".edit-change-card").classList.toggle("edit-change-approved", e.target.checked);
+        e.target.closest(".edit-change-card").classList.toggle("edit-change-rejected", !e.target.checked);
+        const countEl = document.getElementById("edit-approved-count");
+        if (countEl) countEl.textContent = `${editApprovedCount()} of ${editChangeState.length} approved`;
+        const applyBtn = document.getElementById("btn-apply-edit-changes");
+        if (applyBtn) applyBtn.disabled = editApprovedCount() === 0;
+      });
+    });
+
+    container.querySelectorAll(".edit-change-proposed-text").forEach((el) => {
+      el.addEventListener("input", (e) => {
+        const i = Number(e.target.dataset.index);
+        editChangeState[i].proposedText = e.target.value;
+        editChangeState[i].edited = e.target.value !== currentEditProposal.changes[i].proposedText;
+
+        // Update just the label in place — re-rendering the whole card here
+        // would blow away the textarea's cursor position mid-keystroke.
+        const label = container.querySelector(`[data-proposed-label="${i}"]`);
+        if (label) {
+          const isAdd = currentEditProposal.changes[i].type === "ADD";
+          label.textContent = `${isAdd ? "New section text" : "Proposed"}${editChangeState[i].edited ? " (edited by you)" : ""}`;
+        }
+      });
+    });
+
+    const approveAllBtn = document.getElementById("btn-edit-approve-all");
+    const rejectAllBtn = document.getElementById("btn-edit-reject-all");
+    if (approveAllBtn) {
+      approveAllBtn.addEventListener("click", () => {
+        editChangeState.forEach((s) => (s.approved = true));
+        document.getElementById("edit-proposal-container").innerHTML = renderEditProposal();
+        wireEditProposalControls();
+      });
+    }
+    if (rejectAllBtn) {
+      rejectAllBtn.addEventListener("click", () => {
+        editChangeState.forEach((s) => (s.approved = false));
+        document.getElementById("edit-proposal-container").innerHTML = renderEditProposal();
+        wireEditProposalControls();
+      });
+    }
+
+    const applyBtn = document.getElementById("btn-apply-edit-changes");
+    if (applyBtn) {
+      applyBtn.addEventListener("click", async () => {
+        applyBtn.disabled = true;
+        applyBtn.textContent = "Applying…";
+        const errorContainer = document.getElementById("edit-error-container");
+        errorContainer.innerHTML = "";
+
+        const approvedChanges = [];
+        const rejectedChanges = [];
+        currentEditProposal.changes.forEach((c, i) => {
+          const state = editChangeState[i];
+          const finalChange = { ...c, proposedText: state.proposedText, edited: state.edited };
+          if (state.approved) approvedChanges.push(finalChange);
+          else rejectedChanges.push(finalChange);
+        });
+
+        try {
+          const result = await applyContractEditChanges(activeContract.id, {
+            changes: approvedChanges,
+            rejectedChanges,
+            originalInstruction: lastEditInstruction,
+          });
+          activeContract = result.contract;
+          resetEditProposalState();
+          document.getElementById("edit-instruction-input").value = "";
+          document.getElementById("draft-sections-container").innerHTML = renderGeneratedSections(activeContract.generatedContent);
+          document.getElementById("edit-proposal-container").innerHTML = "";
+          renderBuilderHeader();
+          loadVersionHistory();
+        } catch (err) {
+          errorContainer.innerHTML = `<p class="contract-section-footnote edit-error-text">${escapeHtml(err.message)}</p>`;
+          applyBtn.disabled = editApprovedCount() === 0;
+          applyBtn.textContent = "Apply Approved Changes";
+        }
+      });
+    }
+  }
+
+  function wireContractEditSection() {
+    const btn = document.getElementById("btn-interpret-edit");
+    if (!btn) return; // section is render-only (blocked) when there's no draft yet
+
+    btn.addEventListener("click", async () => {
+      if (editInterpretInFlight) return;
+      const instructionInput = document.getElementById("edit-instruction-input");
+      const instruction = instructionInput.value.trim();
+      if (!instruction) {
+        instructionInput.focus();
+        return;
+      }
+
+      editInterpretInFlight = true;
+      const startTime = Date.now();
+      btn.disabled = true;
+      btn.textContent = "Interpreting… 0:00";
+      document.getElementById("edit-error-container").innerHTML = "";
+      document.getElementById("edit-proposal-container").innerHTML = "";
+
+      const progressContainer = document.getElementById("edit-progress-container");
+      progressContainer.innerHTML = renderStageList(CONTRACT_EDIT_STAGES);
+
+      editTickHandle = setInterval(() => {
+        const s = Math.floor((Date.now() - startTime) / 1000);
+        btn.textContent = `Interpreting… ${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+      }, 1000);
+
+      try {
+        await startContractEditInterpretation(activeContract.id, instruction);
+        const proposal = await pollContractEditOutcome(() => document.getElementById("edit-progress-container"));
+        lastEditInstruction = instruction;
+        currentEditProposal = proposal;
+        editChangeState = proposal.changes.map((c) => ({ approved: true, proposedText: c.proposedText || "", edited: false }));
+        document.getElementById("edit-proposal-container").innerHTML = renderEditProposal();
+        wireEditProposalControls();
+      } catch (err) {
+        document.getElementById("edit-error-container").innerHTML = `<p class="contract-section-footnote edit-error-text">${escapeHtml(err.message)}</p>`;
+      } finally {
+        clearInterval(editTickHandle);
+        editInterpretInFlight = false;
+        btn.disabled = false;
+        btn.textContent = "Interpret Instruction";
+        progressContainer.innerHTML = "";
+      }
+    });
+  }
+
+  const VERSION_SOURCE_LABELS = { ai_generated: "AI Generated", admin_edited: "Edited by Admin", ai_assisted_edit: "AI-Assisted Edit", final: "Final" };
 
   async function loadVersionHistory() {
     const container = document.getElementById("version-history-container");
