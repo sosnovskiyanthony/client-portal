@@ -32,13 +32,57 @@
   "@context": "https://schema.org",
   "@type": "Service",
   "serviceType": "SEO Consulting",
-  "provider": {
-    "@type": "Organization",
-    "name": "BrindLeaf",
-    "url": "https://brindleaf.com/"
-  },
+  "provider": { "@id": "https://brindleaf.com/#organization" },
   "description": "A structured audit of your site's technical health, keyword strategy, and search visibility — covering crawlability, structured data, and on-page fixes.",
   "url": "https://brindleaf.com/seo"
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "What does the SEO review actually cover?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Technical SEO (crawlability, indexability, structured data, Core Web Vitals), keyword strategy (what you already rank for vs. what you should target), and a diagnosis of where search is actually letting you down — not ranking, declining traffic, low click-through, or poor conversion — plus concrete on-page and internal linking fixes, not generic checklist advice."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Do I need to share Analytics or Search Console access?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Not required upfront. The initial review works from what's publicly visible on your site plus what you describe in the form. If you share Analytics, Search Console, or past agency reports, the findings go deeper — but nothing has to be handed over just to get started."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Is this a one-time audit or an ongoing strategy?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Both are available. Some clients want a single structured audit with a clear fix list; others want ongoing keyword strategy and ranking work over time. The review scopes either, depending on what you're actually looking for."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "I'm having a new site built — do I still need this?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Every site BrindLeaf ships already includes clean technical SEO foundations by default — crawlability, structured data, and proper metadata come standard, not as an upsell. This SEO Consultation is for a deeper audit or an ongoing keyword/ranking strategy, on a new build or an existing site."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How is pricing handled?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "There's no fixed public price. Every SEO engagement starts with the review, gets assessed, and comes back with a custom quote based on the actual scope — a one-time audit and an ongoing strategy are priced differently."
+      }
+    }
+  ]
 }
 </script>
 <script type="application/ld+json">
@@ -49,6 +93,18 @@
     { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://brindleaf.com/" },
     { "@type": "ListItem", "position": 2, "name": "SEO", "item": "https://brindleaf.com/seo" }
   ]
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebPage",
+  "@id": "https://brindleaf.com/seo#webpage",
+  "url": "https://brindleaf.com/seo",
+  "name": "SEO Consulting & Technical SEO Services | BrindLeaf",
+  "isPartOf": { "@id": "https://brindleaf.com/#website" },
+  "about": { "@id": "https://brindleaf.com/#organization" },
+  "inLanguage": "en"
 }
 </script>
 <!-- GA_TAG -->
@@ -308,6 +364,88 @@
   </aside>
 
 </div>
+
+<!-- FAQ -->
+<section class="faq-container">
+  <div class="faq-header">
+    <span class="eyebrow">Common questions</span>
+    <h2 class="faq-heading">Frequently Asked Questions</h2>
+  </div>
+
+  <div class="faq-panel">
+    <div class="accordion">
+      <div class="accordion-item">
+        <h3 class="accordion-item-heading">
+          <button class="accordion-question" type="button" aria-expanded="false" aria-controls="seo-faq-answer-1" id="seo-faq-question-1">
+            <span>What does the SEO review actually cover?</span>
+            <span class="accordion-icon" aria-hidden="true"></span>
+          </button>
+        </h3>
+        <div class="accordion-answer-wrap" id="seo-faq-answer-1" role="region" aria-labelledby="seo-faq-question-1">
+          <div class="accordion-answer-inner">
+            <p>Technical SEO (crawlability, indexability, structured data, Core Web Vitals), keyword strategy (what you already rank for vs. what you should target), and a diagnosis of where search is actually letting you down — not ranking, declining traffic, low click-through, or poor conversion — plus concrete on-page and internal linking fixes, not generic checklist advice.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="accordion-item">
+        <h3 class="accordion-item-heading">
+          <button class="accordion-question" type="button" aria-expanded="false" aria-controls="seo-faq-answer-2" id="seo-faq-question-2">
+            <span>Do I need to share Analytics or Search Console access?</span>
+            <span class="accordion-icon" aria-hidden="true"></span>
+          </button>
+        </h3>
+        <div class="accordion-answer-wrap" id="seo-faq-answer-2" role="region" aria-labelledby="seo-faq-question-2">
+          <div class="accordion-answer-inner">
+            <p>Not required upfront. The initial review works from what's publicly visible on your site plus what you describe in the form above. If you share Analytics, Search Console, or past agency reports, the findings go deeper — but nothing has to be handed over just to get started.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="accordion-item">
+        <h3 class="accordion-item-heading">
+          <button class="accordion-question" type="button" aria-expanded="false" aria-controls="seo-faq-answer-3" id="seo-faq-question-3">
+            <span>Is this a one-time audit or an ongoing strategy?</span>
+            <span class="accordion-icon" aria-hidden="true"></span>
+          </button>
+        </h3>
+        <div class="accordion-answer-wrap" id="seo-faq-answer-3" role="region" aria-labelledby="seo-faq-question-3">
+          <div class="accordion-answer-inner">
+            <p>Both are available. Some clients want a single structured audit with a clear fix list; others want ongoing keyword strategy and ranking work over time. The review above scopes either, depending on what you're actually looking for.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="accordion-item">
+        <h3 class="accordion-item-heading">
+          <button class="accordion-question" type="button" aria-expanded="false" aria-controls="seo-faq-answer-4" id="seo-faq-question-4">
+            <span>I'm having a new site built — do I still need this?</span>
+            <span class="accordion-icon" aria-hidden="true"></span>
+          </button>
+        </h3>
+        <div class="accordion-answer-wrap" id="seo-faq-answer-4" role="region" aria-labelledby="seo-faq-question-4">
+          <div class="accordion-answer-inner">
+            <p>Every site BrindLeaf ships already includes clean technical SEO foundations by default — crawlability, structured data, and proper metadata come standard, not as an upsell. This SEO Consultation is for a deeper audit or an ongoing keyword/ranking strategy, on a new build or an existing site. See <a href="/web-design">Web Design</a> for what's included by default.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="accordion-item">
+        <h3 class="accordion-item-heading">
+          <button class="accordion-question" type="button" aria-expanded="false" aria-controls="seo-faq-answer-5" id="seo-faq-question-5">
+            <span>How is pricing handled?</span>
+            <span class="accordion-icon" aria-hidden="true"></span>
+          </button>
+        </h3>
+        <div class="accordion-answer-wrap" id="seo-faq-answer-5" role="region" aria-labelledby="seo-faq-question-5">
+          <div class="accordion-answer-inner">
+            <p>There's no fixed public price. Every SEO engagement starts with the review above, gets assessed, and comes back with a custom quote based on the actual scope — a one-time audit and an ongoing strategy are priced differently.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
 
 <section class="success-state" id="success-state" hidden>
   <div class="success-inner">

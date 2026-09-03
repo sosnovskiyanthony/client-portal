@@ -31,18 +31,44 @@
 {
   "@context": "https://schema.org",
   "@type": "Organization",
+  "@id": "https://brindleaf.com/#organization",
   "name": "BrindLeaf",
   "url": "https://brindleaf.com/",
   "description": "Custom web design and SEO for brands that want a site that actually converts and gets found.",
-  "logo": "https://brindleaf.com/favicon.svg"
+  "logo": "https://brindleaf.com/favicon.svg",
+  "areaServed": "Worldwide",
+  "knowsAbout": [
+    "Custom Web Design",
+    "Custom Web Development",
+    "SEO",
+    "Technical SEO",
+    "AI Integration",
+    "AI Automation",
+    "Custom Web Applications",
+    "Website Management"
+  ]
 }
 </script>
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
   "@type": "WebSite",
+  "@id": "https://brindleaf.com/#website",
   "name": "BrindLeaf",
-  "url": "https://brindleaf.com/"
+  "url": "https://brindleaf.com/",
+  "publisher": { "@id": "https://brindleaf.com/#organization" }
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebPage",
+  "@id": "https://brindleaf.com/#webpage",
+  "url": "https://brindleaf.com/",
+  "name": "Custom Web Design & Development | BrindLeaf",
+  "isPartOf": { "@id": "https://brindleaf.com/#website" },
+  "about": { "@id": "https://brindleaf.com/#organization" },
+  "inLanguage": "en"
 }
 </script>
 <script type="application/ld+json">
@@ -160,7 +186,7 @@
 <!-- Hero -->
 <section class="home-hero">
   <span class="eyebrow">BrindLeaf — Web Design &amp; Development</span>
-  <h1 class="home-title">Websites built with the same<br />obsession you bring to <span class="text-gradient">your craft.</span></h1>
+  <h1 class="home-title">Custom web design &amp; development,<br />built with the same obsession you bring to <span class="text-gradient">your craft.</span></h1>
   <p class="home-sub">I design and build fast, considered, custom digital experiences for brands that refuse to look off-the-shelf — no page builders, no bloat, just deliberate interfaces backed by clean engineering.</p>
 
   <div class="home-highlights">

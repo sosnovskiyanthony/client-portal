@@ -297,6 +297,7 @@
   function init() {
     initCommon();
     initMagneticCards();
+    initAccordion();
     initTabs();
     initSelectors();
     initTextInputs();
