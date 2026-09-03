@@ -125,9 +125,7 @@ async function consumeOllamaStream(body, onChunk) {
   let toolCalls = null;
   let finalLine = null;
 
-  for await (const rawChunk of body) {
-    onChunk();
-    buffer += decoder.decode(rawChunk, { stream: true });
+  function processBufferedLines() {
     let newlineIndex;
     while ((newlineIndex = buffer.indexOf("\n")) !== -1) {
       const line = buffer.slice(0, newlineIndex).trim();
@@ -146,6 +144,21 @@ async function consumeOllamaStream(body, onChunk) {
       if (parsed?.done) finalLine = parsed;
     }
   }
+
+  for await (const rawChunk of body) {
+    onChunk();
+    buffer += decoder.decode(rawChunk, { stream: true });
+    processBufferedLines();
+  }
+  // decoder.decode(chunk, {stream:true}) can hold back the trailing bytes
+  // of a multi-byte UTF-8 character it isn't yet sure is complete — normally
+  // resolved by the next chunk, but if the network stream's true last bytes
+  // happen to end mid-character (an em dash, a curly quote, an accented
+  // name), there is no next chunk to complete it. This final no-argument
+  // flush surfaces that as a visible replacement character instead of
+  // silently dropping it from the result with no trace at all.
+  buffer += decoder.decode();
+  processBufferedLines();
 
   if (!finalLine) {
     throw new AiAnalysisError("invalid_json", "Ollama's streamed response ended without a completion marker.");

@@ -82,6 +82,16 @@
     }, 1000);
   }
 
+  // Comfortably above ollamaProvider.js's own REQUEST_TIMEOUT_MS (4
+  // minutes) — the backend should always report done:true well before
+  // this fires under normal operation. This exists for the case where it
+  // never does: a server restart/crash mid-analysis (e.g. a new deploy)
+  // leaves nothing to ever report completion, and without a ceiling here
+  // the polling loop below would wait on fetchProgress() forever with no
+  // feedback to the admin at all — silently spinning on a stale "Working…"
+  // label rather than surfacing a real error.
+  const POLL_TIMEOUT_MS = 6 * 60 * 1000;
+
   // Paste-and-analyze runs in the background on the server (see
   // chatController.js) and returns immediately from its own POST — the
   // actual result only ever arrives through this polling loop, not the
@@ -91,9 +101,15 @@
   // enough for anything ahead of this app to cut it off before the real
   // outcome is known.
   function pollForOutcome(fetchProgress) {
+    const pollStartedAt = Date.now();
     return new Promise((resolve, reject) => {
       stopPolling();
       progressPollHandle = setInterval(async () => {
+        if (Date.now() - pollStartedAt > POLL_TIMEOUT_MS) {
+          stopPolling();
+          reject(new Error("Lost contact with the analysis — the server may have restarted. Try again."));
+          return;
+        }
         let progress;
         try {
           progress = await fetchProgress();

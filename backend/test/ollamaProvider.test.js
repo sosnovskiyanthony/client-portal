@@ -103,6 +103,27 @@ test("valid JSON content parses successfully and passes the JSON schema for the 
   assert.equal(capturedBody.stream, true, "must request a streamed response — see ollamaProvider.js's module comment on why");
 });
 
+// Regression test for a bug found in a manual audit (2026-09-02, same
+// session as the streaming switch itself): consumeOllamaStream's
+// TextDecoder.decode(chunk, {stream:true}) can hold back the trailing
+// bytes of a multi-byte UTF-8 character across a chunk boundary, only
+// resolved once decode() is called again — either on the next chunk, or
+// (the case this fix added) a final no-argument flush call once the
+// stream ends. ndjsonBody's deliberately tiny 7-byte chunking (see
+// test/helpers/ollamaStream.js) reliably splits multi-byte characters
+// across reads, so real content with an em dash, a curly quote, and an
+// emoji exercises exactly the mechanism this fix touches.
+test("multi-byte UTF-8 content split across small chunk boundaries reassembles correctly", async () => {
+  const contentWithMultiByteChars = 'The client said "we need this fast" — timeline is tight 🎉 café';
+  await withMockedFetch(
+    async () => ({ ok: true, status: 200, body: ndjsonSuccess(JSON.stringify({ foo: contentWithMultiByteChars })) }),
+    async () => {
+      const result = await generateStructuredAnalysis({ systemPrompt: "sys", userMessage: "msg", zodSchema: TINY_SCHEMA, model: "qwen2.5:7b" });
+      assert.equal(result.parsed.foo, contentWithMultiByteChars);
+    }
+  );
+});
+
 test("HTTP 500 from Ollama classifies as provider_error", async () => {
   await withMockedFetch(
     async () => ({ ok: false, status: 500, text: async () => "internal error" }),
