@@ -37,22 +37,27 @@ const ALLOWED_TOOL_NAMES = ["web_search"];
 // operation (first attempt + retry combined, see FIRST_ATTEMPT_TIMEOUT_MS
 // below) — a retry never extends it.
 //
-// Deliberately kept under 5 minutes, not just "generous" — a real
-// production incident (2026-09-02) showed this set to exactly 300003ms
-// produce a bare, unhelpful "Request failed." in the browser instead of
-// the specific timeout message this module actually generates. Follow-up
-// evidence (server logs confirming the client connection was already gone
-// at both the ~139s and ~240s marks on two separate attempts) showed
-// something ahead of this app was cutting the client-facing connection
-// well under either mark, regardless of exactly where this ceiling sits —
-// so shortening it further wasn't a reliable fix on its own. The actual
-// fix for that reporting gap is chatController.js's paste-and-analyze
-// routes now running this call in the background and returning
-// immediately, so no single HTTP request needs to survive as long as this
-// value allows in the first place. This timeout stays under 5 minutes
-// regardless, as real margin: it still bounds how long a genuinely-stuck
-// Ollama connection is left open, independent of anything client-facing.
-const REQUEST_TIMEOUT_MS = 4 * 60 * 1000;
+// Was briefly shortened to 4 minutes (2026-09-02) chasing a report of a
+// bare, unhelpful "Request failed." in the browser instead of this
+// module's own specific timeout message — that turned out to be the wrong
+// lever: chatController.js's paste-and-analyze routes now run this call in
+// the background and return immediately, so no single HTTP request is
+// ever held open long enough for anything client-facing to cut it off,
+// regardless of where this ceiling sits. That fix made the reporting
+// problem go away independent of this value, freeing it back up.
+//
+// Real evidence the same day argued for LONGER, not shorter: a production
+// log showed Ollama accept a request and stream real, continuous data for
+// the entire previous 4-minute ceiling before getting cut off mid-
+// generation (the abort landed almost exactly on the overall deadline,
+// not on an inactivity gap — the tell that data was still actively
+// arriving, not that the connection had gone silent). That's a real,
+// working generation that simply needed more room, not a stuck one. 8
+// minutes gives real local hardware meaningfully more room to finish a
+// large structured-JSON analysis before this hard ceiling (first attempt
+// + retry combined, see FIRST_ATTEMPT_TIMEOUT_MS below — a retry never
+// extends it) cuts it off.
+const REQUEST_TIMEOUT_MS = 8 * 60 * 1000;
 
 // Confirmed via a real deploy log: a Tailscale connection attempt (userspace-
 // networking mode, see lib/tailscaleDispatcher.js) to the Ollama host can go
@@ -97,6 +102,18 @@ const MAX_OUTPUT_TOKENS = 4096;
 // full minute during active generation is the real stall signal.
 const STREAM_INACTIVITY_TIMEOUT_MS = 60 * 1000;
 
+// How often to log that a stream is still actively receiving data.
+// Without this, the only direct server-side evidence that a long-running
+// generation was genuinely working (vs. stuck) was inferring it from
+// retry/timeout arithmetic after the fact — exactly what a real incident
+// (2026-09-02) required to conclude a 4-minute cutoff landed on an
+// actively-streaming request, not a stalled one. This makes that fact
+// directly visible in the logs as it happens, instead of requiring that
+// inference next time. Every-10-seconds, not every chunk — a real
+// generation can produce many small NDJSON lines per second, and logging
+// each one would drown everything else out for no added signal.
+const STREAM_PROGRESS_LOG_INTERVAL_MS = 10 * 1000;
+
 // Consumes an Ollama streamed /api/chat response — newline-delimited JSON,
 // one object per token/chunk, a final line marked done:true carrying the
 // generation's stats — and accumulates it into one result shaped like
@@ -118,12 +135,14 @@ const STREAM_INACTIVITY_TIMEOUT_MS = 60 * 1000;
 // rather than folding it into the connectivity retry/classification path
 // (see the `if (err instanceof AiAnalysisError) throw err;` guard in
 // each attempt() below).
-async function consumeOllamaStream(body, onChunk) {
+async function consumeOllamaStream(body, onChunk, { startedAt, logLabel = "response" } = {}) {
   const decoder = new TextDecoder();
   let buffer = "";
   let content = "";
   let toolCalls = null;
   let finalLine = null;
+  let chunkCount = 0;
+  let lastLoggedAt = Date.now();
 
   function processBufferedLines() {
     let newlineIndex;
@@ -147,6 +166,12 @@ async function consumeOllamaStream(body, onChunk) {
 
   for await (const rawChunk of body) {
     onChunk();
+    chunkCount++;
+    if (Date.now() - lastLoggedAt >= STREAM_PROGRESS_LOG_INTERVAL_MS) {
+      lastLoggedAt = Date.now();
+      const elapsed = startedAt ? `${Date.now() - startedAt}ms elapsed, ` : "";
+      console.log(`[ollamaProvider] Still receiving ${logLabel} — ${elapsed}${chunkCount} chunks so far.`);
+    }
     buffer += decoder.decode(rawChunk, { stream: true });
     processBufferedLines();
   }
@@ -235,7 +260,7 @@ async function generateStructuredAnalysis({ systemPrompt, userMessage, zodSchema
       });
       if (!res.ok) return { res };
       console.log(`[ollamaProvider] Ollama accepted the request after ${Date.now() - startedAt}ms — streaming response (HTTP ${res.status})...`);
-      const body = await consumeOllamaStream(res.body, resetInactivityTimer);
+      const body = await consumeOllamaStream(res.body, resetInactivityTimer, { startedAt, logLabel: "the analysis" });
       console.log(`[ollamaProvider] Ollama finished streaming after ${Date.now() - startedAt}ms.`);
       return { res, body };
     } catch (err) {
@@ -359,7 +384,7 @@ async function generateChatReply({ systemPrompt, messages, model, onProgress, te
       });
       if (!res.ok) return { res };
       console.log(`[ollamaProvider] Ollama accepted the chat request after ${Date.now() - startedAt}ms — streaming response (HTTP ${res.status})...`);
-      const body = await consumeOllamaStream(res.body, resetInactivityTimer);
+      const body = await consumeOllamaStream(res.body, resetInactivityTimer, { startedAt, logLabel: "the chat reply" });
       console.log(`[ollamaProvider] Ollama finished streaming the chat reply after ${Date.now() - startedAt}ms.`);
       return { res, body };
     } catch (err) {

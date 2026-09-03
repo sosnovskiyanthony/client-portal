@@ -82,15 +82,18 @@
     }, 1000);
   }
 
-  // Comfortably above ollamaProvider.js's own REQUEST_TIMEOUT_MS (4
+  // Comfortably above ollamaProvider.js's own REQUEST_TIMEOUT_MS (8
   // minutes) — the backend should always report done:true well before
   // this fires under normal operation. This exists for the case where it
   // never does: a server restart/crash mid-analysis (e.g. a new deploy)
   // leaves nothing to ever report completion, and without a ceiling here
   // the polling loop below would wait on fetchProgress() forever with no
   // feedback to the admin at all — silently spinning on a stale "Working…"
-  // label rather than surfacing a real error.
-  const POLL_TIMEOUT_MS = 6 * 60 * 1000;
+  // label rather than surfacing a real error. Keep this ahead of that
+  // backend value if it ever changes again — a shorter poll ceiling would
+  // reintroduce the exact "gave up before the real answer arrived" bug
+  // this was built to fix, just one layer up.
+  const POLL_TIMEOUT_MS = 10 * 60 * 1000;
 
   // Paste-and-analyze runs in the background on the server (see
   // chatController.js) and returns immediately from its own POST — the
