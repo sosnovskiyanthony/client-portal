@@ -1106,6 +1106,77 @@ async function acknowledgeSecurityEvent(id) {
   return body;
 }
 
+// Security Center (see js/security.js) — the aggregate status/version
+// panel, the paginated activity feed, and deployment history. Same
+// request/error shape as every other admin fetch wrapper in this file.
+async function getSecurityStatus() {
+  let res;
+  try {
+    res = await fetch("/api/admin/security/status", {
+      headers: { Authorization: `Bearer ${getAdminToken()}` },
+    });
+  } catch (err) {
+    throw new Error("Can't reach the server. Is the backend running?");
+  }
+  if (res.status === 401 || res.status === 403) {
+    logoutAdmin();
+    throw new Error("Your session expired. Please log in again.");
+  }
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(body.error || "Couldn't load system status.");
+  }
+  return body;
+}
+
+// `filters` may include: category, severity, source, eventType, from, to,
+// resolved ("true"/"false"), limit, cursorCreatedAt, cursorId — all
+// optional, all validated/clamped server-side (see
+// controllers/guardianController.js's getSecurityEventsPage).
+async function getSecurityEventsPage(filters = {}) {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(filters)) {
+    if (value !== undefined && value !== null && value !== "") params.set(key, value);
+  }
+  let res;
+  try {
+    res = await fetch(`/api/admin/security/events?${params}`, {
+      headers: { Authorization: `Bearer ${getAdminToken()}` },
+    });
+  } catch (err) {
+    throw new Error("Can't reach the server. Is the backend running?");
+  }
+  if (res.status === 401 || res.status === 403) {
+    logoutAdmin();
+    throw new Error("Your session expired. Please log in again.");
+  }
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(body.error || "Couldn't load activity.");
+  }
+  return body;
+}
+
+async function getSecurityDeployments(limit = 10) {
+  let res;
+  try {
+    res = await fetch(`/api/admin/security/deployments?limit=${encodeURIComponent(limit)}`, {
+      headers: { Authorization: `Bearer ${getAdminToken()}` },
+    });
+  } catch (err) {
+    throw new Error("Can't reach the server. Is the backend running?");
+  }
+  if (res.status === 401 || res.status === 403) {
+    logoutAdmin();
+    throw new Error("Your session expired. Please log in again.");
+  }
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(body.error || "Couldn't load deployment history.");
+  }
+  return body;
+}
+
 // Polled every second or two by admin.js while an analysis/draft is in
 // flight, to show real backend-confirmed stages instead of a static label.
 // Deliberately fails soft (returns null) rather than throwing: a missed
@@ -1395,6 +1466,10 @@ function renderMenu() {
       <a class="menu-item" href="admin-contracts.html">
         <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><rect x="3" y="2" width="10" height="12" rx="1.2" stroke="currentColor" stroke-width="1.4"/><path d="M5.5 5.5H10.5M5.5 8H10.5M5.5 10.5H8.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
         Contracts
+      </a>
+      <a class="menu-item" href="admin-security.html">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><rect x="3" y="7" width="10" height="7" rx="1.5" stroke="currentColor" stroke-width="1.4"/><path d="M5.5 7V4.8C5.5 3.25 6.75 2 8.3 2C9.85 2 11 3.25 11 4.8V7" stroke="currentColor" stroke-width="1.4"/></svg>
+        Security Center
       </a>
       <button class="menu-item" data-action="logout" type="button">
         <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M6 2H3.5C2.67 2 2 2.67 2 3.5V12.5C2 13.33 2.67 14 3.5 14H6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M10.5 5.5L14 8L10.5 10.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 8H6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>

@@ -1827,16 +1827,27 @@ a:focus-visible {
   flex-shrink: 0;
 }
 
+/* On the Security Center (admin-security.html) this panel holds a title,
+   a status row, an "Administrator Controls" label, an actions row, and
+   the Ollama widget — real block content, not the single dot+text+button
+   row this rule was originally written for (the Submissions page's old
+   layout). The single-row flex below only applies where this panel has
+   no .sec-panel-title child (i.e. nowhere anymore, but kept so this rule
+   doesn't silently break if this class is ever reused elsewhere without
+   that heading). */
 .ai-control-panel {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 14px;
+  padding: 14px 16px;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   margin-bottom: 16px;
   font-size: 13px;
+}
+
+.ai-control-panel:not(:has(.sec-panel-title)) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   flex-wrap: wrap;
 }
 
@@ -1845,6 +1856,15 @@ a:focus-visible {
   align-items: center;
   gap: 8px;
   color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+
+/* Scoped rather than added to the base .ollama-control rule, which is
+   still also used inline in admin.html's header actions row (a flex row
+   where the parent's own gap already handles spacing) until that page's
+   own relocation is finished. */
+.ai-control-panel .ollama-control {
+  margin-top: 10px;
 }
 
 .ai-control-dot {
@@ -1950,6 +1970,268 @@ a:focus-visible {
   margin-left: auto;
   font-size: 12px;
   padding: 2px 10px;
+}
+
+/* ---------- Security Center (frontend/admin-security.html, js/security.js) ---------- */
+
+/* Shared status-dot color set — one definition, reused by the overall
+   banner and every per-system card below, instead of redeclaring the same
+   six colors per component the way the older Guardian/AI-control panels
+   each did before this page existed. */
+.sec-status-healthy { background: #4ade80; box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.18); }
+.sec-status-warning { background: #fbbf24; box-shadow: 0 0 0 3px rgba(251, 191, 36, 0.18); }
+.sec-status-failed { background: #f87171; box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.18); }
+.sec-status-critical { background: #ef4444; box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.28); }
+.sec-status-unavailable { background: #fb923c; box-shadow: 0 0 0 3px rgba(251, 146, 60, 0.18); }
+.sec-status-unconfigured { background: var(--text-tertiary); box-shadow: none; }
+
+.sec-overall {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  margin-bottom: 16px;
+  background: var(--surface);
+}
+
+.sec-overall-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.sec-overall-label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-tertiary);
+}
+
+.sec-overall-value {
+  font-size: 22px;
+  font-weight: 700;
+  font-family: "Inter Tight", "Inter", sans-serif;
+}
+
+.sec-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.sec-system-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+}
+
+.sec-system-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 4px;
+}
+
+.sec-system-name {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.sec-system-status {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.sec-system-detail {
+  color: var(--text-tertiary);
+  font-size: 11px;
+  margin-top: 2px;
+}
+
+.sec-panels-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.sec-panel {
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  margin-bottom: 16px;
+}
+
+.sec-panels-row .sec-panel {
+  margin-bottom: 0;
+}
+
+.sec-panel-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin: 0 0 10px;
+}
+
+.sec-version-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.sec-version-row:last-of-type {
+  border-bottom: none;
+}
+
+.sec-version-label {
+  color: var(--text-tertiary);
+}
+
+.sec-version-value {
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.sec-copyable {
+  cursor: pointer;
+  border-bottom: 1px dashed var(--text-tertiary);
+}
+
+.sec-copyable:hover {
+  color: var(--accent, #818cf8);
+}
+
+.sec-version-note {
+  color: var(--text-tertiary);
+  font-size: 12px;
+  margin: 8px 0 0;
+}
+
+.sec-consistency-ok {
+  color: #4ade80;
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0 0 10px;
+}
+
+.sec-consistency-mismatch {
+  color: #fbbf24;
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0 0 10px;
+}
+
+.sec-critical-panel {
+  padding: 14px 16px;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  border-radius: var(--radius-md);
+  margin-bottom: 16px;
+  background: rgba(239, 68, 68, 0.06);
+}
+
+.sec-critical-item {
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+.sec-critical-item:last-child {
+  border-bottom: none;
+}
+
+.sec-critical-title {
+  font-weight: 600;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.sec-critical-meta {
+  color: var(--text-tertiary);
+  font-size: 12px;
+  margin: 2px 0 6px;
+}
+
+.sec-controls-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-tertiary);
+  margin: 12px 0 6px;
+  width: 100%;
+}
+
+.sec-deployments-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.sec-deployments-table th {
+  text-align: left;
+  color: var(--text-tertiary);
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 4px 8px 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.sec-deployments-table td {
+  padding: 6px 8px 6px 0;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-secondary);
+}
+
+.sec-filters {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.sec-filter-input {
+  width: auto;
+  min-width: 140px;
+  font-size: 13px;
+  padding: 6px 10px;
+}
+
+.sec-activity-category {
+  color: var(--text-tertiary);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+}
+
+.sec-activity-pagination {
+  display: flex;
+  justify-content: center;
+  margin-top: 10px;
+}
+
+.sec-activity-empty {
+  color: var(--text-tertiary);
+  font-size: 13px;
+  text-align: center;
+  margin: 10px 0 0;
+}
+
+@media (max-width: 640px) {
+  .sec-panels-row { grid-template-columns: 1fr; }
+  .sec-grid { grid-template-columns: 1fr; }
 }
 
 .admin-search-row {

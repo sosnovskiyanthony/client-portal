@@ -16,17 +16,31 @@ const GuardianCheck = require("../models/GuardianCheck");
 const SecurityEvent = require("../models/SecurityEvent");
 const aiControl = require("../guardian/aiControl");
 const { tailscaleDispatcher } = require("../lib/tailscaleDispatcher");
+const { checkIntegrity } = require("../guardian/integrityCheck");
+const railwayStatus = require("../guardian/railwayStatus");
+const githubStatus = require("../guardian/githubStatus");
+const sentryStatus = require("../guardian/sentryStatus");
+const { CATEGORIES, sourcesForCategory, categoryForEvent } = require("../guardian/eventCategory");
 
 // Every dependency check returns one of these — distinct meanings, per
 // guardian/README.md: HEALTHY (working normally), WARNING (degraded but not
 // broken), FAILED (a real, mandatory-thing-is-broken problem), UNAVAILABLE
 // (configured but currently unreachable — expected/normal for Ollama, which
 // intentionally runs on the owner's local machine), NOT_CONFIGURED (an
-// optional integration simply isn't set up).
+// optional integration simply isn't set up). CRITICAL is a distinct, more
+// severe tier added for the Security Center (2026-09-03): a security-
+// specific incident (AI lockdown, integrity-manifest drift), not a plain
+// infrastructure failure — kept separate from FAILED so the two read
+// differently on the status banner. Every value here must have a matching
+// entry wherever a UI derives a CSS class/label from a status string
+// (frontend/js/security.js's STATUS_LABELS) — a value present here but
+// missing there fails visibly (falls back to a plain "Unknown" label)
+// rather than silently, but keep them in sync regardless.
 const STATUS = {
   HEALTHY: "HEALTHY",
   WARNING: "WARNING",
   FAILED: "FAILED",
+  CRITICAL: "CRITICAL",
   UNAVAILABLE: "UNAVAILABLE",
   NOT_CONFIGURED: "NOT_CONFIGURED",
 };
@@ -215,6 +229,190 @@ async function acknowledgeSecurityEvent(req, res) {
   res.json(event);
 }
 
+// --- Security Center (2026-09-03) ---
+//
+// Everything below is a thin adapter over the systems above — no second
+// Guardian, no second event log, no second AI control plane. This is the
+// aggregate "top of page" endpoint the Security Center polls once instead
+// of separately hitting /guardian/diagnostics, /guardian/ai/state, and
+// three external APIs on every tick (see "avoid excessive requests" in
+// guardian/README.md's Security Center section).
+
+function shortSha(sha) {
+  return typeof sha === "string" ? sha.slice(0, 7) : null;
+}
+
+// The only per-system statuses this app can derive real evidence for
+// without a Sentry client-error signal are the server-side ones already
+// covered by runDiagnostics() above, plus the three external
+// integrations. "Frontend" specifically has no direct signal unless
+// Sentry is configured and tagging browser errors (see
+// controllers/errorController.js) — reported as NOT_CONFIGURED rather
+// than a guessed HEALTHY when Sentry isn't set up, per this feature's
+// one hard rule: never claim healthy without evidence.
+function computeFrontendStatus(sentry) {
+  if (!sentry.configured) {
+    return { status: STATUS.NOT_CONFIGURED, detail: "No error monitoring configured — set SENTRY_DSN and SENTRY_AUTH_TOKEN to see real browser error status." };
+  }
+  if (!sentry.available) {
+    return { status: STATUS.UNAVAILABLE, detail: sentry.detail };
+  }
+  if (sentry.browserUnresolvedShown > 0) {
+    return { status: STATUS.WARNING, detail: `${sentry.browserUnresolvedShown}${sentry.browserUnresolvedHasMore ? "+" : ""} unresolved browser error(s) in Sentry.` };
+  }
+  return { status: STATUS.HEALTHY, detail: "No unresolved browser errors in Sentry." };
+}
+
+function externalIntegrationStatus(result) {
+  if (!result.configured) return { status: STATUS.NOT_CONFIGURED };
+  if (!result.available) return { status: STATUS.UNAVAILABLE, detail: result.detail };
+  return { status: STATUS.HEALTHY };
+}
+
+// AI's own status folds in the kill switch state, not just Ollama
+// reachability — DISABLED/LOCKDOWN is a deliberate state, not a failure,
+// but it's not "healthy and operating" either, and the two must read
+// differently on the status banner.
+function computeAiStatus(aiState, ollamaDiagnostic) {
+  if (aiState.state === "LOCKDOWN") return { status: STATUS.CRITICAL, detail: aiState.reason };
+  if (aiState.state === "DISABLED") return { status: STATUS.WARNING, detail: aiState.reason || "AI is disabled." };
+  return { status: ollamaDiagnostic.status === STATUS.HEALTHY ? STATUS.HEALTHY : STATUS.WARNING, detail: ollamaDiagnostic.detail };
+}
+
+// Only rolls FAILED/CRITICAL up to the overall banner — an unconfigured or
+// unreachable optional integration (Railway/GitHub/Sentry, or Ollama/
+// Resend/Tavily via the existing computeOverall above) stays a WARNING at
+// most, matching this app's existing graceful-degradation philosophy
+// rather than inventing a stricter standard for the new panels alone.
+function computeSecurityOverall(systems, aiState) {
+  const values = Object.values(systems).map((s) => s.status);
+  if (aiState.state === "LOCKDOWN" || values.includes(STATUS.CRITICAL)) return STATUS.CRITICAL;
+  if (values.includes(STATUS.FAILED)) return STATUS.FAILED;
+  if (values.includes(STATUS.WARNING) || values.includes(STATUS.UNAVAILABLE) || aiState.state === "DISABLED") return STATUS.WARNING;
+  return STATUS.HEALTHY;
+}
+
+async function getSecurityStatus(req, res) {
+  const [diagnostics, aiState, railway, github, sentry] = await Promise.all([
+    runDiagnostics(),
+    aiControl.getAiState(),
+    railwayStatus.getCurrentDeploymentStatus(),
+    githubStatus.isConfigured() ? githubStatus.getWorkflowRunsForCommit(process.env.RAILWAY_GIT_COMMIT_SHA) : { configured: false, available: false },
+    sentryStatus.getIssueSummary(),
+  ]);
+
+  const integrity = checkIntegrity();
+  const commitSha = process.env.RAILWAY_GIT_COMMIT_SHA || process.env.GIT_COMMIT_SHA || null;
+
+  const systems = {
+    backend: { status: STATUS.HEALTHY }, // this response existing at all proves it
+    database: { status: diagnostics.database.status, detail: diagnostics.database.detail },
+    storage: { status: diagnostics.storage.status, detail: diagnostics.storage.detail },
+    ai: computeAiStatus(aiState, diagnostics.ollama),
+    guardian: { status: integrity.ok ? STATUS.HEALTHY : STATUS.CRITICAL, detail: integrity.ok ? null : `${integrity.drifted.length} file(s) modified, ${integrity.missing.length} missing.` },
+    integrity: { status: integrity.ok ? STATUS.HEALTHY : STATUS.CRITICAL },
+    ollama: { status: diagnostics.ollama.status, detail: diagnostics.ollama.detail },
+    resend: { status: diagnostics.resend.status },
+    tavily: { status: diagnostics.tavily.status },
+    railway: externalIntegrationStatus(railway),
+    github: externalIntegrationStatus(github),
+    sentry: externalIntegrationStatus(sentry),
+    frontend: computeFrontendStatus(sentry),
+  };
+
+  res.json({
+    overall: computeSecurityOverall(systems, aiState),
+    systems,
+    version: {
+      commitSha,
+      shortSha: shortSha(commitSha),
+      branch: process.env.RAILWAY_GIT_BRANCH || null,
+      environment: process.env.NODE_ENV || "development",
+      // Deliberately never labeled "version" — package.json's own field
+      // isn't a real release identifier for this app (never bumped per
+      // release; see guardian/README.md's Security Center section for
+      // why this shows the commit, not a fabricated semver).
+      packageJsonVersion: require("../package.json").version,
+      integrityOk: integrity.ok,
+    },
+    versionConsistency: {
+      git: commitSha,
+      railway: railway.available ? railway.commitSha : null,
+      runningApplication: commitSha,
+      integrity: integrity.ok ? "PASS" : "FAIL",
+      consistent: !railway.available || railway.commitSha === commitSha,
+    },
+    aiControl: aiState,
+    railway,
+    github,
+    sentry,
+  });
+}
+
+// Activity feed — filters/pagination live entirely in the model
+// (SecurityEvent.findPage) and the category->source translation
+// (guardian/eventCategory.js); this is just query-param parsing.
+async function getSecurityEventsPage(req, res) {
+  const { severity, category, source, eventType, from, to, resolved, limit, cursorCreatedAt, cursorId } = req.query;
+
+  if (category && !CATEGORIES.includes(category)) {
+    return res.status(400).json({ error: `category must be one of: ${CATEGORIES.join(", ")}` });
+  }
+
+  let sources;
+  if (category) sources = sourcesForCategory(category);
+  else if (source) sources = [source];
+
+  const cursor = cursorCreatedAt && cursorId ? { createdAt: cursorCreatedAt, id: Number(cursorId) } : null;
+  const resolvedFilter = resolved === "true" ? true : resolved === "false" ? false : undefined;
+
+  const page = await SecurityEvent.findPage({
+    severity: severity || undefined,
+    sources,
+    eventType: eventType || undefined,
+    from: from || undefined,
+    to: to || undefined,
+    resolved: resolvedFilter,
+    cursor,
+    limit,
+  });
+
+  res.json({
+    events: page.events.map((e) => ({ ...e, category: categoryForEvent({ source: e.source, eventType: e.eventType }) })),
+    nextCursor: page.nextCursor,
+  });
+}
+
+// Deployment history + (where the commit's CI status is known) a
+// correlated GitHub Actions result per deployment — the "what changed /
+// did it pass" view. GitHub calls here are per-deployment, so this is
+// deliberately NOT polled — the frontend calls it once when the
+// deployment-history section is actually opened, not on every tick.
+async function getDeploymentHistory(req, res) {
+  const limit = Math.min(Math.max(Number(req.query.limit) || 10, 1), 50);
+  const railway = await railwayStatus.getDeploymentHistory(limit);
+  if (!railway.available) {
+    return res.json({ railway, deployments: [] });
+  }
+
+  const deployments = await Promise.all(
+    railway.deployments.map(async (d) => {
+      if (!githubStatus.isConfigured()) return { ...d, ci: { configured: false } };
+      // Railway's deployment list doesn't include the commit SHA per
+      // entry (confirmed against its docs — see guardian/railwayStatus.js)
+      // — CI correlation is only available for the CURRENT deployment,
+      // where the SHA is known from this process's own env, not for every
+      // historical entry. Older entries show ci: {configured:true,
+      // available:false} honestly rather than a guessed status.
+      if (d.id !== process.env.RAILWAY_DEPLOYMENT_ID) return { ...d, ci: { configured: true, available: false, detail: "CI status is only available for the current deployment." } };
+      const ci = await githubStatus.getWorkflowRunsForCommit(process.env.RAILWAY_GIT_COMMIT_SHA);
+      return { ...d, ci };
+    })
+  );
+
+  res.json({ railway: { configured: true, available: true }, deployments });
+}
+
 module.exports = {
   getDiagnostics,
   runGuardianCheck,
@@ -225,5 +423,8 @@ module.exports = {
   enableAi,
   getSecurityEvents,
   acknowledgeSecurityEvent,
+  getSecurityStatus,
+  getSecurityEventsPage,
+  getDeploymentHistory,
   STATUS,
 };

@@ -67,4 +67,14 @@ router.post("/guardian/ai/enable", asyncHandler(guardianController.enableAi));
 router.get("/guardian/events", asyncHandler(guardianController.getSecurityEvents));
 router.post("/guardian/events/:id/acknowledge", asyncHandler(guardianController.acknowledgeSecurityEvent));
 
+// Security Center (see frontend/admin-security.html, js/security.js) — the
+// aggregate status/version/consistency panel, the filtered+paginated
+// activity feed, and deployment history. All thin adapters over the exact
+// same Guardian modules the routes above already use — no second system,
+// no second auth path. Same no-dedicated-limiter reasoning as the routes
+// above: state reads, not AI-generation calls.
+router.get("/security/status", asyncHandler(guardianController.getSecurityStatus));
+router.get("/security/events", asyncHandler(guardianController.getSecurityEventsPage));
+router.get("/security/deployments", asyncHandler(guardianController.getDeploymentHistory));
+
 module.exports = router;

@@ -139,6 +139,33 @@ module.exports = {
   // no-redeploy `guardian/setAiState.js` CLI method.
   aiEnabledOverride: process.env.BRINDLEAF_AI_ENABLED || null,
 
+  // Security Center's read-only external integrations (see
+  // guardian/railwayStatus.js, guardian/githubStatus.js,
+  // guardian/sentryStatus.js). Each is independently optional — the
+  // corresponding dashboard panel just shows "not configured" until its
+  // token is set, same "dormant by default" pattern as tavilyApiKey above.
+  // These are read-scoped credentials for reporting deployment/CI/error
+  // status only; never sent to the browser, never logged, never echoed
+  // back in any API response — see guardian/README.md's Security Center
+  // section for the exact scopes each one needs.
+  railwayApiToken: process.env.RAILWAY_API_TOKEN || null,
+
+  // owner/repo — used to build GitHub Actions API URLs. Defaults to this
+  // project's own repo since that's the only one this deployment could
+  // ever mean; override only if this code is ever deployed from a fork.
+  githubToken: process.env.GITHUB_TOKEN || null,
+  githubRepo: process.env.GITHUB_REPO || "sosnovskiyanthony/client-portal",
+
+  sentryAuthToken: process.env.SENTRY_AUTH_TOKEN || null,
+  // Also read directly (not through this module) by instrument.js, which
+  // has to run before config/env.js is even required — see that file's own
+  // comment. Exposed here too so guardian/sentryStatus.js can parse the
+  // org/project numeric IDs out of it (Sentry's DSN format is
+  // https://<key>@o<org_id>.ingest.<region>.sentry.io/<project_id>) rather
+  // than needing yet another pair of env vars for org/project slugs —
+  // Sentry's REST API accepts either the slug or the numeric ID.
+  sentryDsn: process.env.SENTRY_DSN || null,
+
   // Off by default — see guardian/integrityCheck.js and server.js's start().
   // A boot-time hash check of security-critical files against the committed
   // manifest; a mismatch logs a CRITICAL security event and locks down AI.

@@ -18,11 +18,11 @@ You do not need to read any code to do this. Pick whichever is fastest for your 
    ```
    (Using Railway's CLI: `railway run node guardian/setAiState.js lockdown --reason "..."`.) This takes effect on the very next AI request the live server handles — there is no cache to wait out.
 
-2. **If you have the admin dashboard open:** go to the Guardian panel and click **"Lockdown All AI"**. One click, immediate.
+2. **If you have the Security Center open:** go to the AI Control Center and click **"Lockdown All AI"**. One click, immediate.
 
 3. **If neither of the above is reachable** (e.g. the database itself is also having problems): set the Railway environment variable `BRINDLEAF_AI_ENABLED=false` and redeploy/restart. This is a hard floor — it overrides the database state unconditionally, but it needs a restart to take effect, so it's the slowest of the three.
 
-4. **It might already be locked down for you:** Guardian's circuit breaker automatically locks AI down if it detects a burst of schema-validation failures or capability violations — check the admin dashboard's Guardian panel or run `node guardian/setAiState.js status` to see the current state and why.
+4. **It might already be locked down for you:** Guardian's circuit breaker automatically locks AI down if it detects a burst of schema-validation failures or capability violations — check the Security Center's System Status grid or run `node guardian/setAiState.js status` to see the current state and why.
 
 **What "lockdown" actually does:** every one of the 10 real AI operations in `ai/aiService.js` — analysis, chat, contract review/drafting, email drafting, the code reviewer, everything — starts rejecting immediately with a clear error, before any request ever reaches Ollama or Anthropic. No AI feature partially works. Nothing else in the app is affected: public pages, intake forms, submissions, admin login, and every non-AI admin feature keep working normally.
 
@@ -54,7 +54,7 @@ Guardian runs in three places, matched to what's actually available in each:
 
 1. **CI-time** (`.github/workflows/ci.yml`, `codeql.yml`, `smoke.yml`, `.github/dependabot.yml`) — runs on every push/PR to GitHub-hosted runners. Tests/coverage/lint/audit/integrity-manifest are mandatory gates. CodeQL and Dependabot run separately. The AI review step is advisory and usually reports "unavailable" here — see [Why CI-based AI review is usually unavailable](#why-ci-based-ai-review-is-usually-unavailable).
 2. **Local** (`npm run guardian:ai`, `npm run guardian:smoke`, `npm run guardian:ai-control`, `npm run guardian:integrity:*`) — the same checks, runnable on a developer machine before pushing.
-3. **Production** (the admin dashboard's Guardian panel, `GET/POST /api/admin/guardian/*`) — lightweight, JWT-protected deep diagnostics plus the AI control plane itself (kill switch, security events). This tier deliberately does **not** run tests, lint, or code review against the live Railway container — see [Why production Guardian is diagnostics-only](#why-production-guardian-is-diagnostics-only).
+3. **Production** (the Security Center, `GET/POST /api/admin/guardian/*` and `/api/admin/security/*`) — lightweight, JWT-protected deep diagnostics plus the AI control plane itself (kill switch, security events). This tier deliberately does **not** run tests, lint, or code review against the live Railway container — see [Why production Guardian is diagnostics-only](#why-production-guardian-is-diagnostics-only).
 
 ## What each check does
 
@@ -68,7 +68,7 @@ Guardian runs in three places, matched to what's actually available in each:
 | Secret scanning | GitHub (built-in, free for this public repo) | Blocks a push containing a recognizable credential pattern. **Requires a one-time manual toggle in Settings → Security → Code security.** |
 | Security scanning | GitHub (`codeql.yml`) | CodeQL's default JavaScript/TypeScript query pack, on push/PR + weekly. |
 | AI code review | CI (advisory) + local (`npm run guardian:ai`) | Ollama reviews the diff against `guardian/rules.js`'s architecture rules and `guardian/aiCapabilities.js`'s capability map. Never blocks unless run with `--strict`. |
-| Production diagnostics | Admin dashboard ("Run Guardian Check") | DB/storage/Ollama/Resend/Tavily configured+reachable status, stored in `guardian_checks`. |
+| Production diagnostics | Security Center ("Run Guardian Check") | DB/storage/Ollama/Resend/Tavily configured+reachable status, stored in `guardian_checks`. |
 | Production smoke test | CI (`smoke.yml`, scheduled) + local (`npm run guardian:smoke`) | Read-only GET checks against the live public site. |
 | **AI kill switch** | Always-on (`ai/aiService.js` + `guardian/aiControl.js`) | ENABLED/DISABLED/LOCKDOWN, checked before every real AI call. See [The AI kill switch](#the-ai-kill-switch). |
 | **AI capability firewall** | Always-on (`guardian/aiCapabilities.js`, `ai/providers/ollamaProvider.js`) | Deterministic allowlist of what each AI operation can read/write/execute. See [Capability firewall](#capability-firewall). |
@@ -108,8 +108,8 @@ There is no single `npm run guardian` that bundles everything into one pass/warn
 - **`ci.yml`'s `ai-review` job shows a red X** — an infrastructure problem in the job itself, never the AI review's own verdict (`guardian/reviewCli.js` always exits 0).
 - **CodeQL flags something** — read the finding on the repo's Security tab; document a genuine false positive near the flagged line rather than suppressing it blindly.
 - **`smoke.yml` failed** — the live site is down or returned unexpected content; GitHub's failure-email is the alert.
-- **The admin dashboard's Guardian panel shows WARNING** — an optional integration is unreachable/unconfigured; only FAILED means the database itself is down.
-- **The admin dashboard shows AI: LOCKDOWN and you didn't do it** — the circuit breaker tripped automatically. Check Recent Security Events for the CRITICAL entry that explains why before acknowledging/re-enabling.
+- **The Security Center's Guardian card shows WARNING** — an optional integration is unreachable/unconfigured; only FAILED means the database itself is down.
+- **The Security Center shows AI: LOCKDOWN and you didn't do it** — the circuit breaker tripped automatically. Check Recent Security Events for the CRITICAL entry that explains why before acknowledging/re-enabling.
 
 ## Coverage thresholds
 
@@ -159,7 +159,7 @@ Three states, tracked in the `ai_control_state` table (append-only — every row
 | Method | Needs the website? | Needs a redeploy? | Speed |
 |---|---|---|---|
 | `node guardian/setAiState.js <enable\|disable\|lockdown>` | No | No | Fastest — next AI call sees it |
-| Admin dashboard Guardian panel | Yes | No | Fast |
+| Security Center | Yes | No | Fast |
 | `BRINDLEAF_AI_ENABLED=false` env var | No | Yes (restart needed — `config/env.js` reads `process.env` once at boot) | Slowest, but a hard floor no DB state can override |
 | The AI itself | **Never.** No code path lets an AI response set, modify, or bypass any of the above. | — | — |
 
@@ -203,17 +203,29 @@ State is derived from a real database query (not an in-memory counter), so it su
 
 **Disabled entirely when `NODE_ENV=test`** (see `scripts/run-tests.sh`) — the existing test suite deliberately triggers `invalid_schema` errors many times across many files to prove the app rejects them correctly, which is expected test behavior, not a real attack pattern, and must never cascade into a real lockdown that breaks unrelated tests. The real trip logic still has its own direct test coverage (`test/circuitBreaker.test.js`, which mocks the DB boundary and explicitly overrides `NODE_ENV` for the duration of each test).
 
-**AI can never reset it.** Only `guardian/setAiState.js` or the admin dashboard (both human-driven) can move out of LOCKDOWN, and only after the triggering CRITICAL event is acknowledged.
+**AI can never reset it.** Only `guardian/setAiState.js` or the Security Center (both human-driven) can move out of LOCKDOWN, and only after the triggering CRITICAL event is acknowledged.
 
 ## Critical incidents and email alerting
 
-A CRITICAL security event (circuit-breaker lockdown, or a manual one) does all of the following automatically: persists the event, sends an email alert (below), surfaces in the admin dashboard's Recent Security Events list, and blocks AI from being re-enabled until a human explicitly acknowledges that specific event via the dashboard's "Acknowledge" button or `models/SecurityEvent.js`'s `acknowledge()`.
+A CRITICAL security event (circuit-breaker lockdown, or a manual one) does all of the following automatically: persists the event, sends an email alert (below), surfaces in the Security Center's Critical Events section, and blocks AI from being re-enabled until a human explicitly acknowledges that specific event via the "Acknowledge" button or `models/SecurityEvent.js`'s `acknowledge()`.
 
 `services/email.js`'s `sendSecurityAlertEmail` reuses the existing Resend client/config (no new email provider) and is fire-and-forget, matching `notifyNewSubmission`'s style, not `sendContractEmail`'s throw-on-failure style — **a failed or unconfigured email never crashes the app, and the security event already exists in the database/dashboard regardless of whether the email sends.** The email states: severity, event type, when, a description, and relevant metadata (never secrets). It never claims AI is safe again — re-enabling is always a separate, deliberate step.
 
-## Admin dashboard
+## Security Center (`frontend/admin-security.html`, `js/security.js`)
 
-The Guardian panel (extended, not a new page) shows: overall diagnostics status, AI state (ENABLED/DISABLED/LOCKDOWN + why), and Recent Security Events (severity/time/type/description/acknowledgement). Controls: **Disable All AI** / **Lockdown All AI** (one click each, behind a `window.confirm()` like every other consequential action in this admin UI), **Re-enable AI** (shows the current reason before confirming, and the server rejects it with a clear, linkable error if an unacknowledged CRITICAL event is blocking it), and **Acknowledge** per unacknowledged event. New routes (`GET/POST /api/admin/guardian/ai/*`, `GET /api/admin/guardian/events`, `POST /api/admin/guardian/events/:id/acknowledge`) all inherit the existing JWT+admin gate from `routes/admin.js` — no second auth system.
+Guardian's UI lived on the Submissions page (`admin.html`) through 2026-09-02 — as of 2026-09-03 it's a dedicated page, `admin-security.html`, reached from the admin header and the account menu on every admin page. Submissions went back to being purely about leads/clients/AI analysis/outreach; nothing about *how* Guardian works changed, only where its controls live. Same JWT+admin gate as everywhere else (`routes/admin.js`'s existing `router.use(authenticate, requireAdmin)`) — no second auth system, and no second Guardian: every control on this page still calls the exact same `guardian/aiControl.js` / `guardian/securityEvents.js` functions the old panel did.
+
+What's on it:
+- **Overall System Status** banner + a per-system grid (Frontend/Backend/Database/Storage/AI/Guardian/Integrity/Ollama/Resend/Tavily/Railway/GitHub Actions/Sentry) — `GET /api/admin/security/status`, one aggregate call instead of polling each subsystem separately. Never shows a status without real evidence behind it — an unconfigured or unreachable integration says so explicitly (`NOT_CONFIGURED`/`UNAVAILABLE`), never a guessed `HEALTHY`.
+- **Production Version** / **Version Consistency** — the commit SHA Railway auto-injects (`RAILWAY_GIT_COMMIT_SHA`), shown as "Production Commit", deliberately never as a fabricated semantic version (`package.json`'s own version field is shown, labeled explicitly as not a release identifier, since it's never bumped per release). Compared against Railway's own API-reported commit when `RAILWAY_API_TOKEN` is configured.
+- **Deployment History** (`guardian/railwayStatus.js`, needs `RAILWAY_API_TOKEN`) and **GitHub Actions status** (`guardian/githubStatus.js`, needs `GITHUB_TOKEN`) — read-only, cached (30s), correlated per-deployment where possible. Both degrade to a clear "not configured"/"unavailable" state rather than fabricating pipeline status.
+- **Sentry** (`guardian/sentryStatus.js`, needs `SENTRY_AUTH_TOKEN` — distinct from the write-only `SENTRY_DSN` used for reporting) — unresolved issue counts (explicitly "at least N", never a fabricated precise total — Sentry's list API is cursor-paginated with no total-count field), split Browser (`source:frontend`, matching `controllers/errorController.js`'s own tag) vs. everything else.
+- **Critical Events** — unacknowledged CRITICAL events, pulled to the top regardless of whatever filter the activity feed below has active. Acknowledgement still goes through `SecurityEvent.acknowledge()`, still required before AI can be re-enabled — unchanged.
+- **AI Control Center** — the exact same kill-switch panel from the old Guardian panel (**Disable All AI** / **Lockdown All AI**, one click each behind `window.confirm()`; **Re-enable AI**, refused with a clear, linkable 409 if an unacknowledged CRITICAL event is blocking it), visually split into a read-only status row and a labeled "Administrator Controls" actions row.
+- **Activity feed** — filterable (category/severity/resolved) and keyset-paginated (`SecurityEvent.findPage`, `GET /api/admin/security/events`) — never loads unlimited events into the browser. "Category" (AI/Browser/Backend/Infrastructure) is derived from each event's existing `source` field via a static map (`guardian/eventCategory.js`), not a new database column — update that map alongside any new `logSecurityEvent()` call site.
+- **Copy System Snapshot** / **Copy JSON** — formats the already-fetched status data client-side into a plain-text report meant for pasting into a bug report or an AI chat. No extra network request, and it can only ever contain what's already rendered on screen.
+
+New routes (`GET /api/admin/security/status`, `GET /api/admin/security/events`, `GET /api/admin/security/deployments`) live in `controllers/guardianController.js` alongside the original `/guardian/*` ones — thin adapters over the same underlying modules, not a parallel controller.
 
 ## Production code integrity
 

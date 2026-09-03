@@ -74,6 +74,12 @@ async function setAiState({ state, reason, source, actorUserId }) {
     throw new Error(`Invalid AI control state "${state}". Expected one of: ${STATES.join(", ")}.`);
   }
 
+  // Captured before the write below so the resulting audit event records
+  // an actual state transition (previousState -> state), not just the new
+  // value in isolation — the Security Center's audit trail needs "what
+  // changed", not only "what it is now".
+  const previous = await getAiState();
+
   if (state === "ENABLED") {
     const latestCritical = await SecurityEvent.findLatestBySeverity("CRITICAL");
     if (latestCritical && !latestCritical.acknowledgedAt) {
@@ -101,7 +107,7 @@ async function setAiState({ state, reason, source, actorUserId }) {
     actorId: actorUserId || source,
     source: "aiControl",
     description: reason || `AI state set to ${state}.`,
-    metadata: { previousCheckSource: source },
+    metadata: { previousState: previous.state, newState: state, triggerSource: source || "admin" },
   });
 
   return { state: row.state, reason: row.reason, source: row.source, since: row.created_at };
