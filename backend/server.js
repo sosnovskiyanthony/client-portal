@@ -63,6 +63,20 @@ app.use((req, res, next) => {
   next();
 });
 
+// One canonical URL per page: a trailing slash on any non-root path (e.g.
+// /web-design/, or even /api/foo/) redirects to the slash-less form rather
+// than silently serving both as separate 200s (or, for the clean-URL
+// marketing routes below, 500ing — Express's default non-strict routing
+// matches /web-design/ against the /web-design route but leaves req.path
+// as "/web-design/", which doesn't equal any CLEAN_URL_PAGES entry).
+app.use((req, res, next) => {
+  if (req.path !== "/" && req.path.endsWith("/")) {
+    const qs = req.url.includes("?") ? req.url.slice(req.url.indexOf("?")) : "";
+    return res.redirect(301, req.path.slice(0, -1) + qs);
+  }
+  next();
+});
+
 app.use(express.json());
 
 // Unauthenticated, unrated — this is what an external uptime monitor
@@ -98,12 +112,14 @@ app.use((req, res, next) => {
   next();
 });
 
-// The frontend's HTML/XML/TXT files have the Railway URL hardcoded as their
-// canonical/OG/JSON-LD/sitemap domain. Rather than templating tokens into
-// the markup, we rewrite that literal string to env.siteUrl at serve time —
-// so setting SITE_URL to a real domain later updates every page at once
-// with zero file edits. A no-op today since the default matches the HTML.
-const RAILWAY_DEFAULT_SITE_URL = "https://client-portal-production-d328.up.railway.app";
+// The frontend's HTML/XML/TXT files have the production domain hardcoded as
+// their canonical/OG/JSON-LD/sitemap domain. Rather than templating tokens
+// into the markup, we rewrite that literal string to env.siteUrl at serve
+// time — so pointing SITE_URL at a different domain (a staging deploy, a
+// future domain change) updates every page at once with zero file edits.
+// A no-op today in production, since the default now matches the real,
+// live custom domain (see config/env.js's siteUrl default).
+const DEFAULT_BAKED_IN_SITE_URL = "https://brindleaf.com";
 const TEMPLATED_FILE = /\.(html|xml|txt)$/;
 const FRONTEND_DIR = path.join(__dirname, "frontend");
 const GA_TAG_PLACEHOLDER = "<!-- GA_TAG -->";
@@ -127,8 +143,8 @@ function renderGaSnippet() {
 }
 
 function templateFileContents(contents) {
-  if (env.siteUrl !== RAILWAY_DEFAULT_SITE_URL) {
-    contents = contents.split(RAILWAY_DEFAULT_SITE_URL).join(env.siteUrl);
+  if (env.siteUrl !== DEFAULT_BAKED_IN_SITE_URL) {
+    contents = contents.split(DEFAULT_BAKED_IN_SITE_URL).join(env.siteUrl);
   }
   if (contents.includes(GA_TAG_PLACEHOLDER)) {
     contents = contents.split(GA_TAG_PLACEHOLDER).join(renderGaSnippet());
@@ -146,6 +162,79 @@ function resolveFrontendPath(reqPath) {
   const filePath = path.join(FRONTEND_DIR, reqPath);
   return filePath.startsWith(FRONTEND_DIR + path.sep) ? filePath : null;
 }
+
+// Single source of truth for every indexable marketing page's clean,
+// extensionless URL — drives the clean-URL routes below, the legacy .html
+// -> clean 301 redirects, and sitemap.xml generation, so none of those
+// three can silently drift out of sync with each other the way the old
+// static sitemap.xml did (it was missing 3 real pages before this change).
+//
+// web-design.html and services.html are deliberately NOT here — both are
+// noindex,nofollow intake/routing utility pages (see their own <meta
+// name="robots"> tags), not indexable marketing content, so they keep
+// their existing .html URLs rather than getting a clean slug. This also
+// avoids a collision: the marketing page users actually mean by "the web
+// design page" is web-design-services.html (its title/content match), so
+// that's what gets the short /web-design slug — the intake form stays at
+// /web-design.html, still a normal, stable, crawlable-if-it-mattered GET
+// URL, just not one this app is asking search engines to index.
+const CLEAN_URL_PAGES = [
+  { path: "/web-design", file: "web-design-services.html", priority: "0.9", lastmod: "2026-09-03" },
+  { path: "/seo", file: "seo.html", priority: "0.9", lastmod: "2026-09-03" },
+  { path: "/ai-integration", file: "ai-integration.html", priority: "0.9", lastmod: "2026-09-03" },
+  { path: "/app-building", file: "app-building.html", priority: "0.9", lastmod: "2026-09-03" },
+  { path: "/web-management", file: "web-management.html", priority: "0.9", lastmod: "2026-09-03" },
+  { path: "/contact", file: "contact.html", priority: "0.7", lastmod: "2026-09-03" },
+];
+
+// Old .html URL -> new clean URL, one 301 hop each (never a chain). Includes
+// /index.html -> / — before this, /index.html served the same content as /
+// with no redirect, a soft duplicate only mitigated by its canonical tag.
+const LEGACY_REDIRECTS = new Map([
+  ["/index.html", "/"],
+  ...CLEAN_URL_PAGES.map((p) => [`/${p.file}`, p.path]),
+]);
+
+app.get([...LEGACY_REDIRECTS.keys()], (req, res) => {
+  const qs = req.originalUrl.includes("?") ? req.originalUrl.slice(req.originalUrl.indexOf("?")) : "";
+  res.redirect(301, LEGACY_REDIRECTS.get(req.path) + qs);
+});
+
+app.get(
+  CLEAN_URL_PAGES.map((p) => p.path),
+  (req, res, next) => {
+    const page = CLEAN_URL_PAGES.find((p) => p.path === req.path);
+    const filePath = resolveFrontendPath(`/${page.file}`);
+    if (!filePath) return next();
+    fs.readFile(filePath, "utf8", (err, contents) => {
+      if (err) return next();
+      res.type("text/html").send(templateFileContents(contents));
+    });
+  }
+);
+
+// Generated from CLEAN_URL_PAGES (+ the homepage) rather than a static
+// frontend/sitemap.xml file, for the same drift-prevention reason: a new
+// marketing page now can't be added to the routes without also landing in
+// the sitemap, because they're the same list.
+function generateSitemapXml() {
+  const pages = [{ path: "/", priority: "1.0", lastmod: "2026-09-03" }, ...CLEAN_URL_PAGES];
+  const urls = pages
+    .map(
+      (p) => `  <url>
+    <loc>${env.siteUrl}${p.path}</loc>
+    <lastmod>${p.lastmod}</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>${p.priority}</priority>
+  </url>`
+    )
+    .join("\n");
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`;
+}
+
+app.get("/sitemap.xml", (req, res) => {
+  res.type("application/xml").send(generateSitemapXml());
+});
 
 app.get(["/", /\.(html|xml|txt)$/], (req, res, next) => {
   const reqPath = req.path === "/" ? "/index.html" : req.path;

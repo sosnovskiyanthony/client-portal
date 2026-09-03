@@ -53,12 +53,13 @@ module.exports = {
 
   // Canonical production URL, no trailing slash. Every canonical link,
   // Open Graph tag, JSON-LD url, and the sitemap/robots.txt Sitemap line in
-  // the frontend HTML is hardcoded to RAILWAY_DEFAULT_SITE_URL (see
-  // server.js). When a real custom domain exists, set SITE_URL here and
-  // server.js rewrites every occurrence at serve time — no HTML file edits
-  // needed. Until then this defaults to the same Railway URL already baked
-  // into the HTML, so it's a no-op.
-  siteUrl: (process.env.SITE_URL || "https://client-portal-production-d328.up.railway.app").replace(/\/$/, ""),
+  // the frontend HTML is hardcoded to DEFAULT_BAKED_IN_SITE_URL (see
+  // server.js). If this app is ever deployed somewhere other than the real
+  // brindleaf.com production domain (a staging/preview environment, a
+  // future domain change), set SITE_URL here and server.js rewrites every
+  // occurrence at serve time — no HTML file edits needed. Defaults to the
+  // real domain already baked into the HTML, so it's a no-op in production.
+  siteUrl: (process.env.SITE_URL || "https://brindleaf.com").replace(/\/$/, ""),
 
   // Google Analytics 4 Measurement ID. Injected server-side into every
   // public page (see server.js) via a single <!-- GA_TAG --> placeholder —

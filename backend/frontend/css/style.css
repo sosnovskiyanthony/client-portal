@@ -3424,6 +3424,14 @@ a:focus-visible {
   color: var(--text-tertiary);
 }
 
+.site-footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px 18px;
+  margin-bottom: 10px;
+}
+
 .site-footer a {
   color: var(--text-secondary);
 }
