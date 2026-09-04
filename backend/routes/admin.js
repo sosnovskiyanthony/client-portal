@@ -22,6 +22,9 @@ router.post("/submissions/:id/context/interpret", analysisLimiter, asyncHandler(
 router.get("/submissions/:id/context/interpret/progress", asyncHandler(adminController.getContextInterpretProgress));
 router.post("/submissions/:id/context/apply", asyncHandler(adminController.applyContextChanges));
 router.get("/submissions/:id/context/reanalysis/progress", asyncHandler(adminController.getContextReanalysisProgress));
+router.get("/submissions/:id/pricing", asyncHandler(adminController.getPricingHistory));
+router.post("/submissions/:id/pricing/generate", analysisLimiter, asyncHandler(adminController.generatePricingStrategy));
+router.get("/submissions/:id/pricing/progress", asyncHandler(adminController.getPricingProgress));
 router.put("/submissions/:id/outcome", asyncHandler(adminController.upsertOutcome));
 router.delete("/submissions/:id", asyncHandler(adminController.deleteSubmission));
 router.post("/submissions/:id/storage/signed-url", asyncHandler(adminController.getAssetSignedUrl));

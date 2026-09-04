@@ -98,6 +98,15 @@ const AI_CAPABILITIES = {
     modifyCode: false,
     modifyInfrastructure: false,
   },
+  generatePricingStrategy: {
+    read: ["submission's current merged project context (original sanitized intake + admin-added facts)", "submission's current AI analysis (scope, complexity, features, risks)"],
+    write: [
+      "submission_pricing_versions (a new, append-only advisory row via services/runPricingStrategy.js) — never contracts.price or any other authoritative record; the admin remains the only one who ever sets a real contract price, by hand, in the existing separate Contracts feature",
+    ],
+    execute: false,
+    modifyCode: false,
+    modifyInfrastructure: false,
+  },
   reviewCodeChange: {
     read: ["git diff", "changed file list", "matched test file contents"],
     write: ["nothing — advisory findings only, never applied automatically (see guardian/reviewCli.js)"],

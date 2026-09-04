@@ -1275,6 +1275,47 @@ async function getContextReanalysisProgress(id) {
   }
 }
 
+// ---------- AI Pricing & Offer Strategy ----------
+// Same conventions as the "Add Context" wrappers above.
+
+async function getPricingHistory(id) {
+  const data = await contractFetch(`/api/admin/submissions/${id}/pricing`, { errorFallback: "Couldn't load pricing history." });
+  return data;
+}
+
+async function startPricingGeneration(id) {
+  let res;
+  try {
+    res = await fetch(`/api/admin/submissions/${id}/pricing/generate`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${getAdminToken()}` },
+    });
+  } catch (err) {
+    throw new Error("Can't reach the server. Is the backend running?");
+  }
+  if (res.status === 401 || res.status === 403) {
+    logoutAdmin();
+    throw new Error("Your session expired. Please log in again.");
+  }
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(body.error || "Couldn't start generating a pricing strategy.");
+  }
+  return body;
+}
+
+async function getPricingProgress(id) {
+  try {
+    const res = await fetch(`/api/admin/submissions/${id}/pricing/progress`, {
+      headers: { Authorization: `Bearer ${getAdminToken()}` },
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (err) {
+    return null;
+  }
+}
+
 // ---------- Contracts ----------
 
 // Shared by every Contracts helper below — same network/401/error-body

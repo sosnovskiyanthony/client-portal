@@ -65,6 +65,8 @@ const {
   CONTEXT_INTERPRET_PROMPT_VERSION,
   buildContextInterpretUserMessage,
 } = require("./contextInterpretPrompt");
+const { PricingStrategySchema } = require("./pricingSchema");
+const { PRICING_SYSTEM_PROMPT, PRICING_PROMPT_VERSION, buildPricingUserMessage } = require("./pricingPrompt");
 const { GuardianReviewSchema } = require("./guardianSchema");
 const {
   AI_GUARDIAN_PROMPT_VERSION,
@@ -815,6 +817,71 @@ async function interpretSubmissionContext(currentContext, instruction, { client,
   };
 }
 
+// AI Pricing & Offer Strategy (see ai/pricingPrompt.js,
+// controllers/adminController.js's generatePricingStrategy) — a fully
+// advisory internal recommendation, never a quote, never written to a
+// contract automatically. Unlike interpretSubmissionContext/
+// interpretContractEditInstruction above (which propose changes an admin
+// must approve before anything is written), this one has nothing to
+// approve — the output IS the deliverable, versioned for history by the
+// caller (see services/runPricingStrategy.js), the same way a fresh
+// AnalysisSchema result already is "a preliminary internal estimate, not
+// a quote or commitment" with no separate approval step. `currentContext`
+// is the same merged context shape interpretSubmissionContext uses;
+// `analysisResult` is the submission's current AnalysisSchema-shaped
+// result (scope/complexity/features/risks this pricing is based on).
+async function generatePricingStrategy(currentContext, analysisResult, { client, onProgress } = {}) {
+  await assertAiAllowed("generatePricingStrategy");
+  const providerName = env.aiProvider;
+  const provider = PROVIDERS[providerName];
+  if (!provider) {
+    throw new AiAnalysisError(
+      "unknown_provider",
+      `AI_PROVIDER "${providerName}" is not recognized. Expected one of: ${Object.keys(PROVIDERS).join(", ")}.`
+    );
+  }
+
+  onProgress?.("preparing");
+  const userMessage = buildPricingUserMessage(currentContext, analysisResult);
+  const model = provider.model();
+
+  onProgress?.("sending");
+  const { parsed } = await provider.impl.generateStructuredAnalysis({
+    systemPrompt: PRICING_SYSTEM_PROMPT,
+    userMessage,
+    zodSchema: PricingStrategySchema,
+    model,
+    client,
+    onProgress,
+  });
+  onProgress?.("validating");
+
+  const validation = PricingStrategySchema.safeParse(parsed);
+  if (!validation.success) {
+    logSecurityEvent({
+      severity: "WARNING",
+      eventType: "ai_schema_validation_failed",
+      actorType: "ai_caller",
+      source: "aiService",
+      resourceType: "ai_operation",
+      resourceId: "generatePricingStrategy",
+      description: `Schema validation failed for generatePricingStrategy.`,
+      metadata: { issueCount: validation.error.issues.length },
+    }).then(() => checkCircuitBreaker()).catch(() => {});
+    throw new AiAnalysisError(
+      "invalid_schema",
+      `AI response did not match the required pricing-strategy schema: ${validation.error.issues.map((i) => i.path.join(".") + " " + i.message).join("; ")}`
+    );
+  }
+
+  return {
+    result: validation.data,
+    model,
+    provider: providerName,
+    promptVersion: PRICING_PROMPT_VERSION,
+  };
+}
+
 // Guardian's AI code reviewer (see guardian/collectDiff.js,
 // guardian/reviewCli.js) — same PROVIDERS dispatch, same confidence
 // normalization, same central `.safeParse` validation, same
@@ -902,6 +969,7 @@ module.exports = {
   generateContract,
   interpretContractEditInstruction,
   interpretSubmissionContext,
+  generatePricingStrategy,
   reviewCodeChange,
   getActiveProviderInfo,
   AiAnalysisError,

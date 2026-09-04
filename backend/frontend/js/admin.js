@@ -147,6 +147,13 @@
   const contextApplyingIds = new Set();
   const contextReanalyzingIds = new Set();
 
+  // Pricing & Offer Strategy state — same module-level-for-survival
+  // reasoning as the context state above.
+  const pricingDataCache = new Map(); // id -> {current, history} (submission_pricing_versions rows)
+  const pricingFetchingIds = new Set(); // initial-load in flight, guards against re-fetching on every render before it resolves
+  const pricingGeneratingIds = new Set();
+  const pricingHistoryExpandedIds = new Set();
+
   // Elapsed-time display for both of the above — a request can genuinely
   // take a couple of minutes against a local model, and a static
   // "Analyzing…" label gives no way to tell that apart from a hung
@@ -729,11 +736,257 @@
         <button class="btn btn-ghost analysis-btn" data-analyze-id="${submission.id}" type="button">${btnLabel}</button>
         <button class="btn btn-ghost chat-btn" data-chat-id="${submission.id}" data-chat-name="${escapeHtml(submission.clientName || 'this submission')}" type="button">Chat with AI</button>
 
+        ${renderPricingSection(submission)}
+
         ${renderContextSection(submission)}
 
         ${renderEmailDraftSection(submission)}
       </div>
     `;
+  }
+
+  // ---- Pricing & Offer Strategy ----
+  // Only ever rendered from renderAnalysisSection's completed branch —
+  // pricing requires an existing completed analysis, same restriction the
+  // server enforces in adminController.generatePricingStrategy. Every
+  // number here is an advisory internal estimate, never a quote — see
+  // ai/pricingSchema.js's own header comment.
+  const BUDGET_ALIGNMENT_LABELS = {
+    strongly_aligned: "Strongly aligned",
+    reasonably_aligned: "Reasonably aligned",
+    slight_mismatch: "Slight mismatch",
+    significant_mismatch: "Significant mismatch",
+    severe_mismatch: "Severe mismatch",
+    unknown: "Unknown",
+  };
+  const BUDGET_CONFIDENCE_LABELS = { explicit: "Explicit", approximate: "Approximate", maximum: "Maximum", desired: "Desired", implied: "Implied", unknown: "Unknown" };
+  const FEATURE_CLASSIFICATION_LABELS = { KEEP: "Keep", SIMPLIFY: "Simplify", DEFER: "Defer", REMOVE: "Remove" };
+
+  function renderPricingDealCard(deal, isPrimary) {
+    if (!deal) return "";
+    return `
+      <div class="pricing-deal-card ${isPrimary ? "pricing-deal-primary" : ""}">
+        <div class="pricing-deal-header">
+          <span class="pricing-deal-label">${escapeHtml(deal.label)}</span>
+          <span class="pricing-deal-price">${escapeHtml(deal.price)}</span>
+        </div>
+        ${deal.includedScope && deal.includedScope.length ? `<div class="pricing-deal-block"><span class="pricing-deal-block-label">Includes</span>${renderStringList(deal.includedScope)}</div>` : ""}
+        ${deal.deferredOrRemoved && deal.deferredOrRemoved.length ? `<div class="pricing-deal-block"><span class="pricing-deal-block-label">Deferred / not included</span>${renderStringList(deal.deferredOrRemoved)}</div>` : ""}
+        ${deal.paymentStructure ? `<p class="pricing-deal-payment">${escapeHtml(deal.paymentStructure)}</p>` : ""}
+        <p class="pricing-deal-reasoning">${escapeHtml(deal.reasoning)}</p>
+      </div>
+    `;
+  }
+
+  function renderPricingResult(r) {
+    return `
+      <div class="pricing-result">
+        <div class="pricing-value-row">
+          <div class="pricing-value-block">
+            <span class="pricing-value-label">Project value (independent of budget)</span>
+            <span class="pricing-value-figure">${escapeHtml(r.projectValueLow)} – ${escapeHtml(r.projectValueHigh)}</span>
+            <p class="pricing-value-reasoning">${escapeHtml(r.projectValueReasoning)}</p>
+          </div>
+          <div class="pricing-value-block">
+            <span class="pricing-value-label">Client budget</span>
+            <span class="pricing-value-figure">${r.clientBudget ? escapeHtml(r.clientBudget) : "Not stated"}</span>
+            <p class="pricing-value-reasoning">${escapeHtml(BUDGET_CONFIDENCE_LABELS[r.budgetConfidence] || r.budgetConfidence)} confidence</p>
+          </div>
+        </div>
+
+        <div class="pricing-alignment-row">
+          <span class="pricing-alignment-badge pricing-alignment-${escapeHtml(r.budgetAlignment)}">${escapeHtml(BUDGET_ALIGNMENT_LABELS[r.budgetAlignment] || r.budgetAlignment)}</span>
+          <p class="pricing-value-reasoning">${escapeHtml(r.budgetAlignmentReasoning)}</p>
+        </div>
+
+        ${r.budgetTooLow ? `<div class="pricing-too-low-banner"><strong>Not commercially realistic as currently scoped.</strong> ${escapeHtml(r.budgetGapExplanation || "")}</div>` : ""}
+
+        <div class="pricing-deal-grid">
+          ${renderPricingDealCard(r.recommendedDeal, true)}
+          ${renderPricingDealCard(r.alternativeDeal, false)}
+          ${renderPricingDealCard(r.premiumDeal, false)}
+        </div>
+
+        ${
+          r.featureClassification && r.featureClassification.length
+            ? `<div class="analysis-block">
+                <span class="analysis-block-label">Feature classification</span>
+                <div class="pricing-feature-list">
+                  ${r.featureClassification
+                    .map(
+                      (f) => `
+                    <div class="pricing-feature-row">
+                      <span class="pricing-feature-badge pricing-feature-${escapeHtml(f.classification.toLowerCase())}">${escapeHtml(FEATURE_CLASSIFICATION_LABELS[f.classification] || f.classification)}</span>
+                      <span class="pricing-feature-name">${escapeHtml(f.feature)}</span>
+                      <span class="pricing-feature-reasoning">${escapeHtml(f.reasoning)}</span>
+                    </div>`
+                    )
+                    .join("")}
+                </div>
+              </div>`
+            : ""
+        }
+
+        ${
+          r.recurringServiceOpportunities && r.recurringServiceOpportunities.length
+            ? `<div class="analysis-block"><span class="analysis-block-label">Recurring service opportunities</span>${renderStringList(r.recurringServiceOpportunities)}</div>`
+            : ""
+        }
+
+        <div class="analysis-block">
+          <span class="analysis-block-label">Closing strategy</span>
+          <p class="analysis-block-text">${escapeHtml(r.closingStrategy)}</p>
+        </div>
+
+        ${r.risks && r.risks.length ? `<div class="analysis-block"><span class="analysis-block-label">Pricing risks</span>${renderStringList(r.risks)}</div>` : ""}
+
+        <details class="analysis-raw">
+          <summary>Reasoning</summary>
+          ${renderStringList(r.reasoning, "No reasoning was returned.")}
+        </details>
+      </div>
+    `;
+  }
+
+  function renderPricingHistoryToggle(submission, history) {
+    if (history.length <= 1) return "";
+    const expanded = pricingHistoryExpandedIds.has(submission.id);
+    return `
+      <button class="pricing-history-toggle-btn" data-pricing-history-toggle-id="${submission.id}" type="button">${expanded ? "Hide" : "Show"} pricing history (${history.length} versions)</button>
+      ${
+        expanded
+          ? `<div class="context-history-list">
+              ${history
+                .map(
+                  (v) => `
+                <div class="context-history-item">
+                  <span class="context-history-time">${escapeHtml(new Date(v.createdAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }))}</span>
+                  <span class="context-history-status context-history-status-${v.status === "completed" ? "applied" : v.status === "failed" ? "rejected" : ""}">v${v.versionNumber} · ${escapeHtml(v.status)}</span>
+                  <p class="context-history-instruction">${v.status === "completed" && v.result && v.result.recommendedDeal ? escapeHtml(`Recommended: ${v.result.recommendedDeal.price}`) : escapeHtml(v.error || "—")}</p>
+                </div>`
+                )
+                .join("")}
+            </div>`
+          : ""
+      }
+    `;
+  }
+
+  function renderPricingSection(submission) {
+    const a = submission.analysis;
+    if (!a || a.status !== "completed") return ""; // matches the server precondition — nothing to price yet
+    const id = submission.id;
+
+    if (!pricingDataCache.has(id) && !pricingFetchingIds.has(id)) {
+      pricingFetchingIds.add(id);
+      getPricingHistory(id)
+        .then((data) => {
+          pricingDataCache.set(id, data);
+        })
+        .catch((err) => {
+          pricingDataCache.set(id, { current: null, history: [], loadError: err.message });
+        })
+        .finally(() => {
+          pricingFetchingIds.delete(id);
+          renderList();
+        });
+    }
+
+    const cached = pricingDataCache.get(id);
+    const generating = pricingGeneratingIds.has(id);
+    const current = cached ? cached.current : null;
+    const history = cached ? cached.history : [];
+    const isStale = current && current.status === "completed" && typeof current.contextVersion === "number" && typeof submission.contextVersion === "number" && current.contextVersion < submission.contextVersion;
+
+    let body;
+    if (!cached) {
+      body = `<p class="analysis-empty">Loading…</p>`;
+    } else if (generating || (current && (current.status === "pending" || current.status === "processing"))) {
+      body = `<button class="btn btn-ghost pricing-generate-btn" type="button" disabled>Generating…</button>`;
+    } else if (!current) {
+      body = `
+        <p class="analysis-empty">No pricing strategy generated yet.</p>
+        <button class="btn btn-primary pricing-generate-btn" data-pricing-id="${id}" type="button">Generate Pricing Strategy</button>
+      `;
+    } else if (current.status === "failed") {
+      body = `
+        <p class="analysis-error">${escapeHtml(current.error || "Pricing generation failed.")}</p>
+        <button class="btn btn-ghost pricing-generate-btn" data-pricing-id="${id}" type="button">Retry</button>
+      `;
+    } else {
+      body = `
+        ${isStale ? `<span class="context-stale-badge">Stale — context has changed since this was generated</span>` : ""}
+        ${renderPricingResult(current.result)}
+        <p class="analysis-meta">${escapeHtml(current.provider || "")} · ${escapeHtml(current.model || "")} · v${current.versionNumber} · prompt v${escapeHtml(current.promptVersion || "")}</p>
+        <button class="btn btn-ghost pricing-generate-btn" data-pricing-id="${id}" type="button">Recalculate Pricing</button>
+        ${renderPricingHistoryToggle(submission, history)}
+      `;
+    }
+
+    return `
+      <div class="analysis-section pricing-section">
+        <div class="analysis-header">
+          <span class="analysis-title">Pricing &amp; Offer Strategy</span>
+        </div>
+        ${body}
+      </div>
+    `;
+  }
+
+  const PRICING_POLL_TIMEOUT_MS = 12 * 60 * 1000;
+
+  function pollForPricingOutcome(id) {
+    const pollStartedAt = Date.now();
+    return new Promise((resolve, reject) => {
+      const handle = setInterval(async () => {
+        if (Date.now() - pollStartedAt > PRICING_POLL_TIMEOUT_MS) {
+          clearInterval(handle);
+          reject(new Error("Lost contact with the pricing generation — the server may have restarted. Try again."));
+          return;
+        }
+        const progress = await getPricingProgress(id);
+        if (!progress || !progress.done) return;
+        clearInterval(handle);
+        if (progress.ok) resolve(progress.pricingVersion);
+        else reject(Object.assign(new Error(progress.error || "Pricing generation failed."), { code: progress.code }));
+      }, 1000);
+    });
+  }
+
+  function initPricingControls() {
+    els.list.addEventListener("click", async (e) => {
+      const generateBtn = e.target.closest(".pricing-generate-btn[data-pricing-id]");
+      if (generateBtn) {
+        const id = Number(generateBtn.dataset.pricingId);
+        if (pricingGeneratingIds.has(id)) return;
+
+        pricingGeneratingIds.add(id);
+        renderList();
+
+        try {
+          await startPricingGeneration(id);
+          const pricingVersion = await pollForPricingOutcome(id);
+          const cached = pricingDataCache.get(id) || { history: [] };
+          pricingDataCache.set(id, { current: pricingVersion, history: [pricingVersion, ...cached.history.filter((v) => v.id !== pricingVersion.id)] });
+        } catch (err) {
+          els.adminSub.textContent = err.message;
+          const cached = pricingDataCache.get(id) || { history: [] };
+          pricingDataCache.set(id, { current: { status: "failed", error: err.message }, history: cached.history });
+        } finally {
+          pricingGeneratingIds.delete(id);
+          renderList();
+        }
+        return;
+      }
+
+      const historyToggleBtn = e.target.closest(".pricing-history-toggle-btn[data-pricing-history-toggle-id]");
+      if (historyToggleBtn) {
+        const id = Number(historyToggleBtn.dataset.pricingHistoryToggleId);
+        if (pricingHistoryExpandedIds.has(id)) pricingHistoryExpandedIds.delete(id);
+        else pricingHistoryExpandedIds.add(id);
+        renderList();
+      }
+    });
   }
 
   // ---- "Add Context" — project intelligence ----
@@ -1010,6 +1263,27 @@
               const idx2 = cachedSubmissions.findIndex((s) => s.id === id);
               if (idx2 !== -1) cachedSubmissions[idx2] = { ...cachedSubmissions[idx2], analysis };
               els.adminSub.textContent = `Analysis recalculated for ${cachedSubmissions[idx2] ? cachedSubmissions[idx2].clientName : "submission"}.`;
+
+              // Pricing is chained server-side right after a successful
+              // reanalysis (see services/runContextReanalysis.js) — poll
+              // its own progress kind too so the Pricing & Offer Strategy
+              // section picks up the fresh recommendation automatically,
+              // instead of silently keeping the stale-badge state forever
+              // until the admin happens to click something.
+              pricingGeneratingIds.add(id);
+              renderList();
+              try {
+                const pricingVersion = await pollForPricingOutcome(id);
+                const cachedPricing = pricingDataCache.get(id) || { history: [] };
+                pricingDataCache.set(id, { current: pricingVersion, history: [pricingVersion, ...cachedPricing.history.filter((v) => v.id !== pricingVersion.id)] });
+              } catch (err) {
+                // A pricing failure here is real but secondary to the
+                // reanalysis outcome already reported above — surface it
+                // without overwriting that message.
+                console.error(`Pricing recalculation failed for submission ${id}:`, err.message);
+              } finally {
+                pricingGeneratingIds.delete(id);
+              }
             } catch (err) {
               els.adminSub.textContent = err.message;
             } finally {
@@ -1901,6 +2175,7 @@
     initAnalysisControls();
     initEmailDraftControls();
     initContextControls();
+    initPricingControls();
     initAssetControls();
     initOutcomeControls();
     initDeleteControls();

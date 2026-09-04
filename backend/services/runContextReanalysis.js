@@ -20,6 +20,7 @@ const { sanitizeServicesSubmission } = require("../ai/servicesPrompt");
 const Analysis = require("../models/Analysis");
 const { AI_ANALYSIS_UPDATE_PROMPT_VERSION } = require("../ai/analysisUpdatePrompt");
 const { AiAnalysisError } = require("../ai/errors");
+const { runPricingStrategy } = require("./runPricingStrategy");
 
 const CHANGE_TYPE_LABEL = { ADD: "Added", MODIFY: "Updated", REMOVE: "Removed" };
 
@@ -62,6 +63,17 @@ async function runContextReanalysis(submission, currentAnalysisResult, approvedC
       contextVersion,
     });
     analysisProgress.complete("context-reanalysis", submission.id, { ok: true, analysis });
+
+    // Chained, not awaited — "Recalculate Pricing" is its own step with
+    // its own progress-tracking kind ("pricing") the frontend polls
+    // independently, matching the dependency graph the feature was
+    // specified around (Context -> Analysis -> Features -> Complexity ->
+    // Pricing). A pricing failure here must never be reported as a
+    // reanalysis failure — the analysis itself already completed fine.
+    runPricingStrategy(submission, analysis.result).catch((err) => {
+      console.error(`[runContextReanalysis] Unexpected error chaining pricing generation (submission ${submission.id}):`, err);
+    });
+
     return analysis;
   } catch (err) {
     if (err instanceof AiAnalysisError) {

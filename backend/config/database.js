@@ -247,6 +247,33 @@ async function init() {
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS submission_context_changes_submission_idx ON submission_context_changes (submission_id);`);
 
+  // AI Pricing & Offer Strategy (see ai/pricingPrompt.js,
+  // ai/aiService.js's generatePricingStrategy) — unlike submission_analyses
+  // (a single row overwritten on every re-analysis), pricing history must
+  // be preserved: every generation is its own append-only row, so the
+  // admin can see how the recommendation evolved as context changed.
+  // context_version records which context state a given pricing version
+  // was generated against, same stale-detection reasoning as
+  // submission_analyses.context_version.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS submission_pricing_versions (
+      id SERIAL PRIMARY KEY,
+      submission_id INTEGER NOT NULL REFERENCES submissions(id) ON DELETE CASCADE,
+      version_number INTEGER NOT NULL,
+      context_version INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'pending',
+      provider TEXT,
+      model TEXT,
+      prompt_version TEXT,
+      result JSONB,
+      error TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS submission_pricing_versions_submission_idx ON submission_pricing_versions (submission_id);`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS submission_pricing_versions_version_idx ON submission_pricing_versions (submission_id, version_number);`);
+
   // Contracts feature — see ai/README.md's "Contracts" section (once
   // written) for the full workflow. Deliberately separate from
   // submission_analyses/email_drafts' 1:1-per-submission pattern: a

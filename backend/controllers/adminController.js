@@ -6,6 +6,8 @@ const Contract = require("../models/Contract");
 const { runAnalysis } = require("../services/runAnalysis");
 const { runDraftEmail } = require("../services/draftEmail");
 const { runContextInterpretation, buildCurrentContext } = require("../services/runContextInterpretation");
+const { runPricingStrategy } = require("../services/runPricingStrategy");
+const PricingVersion = require("../models/PricingVersion");
 const { runContextReanalysis } = require("../services/runContextReanalysis");
 const { applyContextChanges: applyContextChangesTx, ContextApplyError } = require("../services/applyContextChanges");
 const SubmissionContextChange = require("../models/SubmissionContextChange");
@@ -691,6 +693,86 @@ async function getSubmissionContext(req, res) {
   res.json({ currentContext, activeFacts, changeHistory, contextVersion: submission.contextVersion });
 }
 
+// AI Pricing & Offer Strategy — manual trigger ("Recalculate Pricing").
+// The same generation also runs automatically, chained, right after an
+// approved context change finishes reanalyzing (see
+// services/runContextReanalysis.js) — this is the admin-initiated path
+// for when nothing changed but a fresh estimate is wanted anyway, or the
+// very first pricing generation for a submission. Fire-and-poll, same
+// shape as interpretSubmissionContext above; runPricingStrategy never
+// throws (it records its own outcome via analysisProgress.complete()),
+// so there's no try/catch needed around it here.
+async function generatePricingStrategy(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) {
+    return res.status(400).json({ error: "Invalid submission id." });
+  }
+  const submission = await Submission.findById(id);
+  if (!submission) {
+    return res.status(404).json({ error: "Submission not found." });
+  }
+  if (submission.type !== "web-design" && submission.type !== "services") {
+    return res.status(400).json({ error: "Pricing strategy is only available for web-design and services submissions." });
+  }
+  const analysis = await Analysis.findBySubmissionId(id);
+  if (!analysis || analysis.status !== "completed") {
+    return res.status(400).json({ error: "Run AI analysis for this submission before generating a pricing strategy." });
+  }
+
+  // Same fix as interpretSubmissionContext's dedup guard above: checked
+  // against status === "active" specifically, not mere presence, since
+  // this kind uses complete() too.
+  const existingProgress = analysisProgress.get("pricing", id);
+  if (existingProgress && existingProgress.status === "active") {
+    return res.status(409).json({ error: "A pricing strategy is already being generated for this submission." });
+  }
+
+  res.status(202).json({ started: true });
+  runPricingStrategy(submission, analysis.result).catch((err) => {
+    console.error(`[adminController] Unexpected error running background pricing generation for submission ${id}:`, err);
+  });
+}
+
+// Checks analysisProgress's own done-outcome first (a failed generation is
+// recorded there via complete(), same reasoning as
+// getContextReanalysisProgress above), then falls back to the current
+// (highest-version) row once nothing is running in this process for it
+// anymore.
+async function getPricingProgress(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) {
+    return res.status(400).json({ error: "Invalid submission id." });
+  }
+
+  const progress = analysisProgress.get("pricing", id);
+  if (progress) {
+    if (progress.status === "done") return res.json({ active: false, done: true, ...progress.outcome });
+    return res.json({ active: true, stage: progress.stage, model: progress.model });
+  }
+
+  const current = await PricingVersion.findCurrentBySubmissionId(id);
+  if (!current) {
+    return res.json({ active: false });
+  }
+  return res.json({ active: false, done: true, pricingVersion: current });
+}
+
+// Powers the Pricing & Offer Strategy section's current recommendation
+// plus its version history list.
+async function getPricingHistory(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) {
+    return res.status(400).json({ error: "Invalid submission id." });
+  }
+  const submission = await Submission.findById(id);
+  if (!submission) {
+    return res.status(404).json({ error: "Submission not found." });
+  }
+
+  const history = await PricingVersion.findAllBySubmissionId(id);
+  res.json({ current: history[0] || null, history });
+}
+
 async function updateSubmissionStatus(req, res) {
   const id = Number(req.params.id);
   const { status } = req.body || {};
@@ -769,4 +851,7 @@ module.exports = {
   applyContextChanges,
   getContextReanalysisProgress,
   getSubmissionContext,
+  generatePricingStrategy,
+  getPricingProgress,
+  getPricingHistory,
 };
