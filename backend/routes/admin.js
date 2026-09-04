@@ -17,6 +17,11 @@ router.post("/submissions/:id/analyze", analysisLimiter, asyncHandler(adminContr
 router.get("/submissions/:id/analyze/progress", asyncHandler(adminController.getAnalysisProgress));
 router.post("/submissions/:id/draft-email", analysisLimiter, asyncHandler(adminController.draftEmail));
 router.get("/submissions/:id/draft-email/progress", asyncHandler(adminController.getEmailDraftProgress));
+router.get("/submissions/:id/context", asyncHandler(adminController.getSubmissionContext));
+router.post("/submissions/:id/context/interpret", analysisLimiter, asyncHandler(adminController.interpretSubmissionContext));
+router.get("/submissions/:id/context/interpret/progress", asyncHandler(adminController.getContextInterpretProgress));
+router.post("/submissions/:id/context/apply", asyncHandler(adminController.applyContextChanges));
+router.get("/submissions/:id/context/reanalysis/progress", asyncHandler(adminController.getContextReanalysisProgress));
 router.put("/submissions/:id/outcome", asyncHandler(adminController.upsertOutcome));
 router.delete("/submissions/:id", asyncHandler(adminController.deleteSubmission));
 router.post("/submissions/:id/storage/signed-url", asyncHandler(adminController.getAssetSignedUrl));

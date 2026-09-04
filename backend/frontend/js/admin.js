@@ -134,6 +134,19 @@
   // Same reasoning as analyzingIds, for the "Draft Outreach Email" button.
   const draftingIds = new Set();
 
+  // "Add Context" state — all keyed by submission id, all module-level for
+  // the same reason as analyzingIds above: renderList() rebuilds the whole
+  // list's HTML on any unrelated change (a filter click, another card's
+  // status update), so anything that needs to survive that has to live
+  // here, not in transient DOM state (e.g. a native <details> element's
+  // open/closed state would just be silently reset).
+  const contextExpandedIds = new Set(); // panel expanded (and safe to lazy-load/render)
+  const contextDataCache = new Map(); // id -> {currentContext, activeFacts, changeHistory, contextVersion}
+  const contextInterpretingIds = new Set();
+  const contextProposalCache = new Map(); // id -> {changeRecordId, result, changeState: [{approved, proposedValue, edited}], instruction}
+  const contextApplyingIds = new Set();
+  const contextReanalyzingIds = new Set();
+
   // Elapsed-time display for both of the above — a request can genuinely
   // take a couple of minutes against a local model, and a static
   // "Analyzing…" label gives no way to tell that apart from a hung
@@ -716,9 +729,380 @@
         <button class="btn btn-ghost analysis-btn" data-analyze-id="${submission.id}" type="button">${btnLabel}</button>
         <button class="btn btn-ghost chat-btn" data-chat-id="${submission.id}" data-chat-name="${escapeHtml(submission.clientName || 'this submission')}" type="button">Chat with AI</button>
 
+        ${renderContextSection(submission)}
+
         ${renderEmailDraftSection(submission)}
       </div>
     `;
+  }
+
+  // ---- "Add Context" — project intelligence ----
+  // Only ever rendered from renderAnalysisSection's completed branch above
+  // — recalculating context requires an existing completed analysis to
+  // revise, same restriction the server enforces in
+  // adminController.interpretSubmissionContext.
+  const CONTEXT_CHANGE_TYPE_LABELS = { ADD: "Add", MODIFY: "Modify", REMOVE: "Remove" };
+
+  function renderContextChangeCard(change, i, state) {
+    const isAdd = change.action === "ADD";
+    const isRemove = change.action === "REMOVE";
+    return `
+      <div class="edit-change-card ${state.approved ? "edit-change-approved" : "edit-change-rejected"}" data-change-index="${i}">
+        <div class="edit-change-header">
+          <label class="edit-change-checkbox">
+            <input type="checkbox" class="context-change-approve-toggle" data-index="${i}" ${state.approved ? "checked" : ""} />
+            <span>Approve</span>
+          </label>
+          <span class="edit-change-type edit-change-type-${change.action.toLowerCase()}">${escapeHtml(CONTEXT_CHANGE_TYPE_LABELS[change.action] || change.action)}</span>
+          <span class="edit-change-section-title">${escapeHtml(change.category)} / ${escapeHtml(change.field)}</span>
+          <span class="edit-change-confidence edit-change-confidence-${escapeHtml(change.confidence)}">${escapeHtml(change.confidence)} confidence</span>
+        </div>
+        <p class="edit-change-rationale">${escapeHtml(change.reasoning)}</p>
+        <div class="edit-change-diff">
+          ${!isAdd ? `<div class="edit-diff-before"><span class="edit-diff-label">Current</span><pre class="edit-diff-text">${escapeHtml(change.previousValue || "")}</pre></div>` : ""}
+          ${
+            !isRemove
+              ? `<div class="edit-diff-after"><span class="edit-diff-label" data-proposed-label="${i}">${isAdd ? "New value" : "Proposed"}${state.edited ? " (edited by you)" : ""}</span><textarea class="context-change-proposed-text" data-index="${i}" rows="2">${escapeHtml(state.proposedValue || "")}</textarea></div>`
+              : ""
+          }
+        </div>
+      </div>
+    `;
+  }
+
+  function contextApprovedCount(id) {
+    const proposal = contextProposalCache.get(id);
+    return proposal ? proposal.changeState.filter((s) => s.approved).length : 0;
+  }
+
+  function renderContextProposal(submission) {
+    const proposal = contextProposalCache.get(submission.id);
+    if (!proposal) return "";
+
+    if (proposal.result.clarificationNeeded) {
+      return `
+        <div class="edit-proposal edit-proposal-clarification">
+          <p class="edit-proposal-summary">${escapeHtml(proposal.result.interpretation)}</p>
+          <p class="contract-section-footnote">This needs more detail before it can become a real change:</p>
+          <p class="edit-change-rationale">${escapeHtml(proposal.result.clarificationQuestion || "")}</p>
+        </div>
+      `;
+    }
+    if (proposal.result.proposedChanges.length === 0) {
+      return `<p class="analysis-empty">No specific changes were proposed for that note.</p>`;
+    }
+
+    const approvedCount = contextApprovedCount(submission.id);
+    return `
+      <div class="edit-proposal">
+        <p class="edit-proposal-summary">${escapeHtml(proposal.result.interpretation)}</p>
+        <div class="edit-proposal-controls">
+          <span id="context-approved-count-${submission.id}">${approvedCount} of ${proposal.changeState.length} approved</span>
+          <button class="btn btn-ghost btn-small context-approve-all-btn" type="button">Approve All</button>
+          <button class="btn btn-ghost btn-small context-reject-all-btn" type="button">Reject All</button>
+        </div>
+        <div class="context-change-cards">
+          ${proposal.result.proposedChanges.map((c, i) => renderContextChangeCard(c, i, proposal.changeState[i])).join("")}
+        </div>
+        <button class="btn btn-primary context-apply-btn" data-context-id="${submission.id}" type="button" ${approvedCount === 0 || contextApplyingIds.has(submission.id) ? "disabled" : ""}>${contextApplyingIds.has(submission.id) ? "Applying…" : "Apply Approved Changes"}</button>
+        <div class="context-apply-error" id="context-apply-error-${submission.id}"></div>
+      </div>
+    `;
+  }
+
+  const CONTEXT_SOURCE_LABEL = { admin_context: "Admin-added" };
+
+  function renderContextPanel(submission) {
+    const cached = contextDataCache.get(submission.id);
+    if (!cached) return `<p class="analysis-empty">Loading…</p>`;
+
+    const factsHtml = cached.activeFacts.length
+      ? `<div class="context-fact-list">
+          ${cached.activeFacts
+            .map(
+              (f) => `
+            <div class="context-fact">
+              <span class="context-fact-field">${escapeHtml(f.category)} / ${escapeHtml(f.field)}</span>
+              <span class="context-fact-value">${escapeHtml(f.value || "")}</span>
+              <span class="context-fact-source">${escapeHtml(CONTEXT_SOURCE_LABEL[f.source] || f.source)}${f.confidence ? ` · ${escapeHtml(f.confidence)} confidence` : ""}</span>
+            </div>`
+            )
+            .join("")}
+        </div>`
+      : `<p class="analysis-empty">No admin-added context yet — everything below is straight from the client's own submission.</p>`;
+
+    const historyHtml = cached.changeHistory.length
+      ? `<div class="context-history-list">
+          ${cached.changeHistory
+            .map(
+              (h) => `
+            <div class="context-history-item">
+              <span class="context-history-time">${escapeHtml(new Date(h.createdAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }))}</span>
+              <span class="context-history-status context-history-status-${escapeHtml(h.status)}">${escapeHtml(h.status.replace("_", " "))}</span>
+              <p class="context-history-instruction">"${escapeHtml(h.rawInstruction)}"</p>
+            </div>`
+            )
+            .join("")}
+        </div>`
+      : `<p class="analysis-empty">No context has been added yet.</p>`;
+
+    return `
+      <div class="context-panel">
+        <h4 class="context-panel-heading">Project Context (v${cached.contextVersion})</h4>
+        ${factsHtml}
+        <h4 class="context-panel-heading">Context History</h4>
+        ${historyHtml}
+      </div>
+    `;
+  }
+
+  function renderContextSection(submission) {
+    const expanded = contextExpandedIds.has(submission.id);
+    const a = submission.analysis;
+    const cached = contextDataCache.get(submission.id);
+    const isStale = a && cached && typeof a.contextVersion === "number" && a.contextVersion < cached.contextVersion;
+    const interpreting = contextInterpretingIds.has(submission.id);
+    const reanalyzing = contextReanalyzingIds.has(submission.id);
+
+    return `
+      <div class="context-section">
+        <button class="context-toggle-btn" data-context-toggle-id="${submission.id}" type="button" aria-expanded="${expanded}">
+          <span class="context-title">Add Context</span>
+          ${isStale ? '<span class="context-stale-badge">Stale — recalculating</span>' : ""}
+          <span class="context-toggle-icon" aria-hidden="true">${expanded ? "−" : "+"}</span>
+        </button>
+        ${
+          expanded
+            ? `
+          <div class="context-body">
+            ${renderContextPanel(submission)}
+            ${
+              reanalyzing
+                ? `<p class="analysis-empty">Recalculating analysis from the new context…</p>`
+                : ""
+            }
+            <label class="context-add-label" for="context-input-${submission.id}">Tell the AI anything you learned about this project…</label>
+            <textarea class="context-add-input" id="context-input-${submission.id}" data-context-input-id="${submission.id}" rows="3" placeholder="e.g. &quot;They have a $12k budget&quot; or &quot;They want us to manage the site after launch.&quot;" ${interpreting ? "disabled" : ""}></textarea>
+            <button class="btn btn-primary context-interpret-btn" data-context-id="${submission.id}" type="button" ${interpreting ? "disabled" : ""}>${interpreting ? "Interpreting…" : "Interpret"}</button>
+            <div class="context-interpret-error" id="context-interpret-error-${submission.id}"></div>
+            <div class="context-proposal-container">${renderContextProposal(submission)}</div>
+          </div>
+        `
+            : ""
+        }
+      </div>
+    `;
+  }
+
+  function refreshContextData(id) {
+    return getSubmissionContext(id).then((data) => {
+      contextDataCache.set(id, data);
+    });
+  }
+
+  function initContextControls() {
+    els.list.addEventListener("click", async (e) => {
+      const toggleBtn = e.target.closest(".context-toggle-btn[data-context-toggle-id]");
+      if (toggleBtn) {
+        const id = Number(toggleBtn.dataset.contextToggleId);
+        if (contextExpandedIds.has(id)) {
+          contextExpandedIds.delete(id);
+          renderList();
+          return;
+        }
+        contextExpandedIds.add(id);
+        if (!contextDataCache.has(id)) {
+          renderList(); // show "Loading…" immediately
+          try {
+            await refreshContextData(id);
+          } catch (err) {
+            els.adminSub.textContent = err.message;
+          }
+        }
+        renderList();
+        return;
+      }
+
+      const interpretBtn = e.target.closest(".context-interpret-btn[data-context-id]");
+      if (interpretBtn) {
+        const id = Number(interpretBtn.dataset.contextId);
+        const input = document.getElementById(`context-input-${id}`);
+        const instruction = input ? input.value.trim() : "";
+        if (!instruction || contextInterpretingIds.has(id)) return;
+
+        contextInterpretingIds.add(id);
+        contextProposalCache.delete(id);
+        renderList();
+
+        try {
+          await startContextInterpretation(id, instruction);
+          const proposalOutcome = await pollForContextInterpretOutcome(id);
+          if (proposalOutcome.result.clarificationNeeded || proposalOutcome.result.proposedChanges.length > 0) {
+            contextProposalCache.set(id, {
+              changeRecordId: proposalOutcome.changeRecord ? proposalOutcome.changeRecord.id : null,
+              result: proposalOutcome.result,
+              changeState: proposalOutcome.result.proposedChanges.map((c) => ({ approved: true, proposedValue: c.proposedValue || "", edited: false })),
+              instruction: proposalOutcome.instruction,
+            });
+          }
+        } catch (err) {
+          const errEl = document.getElementById(`context-interpret-error-${id}`);
+          if (errEl) errEl.innerHTML = `<p class="edit-error-text">${escapeHtml(err.message)}</p>`;
+        } finally {
+          contextInterpretingIds.delete(id);
+          renderList();
+        }
+        return;
+      }
+
+      const approveAllBtn = e.target.closest(".context-approve-all-btn");
+      if (approveAllBtn) {
+        const id = findContextIdFromButton(approveAllBtn);
+        const proposal = contextProposalCache.get(id);
+        if (proposal) {
+          proposal.changeState.forEach((s) => (s.approved = true));
+          renderList();
+        }
+        return;
+      }
+
+      const rejectAllBtn = e.target.closest(".context-reject-all-btn");
+      if (rejectAllBtn) {
+        const id = findContextIdFromButton(rejectAllBtn);
+        const proposal = contextProposalCache.get(id);
+        if (proposal) {
+          proposal.changeState.forEach((s) => (s.approved = false));
+          renderList();
+        }
+        return;
+      }
+
+      const applyBtn = e.target.closest(".context-apply-btn[data-context-id]");
+      if (applyBtn) {
+        const id = Number(applyBtn.dataset.contextId);
+        const proposal = contextProposalCache.get(id);
+        if (!proposal || contextApplyingIds.has(id)) return;
+
+        contextApplyingIds.add(id);
+        renderList();
+
+        const approvedChanges = [];
+        const rejectedChanges = [];
+        proposal.result.proposedChanges.forEach((c, i) => {
+          const state = proposal.changeState[i];
+          const finalChange = { ...c, proposedValue: state.proposedValue };
+          if (state.approved) approvedChanges.push(finalChange);
+          else rejectedChanges.push(finalChange);
+        });
+
+        try {
+          const result = await applyContextChanges(id, { changeRecordId: proposal.changeRecordId, changes: approvedChanges, rejectedChanges });
+          contextProposalCache.delete(id);
+          const idx = cachedSubmissions.findIndex((s) => s.id === id);
+          if (idx !== -1) cachedSubmissions[idx] = { ...cachedSubmissions[idx], ...result.submission };
+          await refreshContextData(id);
+
+          if (result.reanalysisTriggered) {
+            contextReanalyzingIds.add(id);
+            renderList();
+            try {
+              const analysis = await pollForContextReanalysisOutcome(id);
+              const idx2 = cachedSubmissions.findIndex((s) => s.id === id);
+              if (idx2 !== -1) cachedSubmissions[idx2] = { ...cachedSubmissions[idx2], analysis };
+              els.adminSub.textContent = `Analysis recalculated for ${cachedSubmissions[idx2] ? cachedSubmissions[idx2].clientName : "submission"}.`;
+            } catch (err) {
+              els.adminSub.textContent = err.message;
+            } finally {
+              contextReanalyzingIds.delete(id);
+            }
+          }
+        } catch (err) {
+          const errEl = document.getElementById(`context-apply-error-${id}`);
+          if (errEl) errEl.innerHTML = `<p class="edit-error-text">${escapeHtml(err.message)}</p>`;
+        } finally {
+          contextApplyingIds.delete(id);
+          renderList();
+        }
+        return;
+      }
+    });
+
+    els.list.addEventListener("change", (e) => {
+      const toggle = e.target.closest(".context-change-approve-toggle[data-index]");
+      if (!toggle) return;
+      const id = findContextIdFromButton(toggle);
+      const proposal = contextProposalCache.get(id);
+      if (!proposal) return;
+      const i = Number(toggle.dataset.index);
+      proposal.changeState[i].approved = toggle.checked;
+      renderList();
+    });
+
+    els.list.addEventListener("input", (e) => {
+      const textarea = e.target.closest(".context-change-proposed-text[data-index]");
+      if (!textarea) return;
+      const id = findContextIdFromButton(textarea);
+      const proposal = contextProposalCache.get(id);
+      if (!proposal) return;
+      const i = Number(textarea.dataset.index);
+      proposal.changeState[i].proposedValue = textarea.value;
+      proposal.changeState[i].edited = textarea.value !== (proposal.result.proposedChanges[i].proposedValue || "");
+      // Update just the label in place — re-rendering here would blow away
+      // the textarea's cursor position mid-keystroke, same reasoning as
+      // contracts.js's identical pattern for the AI Agreement Editor.
+      const label = document.querySelector(`.context-change-cards [data-proposed-label="${i}"]`);
+      if (label) {
+        const isAdd = proposal.result.proposedChanges[i].action === "ADD";
+        label.textContent = `${isAdd ? "New value" : "Proposed"}${proposal.changeState[i].edited ? " (edited by you)" : ""}`;
+      }
+    });
+  }
+
+  // Any control inside a submission card's context section can find its
+  // own submission id via the closest .context-section's toggle button —
+  // avoids re-threading data-context-id onto every single nested control.
+  function findContextIdFromButton(el) {
+    const section = el.closest(".context-section");
+    const toggle = section ? section.querySelector("[data-context-toggle-id]") : null;
+    return toggle ? Number(toggle.dataset.contextToggleId) : null;
+  }
+
+  const CONTEXT_POLL_TIMEOUT_MS = 12 * 60 * 1000; // same ceiling reasoning as ANALYSIS_POLL_TIMEOUT_MS above
+
+  function pollForContextInterpretOutcome(id) {
+    const pollStartedAt = Date.now();
+    return new Promise((resolve, reject) => {
+      const handle = setInterval(async () => {
+        if (Date.now() - pollStartedAt > CONTEXT_POLL_TIMEOUT_MS) {
+          clearInterval(handle);
+          reject(new Error("Lost contact with the interpretation — the server may have restarted. Try again."));
+          return;
+        }
+        const progress = await getContextInterpretProgress(id);
+        if (!progress || !progress.done) return;
+        clearInterval(handle);
+        if (progress.ok) resolve(progress);
+        else reject(Object.assign(new Error(progress.error || "Interpretation failed."), { code: progress.code }));
+      }, 1000);
+    });
+  }
+
+  function pollForContextReanalysisOutcome(id) {
+    const pollStartedAt = Date.now();
+    return new Promise((resolve, reject) => {
+      const handle = setInterval(async () => {
+        if (Date.now() - pollStartedAt > CONTEXT_POLL_TIMEOUT_MS) {
+          clearInterval(handle);
+          reject(new Error("Lost contact with the recalculation — the server may have restarted. The previous analysis is still shown."));
+          return;
+        }
+        const progress = await getContextReanalysisProgress(id);
+        if (!progress || !progress.done) return;
+        clearInterval(handle);
+        if (progress.ok) resolve(progress.analysis);
+        else reject(Object.assign(new Error(progress.error || "Recalculating the analysis failed. The previous analysis is still shown above."), { code: progress.code }));
+      }, 1000);
+    });
   }
 
   // Only ever rendered from renderAnalysisSection's completed branch above —
@@ -1516,6 +1900,7 @@
     initStatusControls();
     initAnalysisControls();
     initEmailDraftControls();
+    initContextControls();
     initAssetControls();
     initOutcomeControls();
     initDeleteControls();

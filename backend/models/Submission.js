@@ -175,6 +175,7 @@ function serialize(row) {
     flexiblePaymentPreference: row.flexible_payment_preference,
     services: row.services || [],
     status: row.status,
+    contextVersion: row.context_version,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

@@ -174,6 +174,79 @@ async function init() {
     );
   `);
 
+  // "Add Context" — lets the admin teach the AI project-intelligence
+  // system new facts about a submission in plain English (see
+  // ai/aiService.js's interpretSubmissionContext,
+  // controllers/adminController.js's interpretSubmissionContext /
+  // applyContextChanges). The original client submission
+  // (submissions.project_details) is never edited — every admin-added
+  // fact lives here instead, so the app can always show whether something
+  // came from the client's own form submission or was added later by the
+  // admin (never conflating the two — see guardian/rules.js's
+  // ai-context-interpret-propose-only rule).
+  //
+  // "Active" facts are the ones with superseded_at IS NULL — a MODIFY
+  // inserts a new row for the same (submission_id, category, field) and
+  // supersedes the old one; a REMOVE just supersedes the existing row with
+  // nothing replacing it. Superseded rows are never deleted, so the full
+  // history of a field's value over time is always still queryable.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS submission_context_facts (
+      id SERIAL PRIMARY KEY,
+      submission_id INTEGER NOT NULL REFERENCES submissions(id) ON DELETE CASCADE,
+      category TEXT NOT NULL,
+      field TEXT NOT NULL,
+      value TEXT,
+      source TEXT NOT NULL DEFAULT 'admin_context',
+      source_text TEXT,
+      confidence TEXT,
+      created_by INTEGER,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      superseded_at TIMESTAMPTZ
+    );
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS submission_context_facts_submission_idx ON submission_context_facts (submission_id);`);
+  // Only one ACTIVE fact per (submission, category, field) at a time — a
+  // partial unique index (not a plain UNIQUE constraint) since superseded
+  // rows deliberately keep the same category/field and must NOT be blocked
+  // by this.
+  await pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS submission_context_facts_active_field_idx
+    ON submission_context_facts (submission_id, category, field)
+    WHERE superseded_at IS NULL;
+  `);
+
+  // submissions.context_version is a simple monotonic counter (0 = no
+  // admin context applied yet), bumped by applyContextChanges every time a
+  // batch of changes is applied. submission_analyses.context_version
+  // records which context version an analysis was actually generated
+  // against, so the admin dashboard can flag a completed analysis as
+  // stale (a newer context version now exists) without needing a whole
+  // separate analysis-versioning system.
+  await pool.query(`ALTER TABLE submissions ADD COLUMN IF NOT EXISTS context_version INTEGER NOT NULL DEFAULT 0;`);
+  await pool.query(`ALTER TABLE submission_analyses ADD COLUMN IF NOT EXISTS context_version INTEGER NOT NULL DEFAULT 0;`);
+
+  // One row per "Add Context" interpretation attempt — the full audit
+  // trail (Context History) of what was typed, what the AI proposed, and
+  // what actually happened to it. approved_changes stays null until the
+  // admin approves/edits and applies (or the row is marked 'rejected').
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS submission_context_changes (
+      id SERIAL PRIMARY KEY,
+      submission_id INTEGER NOT NULL REFERENCES submissions(id) ON DELETE CASCADE,
+      raw_instruction TEXT NOT NULL,
+      interpretation JSONB NOT NULL,
+      approved_changes JSONB,
+      status TEXT NOT NULL DEFAULT 'pending_review',
+      resulting_context_version INTEGER,
+      created_by INTEGER,
+      applied_by INTEGER,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      applied_at TIMESTAMPTZ
+    );
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS submission_context_changes_submission_idx ON submission_context_changes (submission_id);`);
+
   // Contracts feature — see ai/README.md's "Contracts" section (once
   // written) for the full workflow. Deliberately separate from
   // submission_analyses/email_drafts' 1:1-per-submission pattern: a

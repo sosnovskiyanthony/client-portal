@@ -89,6 +89,15 @@ const AI_CAPABILITIES = {
     modifyCode: false,
     modifyInfrastructure: false,
   },
+  interpretSubmissionContext: {
+    read: ["submission's current merged project context (original sanitized intake + admin-added facts approved so far)", "admin's natural-language note about the project"],
+    write: [
+      "nothing automatically — proposed changes returned to the admin as a review-only structure; only applied to a submission (admin_context, a new submission_context_changes row) if the admin explicitly approves each change via controllers/adminController.js's applyContextChanges, which is the only thing that ever writes",
+    ],
+    execute: false,
+    modifyCode: false,
+    modifyInfrastructure: false,
+  },
   reviewCodeChange: {
     read: ["git diff", "changed file list", "matched test file contents"],
     write: ["nothing — advisory findings only, never applied automatically (see guardian/reviewCli.js)"],

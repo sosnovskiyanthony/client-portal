@@ -1209,6 +1209,72 @@ async function getEmailDraftProgress(id) {
   }
 }
 
+// ---------- "Add Context" — submission project intelligence ----------
+// Same conventions as analyzeSubmission/getAnalysisProgress above: the
+// action calls throw a real Error on failure (401 logs out, other
+// failures surface body.error); the progress polls fail soft (return null)
+// since a single missed poll shouldn't force a logout or error message.
+
+async function getSubmissionContext(id) {
+  const data = await contractFetch(`/api/admin/submissions/${id}/context`, { errorFallback: "Couldn't load project context." });
+  return data;
+}
+
+async function startContextInterpretation(id, instruction) {
+  let res;
+  try {
+    res = await fetch(`/api/admin/submissions/${id}/context/interpret`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${getAdminToken()}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ instruction }),
+    });
+  } catch (err) {
+    throw new Error("Can't reach the server. Is the backend running?");
+  }
+  if (res.status === 401 || res.status === 403) {
+    logoutAdmin();
+    throw new Error("Your session expired. Please log in again.");
+  }
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(body.error || "Couldn't start interpreting that note.");
+  }
+  return body;
+}
+
+async function getContextInterpretProgress(id) {
+  try {
+    const res = await fetch(`/api/admin/submissions/${id}/context/interpret/progress`, {
+      headers: { Authorization: `Bearer ${getAdminToken()}` },
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (err) {
+    return null;
+  }
+}
+
+async function applyContextChanges(id, { changeRecordId, changes, rejectedChanges }) {
+  const data = await contractFetch(`/api/admin/submissions/${id}/context/apply`, {
+    method: "POST",
+    body: { changeRecordId, changes, rejectedChanges },
+    errorFallback: "Couldn't apply the approved changes.",
+  });
+  return data;
+}
+
+async function getContextReanalysisProgress(id) {
+  try {
+    const res = await fetch(`/api/admin/submissions/${id}/context/reanalysis/progress`, {
+      headers: { Authorization: `Bearer ${getAdminToken()}` },
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (err) {
+    return null;
+  }
+}
+
 // ---------- Contracts ----------
 
 // Shared by every Contracts helper below — same network/401/error-body

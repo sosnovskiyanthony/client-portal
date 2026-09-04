@@ -68,6 +68,7 @@ async function runAnalysisInner(submission, provider, model) {
       provider: outcome.provider,
       model: outcome.model,
       promptVersion: outcome.promptVersion,
+      contextVersion: submission.contextVersion || 0,
     });
   } catch (err) {
     const code = err instanceof AiAnalysisError ? err.code : "unknown_error";

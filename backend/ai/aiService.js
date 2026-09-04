@@ -59,6 +59,12 @@ const {
   CONTRACT_EDIT_PROMPT_VERSION,
   buildContractEditUserMessage,
 } = require("./contractEditPrompt");
+const { ContextInterpretationSchema } = require("./contextInterpretSchema");
+const {
+  CONTEXT_INTERPRET_SYSTEM_PROMPT,
+  CONTEXT_INTERPRET_PROMPT_VERSION,
+  buildContextInterpretUserMessage,
+} = require("./contextInterpretPrompt");
 const { GuardianReviewSchema } = require("./guardianSchema");
 const {
   AI_GUARDIAN_PROMPT_VERSION,
@@ -745,6 +751,70 @@ async function interpretContractEditInstruction(currentSections, instruction, { 
   };
 }
 
+// Submission "Add Context" (see ai/contextInterpretPrompt.js,
+// controllers/adminController.js's interpretSubmissionContext /
+// applyContextChanges) — turns an admin's plain-English note about a
+// prospective client's project into a structured, reviewable set of
+// proposed context changes. This function only ever PROPOSES; it never
+// writes to a submission, never triggers reanalysis itself — see
+// guardian/aiCapabilities.js's own entry for this operation and
+// guardian/rules.js's consequential-ops-need-human-approval rule.
+// `currentContext` is the merged view of the client's original sanitized
+// submission plus every admin-added fact approved so far (or just the
+// sanitized submission if no admin context exists yet) — the AI is shown
+// exactly what's known today, nothing more, nothing assumed.
+async function interpretSubmissionContext(currentContext, instruction, { client, onProgress } = {}) {
+  await assertAiAllowed("interpretSubmissionContext");
+  const providerName = env.aiProvider;
+  const provider = PROVIDERS[providerName];
+  if (!provider) {
+    throw new AiAnalysisError(
+      "unknown_provider",
+      `AI_PROVIDER "${providerName}" is not recognized. Expected one of: ${Object.keys(PROVIDERS).join(", ")}.`
+    );
+  }
+
+  onProgress?.("preparing");
+  const userMessage = buildContextInterpretUserMessage(currentContext, instruction);
+  const model = provider.model();
+
+  onProgress?.("sending");
+  const { parsed } = await provider.impl.generateStructuredAnalysis({
+    systemPrompt: CONTEXT_INTERPRET_SYSTEM_PROMPT,
+    userMessage,
+    zodSchema: ContextInterpretationSchema,
+    model,
+    client,
+    onProgress,
+  });
+  onProgress?.("validating");
+
+  const validation = ContextInterpretationSchema.safeParse(parsed);
+  if (!validation.success) {
+    logSecurityEvent({
+      severity: "WARNING",
+      eventType: "ai_schema_validation_failed",
+      actorType: "ai_caller",
+      source: "aiService",
+      resourceType: "ai_operation",
+      resourceId: "interpretSubmissionContext",
+      description: `Schema validation failed for interpretSubmissionContext.`,
+      metadata: { issueCount: validation.error.issues.length },
+    }).then(() => checkCircuitBreaker()).catch(() => {});
+    throw new AiAnalysisError(
+      "invalid_schema",
+      `AI response did not match the required context-interpretation schema: ${validation.error.issues.map((i) => i.path.join(".") + " " + i.message).join("; ")}`
+    );
+  }
+
+  return {
+    result: validation.data,
+    model,
+    provider: providerName,
+    promptVersion: CONTEXT_INTERPRET_PROMPT_VERSION,
+  };
+}
+
 // Guardian's AI code reviewer (see guardian/collectDiff.js,
 // guardian/reviewCli.js) — same PROVIDERS dispatch, same confidence
 // normalization, same central `.safeParse` validation, same
@@ -831,6 +901,7 @@ module.exports = {
   reviewContract,
   generateContract,
   interpretContractEditInstruction,
+  interpretSubmissionContext,
   reviewCodeChange,
   getActiveProviderInfo,
   AiAnalysisError,

@@ -27,13 +27,18 @@ async function markProcessing(submissionId, { provider, model, promptVersion }) 
   return rows[0] ? serialize(rows[0]) : null;
 }
 
-async function markCompleted(submissionId, { result, provider, model, promptVersion }) {
+// contextVersion records which submissions.context_version this analysis
+// was generated against (defaults to 0 — no admin context existed) — lets
+// the admin dashboard flag an analysis as stale once a newer context
+// version exists, without a whole separate analysis-versioning system. See
+// config/database.js's submission_analyses.context_version comment.
+async function markCompleted(submissionId, { result, provider, model, promptVersion, contextVersion = 0 }) {
   const { rows } = await pool.query(
     `UPDATE submission_analyses
-     SET status = 'completed', result = $2, provider = $3, model = $4, prompt_version = $5, error = NULL, updated_at = now()
+     SET status = 'completed', result = $2, provider = $3, model = $4, prompt_version = $5, context_version = $6, error = NULL, updated_at = now()
      WHERE submission_id = $1
      RETURNING *`,
-    [submissionId, result, provider, model, promptVersion]
+    [submissionId, result, provider, model, promptVersion, contextVersion]
   );
   return rows[0] ? serialize(rows[0]) : null;
 }
@@ -84,6 +89,7 @@ function serialize(row) {
     promptVersion: row.prompt_version,
     result: row.result,
     error: row.error,
+    contextVersion: row.context_version,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

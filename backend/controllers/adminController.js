@@ -5,6 +5,13 @@ const EmailDraft = require("../models/EmailDraft");
 const Contract = require("../models/Contract");
 const { runAnalysis } = require("../services/runAnalysis");
 const { runDraftEmail } = require("../services/draftEmail");
+const { runContextInterpretation, buildCurrentContext } = require("../services/runContextInterpretation");
+const { runContextReanalysis } = require("../services/runContextReanalysis");
+const { applyContextChanges: applyContextChangesTx, ContextApplyError } = require("../services/applyContextChanges");
+const SubmissionContextChange = require("../models/SubmissionContextChange");
+const SubmissionContextFact = require("../models/SubmissionContextFact");
+const { ContextChangeSchema } = require("../ai/contextInterpretSchema");
+const { AiAnalysisError } = require("../ai/errors");
 const { toCsv } = require("../utils/csv");
 const storage = require("../services/storage");
 const { BRAND_ASSET_PATH_RE } = require("../lib/validators");
@@ -486,6 +493,204 @@ async function getAnalysisProgress(req, res) {
 
 const getEmailDraftProgress = makeProgressHandler("email");
 
+// "Add Context" — interpretation step. Turns an admin's plain-English note
+// about a submission into a structured, reviewable proposal (see
+// ai/contextInterpretSchema.js); writes nothing (see guardian/rules.js's
+// ai-context-interpret-propose-only rule). Fire-and-poll from the start —
+// same reasoning as chatController.js's paste-and-analyze routes and
+// contractController.js's interpretContractEditInstruction.
+async function interpretSubmissionContext(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) {
+    return res.status(400).json({ error: "Invalid submission id." });
+  }
+  const submission = await Submission.findById(id);
+  if (!submission) {
+    return res.status(404).json({ error: "Submission not found." });
+  }
+  if (submission.type !== "web-design" && submission.type !== "services") {
+    return res.status(400).json({ error: "Add Context is only available for web-design and services submissions." });
+  }
+  const analysis = await Analysis.findBySubmissionId(id);
+  if (!analysis || analysis.status !== "completed") {
+    return res.status(400).json({ error: "Run AI analysis for this submission before adding context — there's nothing yet to recalculate." });
+  }
+
+  const instruction = typeof req.body?.instruction === "string" ? req.body.instruction.trim() : "";
+  if (!instruction) {
+    return res.status(400).json({ error: "An instruction is required." });
+  }
+
+  // Checked against status === "active" specifically, not mere presence —
+  // this kind uses analysisProgress.complete() (see
+  // services/runContextInterpretation.js's caller below), which keeps a
+  // finished result retrievable for RESULT_TTL_MS after it's done. A bare
+  // truthiness check here would incorrectly 409 a legitimate new attempt
+  // for up to that whole window just because the previous result hasn't
+  // been polled-and-drained yet.
+  const existingProgress = analysisProgress.get("context-interpret", id);
+  if (existingProgress && existingProgress.status === "active") {
+    return res.status(409).json({ error: "An interpretation is already in progress for this submission." });
+  }
+
+  res.status(202).json({ started: true });
+
+  try {
+    const result = await runContextInterpretation(submission, instruction);
+    let changeRecord = null;
+    if (!result.clarificationNeeded && result.proposedChanges.length > 0) {
+      changeRecord = await SubmissionContextChange.createPendingReview(id, {
+        rawInstruction: instruction,
+        interpretation: result,
+        createdBy: req.user.sub,
+      });
+    }
+    analysisProgress.complete("context-interpret", id, { ok: true, result, changeRecord, instruction });
+  } catch (err) {
+    if (err instanceof AiAnalysisError) {
+      analysisProgress.complete("context-interpret", id, { ok: false, error: err.message, code: err.code });
+    } else {
+      console.error(`[adminController] Unexpected error during background context interpretation (submission ${id}):`, err);
+      analysisProgress.complete("context-interpret", id, { ok: false, error: "Something went wrong interpreting that note.", code: "internal_error" });
+    }
+  }
+}
+
+function getContextInterpretProgress(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) {
+    return res.status(400).json({ error: "Invalid submission id." });
+  }
+  const progress = analysisProgress.get("context-interpret", id);
+  if (!progress) return res.json({ active: false });
+  if (progress.status === "done") return res.json({ active: false, done: true, ...progress.outcome });
+  return res.json({ active: true, stage: progress.stage });
+}
+
+// "Add Context" — apply step. The ONLY code path that ever writes
+// submission context as a result of the AI interpretation, and only for
+// changes the admin explicitly approved individually (guardian/rules.js's
+// ai-context-interpret-propose-only rule). The transactional write itself
+// is fast (no AI call), so this responds synchronously; automatic
+// reanalysis is then kicked off in the background separately (see
+// getContextReanalysisProgress) rather than making this response wait on
+// a second, slower AI call.
+async function applyContextChanges(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) {
+    return res.status(400).json({ error: "Invalid submission id." });
+  }
+  const submission = await Submission.findById(id);
+  if (!submission) {
+    return res.status(404).json({ error: "Submission not found." });
+  }
+
+  const { changeRecordId, changes, rejectedChanges } = req.body || {};
+  const recordId = Number(changeRecordId);
+  if (!Number.isInteger(recordId)) {
+    return res.status(400).json({ error: "A valid changeRecordId is required." });
+  }
+  const changeRecord = await SubmissionContextChange.findById(recordId);
+  if (!changeRecord || changeRecord.submissionId !== id) {
+    return res.status(404).json({ error: "Context change proposal not found for this submission." });
+  }
+  if (changeRecord.status !== "pending_review") {
+    return res.status(400).json({ error: `This proposal was already ${changeRecord.status}.` });
+  }
+
+  if (!Array.isArray(changes) || changes.length === 0) {
+    await SubmissionContextChange.markRejected(recordId);
+    return res.json({ submission, rejected: true });
+  }
+
+  const parsedChanges = [];
+  for (const change of changes) {
+    const parsed = ContextChangeSchema.safeParse(change);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "One or more approved changes are malformed." });
+    }
+    parsedChanges.push(parsed.data);
+  }
+
+  let outcome;
+  try {
+    outcome = await applyContextChangesTx({
+      submissionId: id,
+      changeRecordId: recordId,
+      approvedChanges: parsedChanges,
+      rawInstruction: changeRecord.rawInstruction,
+      actorUserId: req.user.sub,
+    });
+  } catch (err) {
+    if (err instanceof ContextApplyError) {
+      return res.status(409).json({ error: err.message, code: err.code });
+    }
+    throw err;
+  }
+
+  // Trigger automatic reanalysis in the background — only meaningful once
+  // an analysis exists to revise (interpretSubmissionContext above already
+  // requires one before an interpretation can even start, so this should
+  // always be true in practice; re-checked here defensively).
+  const currentAnalysis = await Analysis.findBySubmissionId(id);
+  let reanalysisTriggered = false;
+  if (currentAnalysis && currentAnalysis.status === "completed") {
+    reanalysisTriggered = true;
+    runContextReanalysis(outcome.submission, currentAnalysis.result, parsedChanges, outcome.contextVersion).catch((err) => {
+      console.error(`[adminController] Unexpected error running background context reanalysis for submission ${id}:`, err);
+    });
+  }
+
+  res.json({ submission: outcome.submission, changeRecord: outcome.changeRecord, contextVersion: outcome.contextVersion, reanalysisTriggered, rejectedChangeCount: Array.isArray(rejectedChanges) ? rejectedChanges.length : 0 });
+}
+
+// Checks analysisProgress's own done-outcome first (see
+// services/runContextReanalysis.js — a failed reanalysis attempt is
+// recorded there via complete(), specifically so it doesn't just vanish
+// into a server log while the dashboard silently keeps showing stale
+// data with no explanation), then falls back to the durable
+// submission_analyses row once nothing is running in this process for it
+// anymore, same reasoning as getAnalysisProgress above.
+async function getContextReanalysisProgress(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) {
+    return res.status(400).json({ error: "Invalid submission id." });
+  }
+
+  const progress = analysisProgress.get("context-reanalysis", id);
+  if (progress) {
+    if (progress.status === "done") return res.json({ active: false, done: true, ...progress.outcome });
+    return res.json({ active: true, stage: progress.stage, model: progress.model });
+  }
+
+  const analysis = await Analysis.findBySubmissionId(id);
+  if (!analysis) {
+    return res.json({ active: false });
+  }
+  return res.json({ active: false, done: true, analysis });
+}
+
+// Powers the "Project Context" panel (current sourced facts) and "Context
+// History" timeline (every interpretation attempt, applied or not).
+async function getSubmissionContext(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) {
+    return res.status(400).json({ error: "Invalid submission id." });
+  }
+  const submission = await Submission.findById(id);
+  if (!submission) {
+    return res.status(404).json({ error: "Submission not found." });
+  }
+
+  const [currentContext, activeFacts, changeHistory] = await Promise.all([
+    buildCurrentContext(submission),
+    SubmissionContextFact.findActiveBySubmissionId(id),
+    SubmissionContextChange.findAllBySubmissionId(id),
+  ]);
+
+  res.json({ currentContext, activeFacts, changeHistory, contextVersion: submission.contextVersion });
+}
+
 async function updateSubmissionStatus(req, res) {
   const id = Number(req.params.id);
   const { status } = req.body || {};
@@ -559,4 +764,9 @@ module.exports = {
   stopOllamaRemote,
   getAnalysisProgress,
   getEmailDraftProgress,
+  interpretSubmissionContext,
+  getContextInterpretProgress,
+  applyContextChanges,
+  getContextReanalysisProgress,
+  getSubmissionContext,
 };
