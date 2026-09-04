@@ -40,6 +40,7 @@ const {
   EMAIL_PROMPT_VERSION,
   buildEmailContext,
   buildEmailUserMessage,
+  stripMarkdownArtifacts,
 } = require("./emailPrompt");
 const { ContractReviewSchema } = require("./contractReviewSchema");
 const {
@@ -567,8 +568,19 @@ async function draftEmail(submission, analysis, { client, onProgress } = {}) {
     );
   }
 
+  // See stripMarkdownArtifacts's own comment: a deterministic cleanup
+  // pass, not just a prompt request, for a hard "plain text" requirement
+  // the model doesn't reliably follow on its own. Never applied to
+  // internalAnalysisMarkdown, which is real markdown by design.
+  const cleaned = {
+    ...validation.data,
+    subject: stripMarkdownArtifacts(validation.data.subject),
+    body: stripMarkdownArtifacts(validation.data.body),
+    textMessage: stripMarkdownArtifacts(validation.data.textMessage),
+  };
+
   return {
-    result: validation.data,
+    result: cleaned,
     model,
     provider: providerName,
     promptVersion: EMAIL_PROMPT_VERSION,

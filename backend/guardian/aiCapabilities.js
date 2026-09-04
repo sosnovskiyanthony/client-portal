@@ -60,8 +60,18 @@ const AI_CAPABILITIES = {
     modifyInfrastructure: false,
   },
   draftEmail: {
-    read: ["submission", "completed analysis"],
-    write: ["email_drafts (via services/draftEmail.js, after validation)"],
+    // Deliberately broader than just the client-safe fields — this
+    // operation does real strategic reasoning (see ai/emailPrompt.js)
+    // that legitimately needs the full analysis, including
+    // internal-only fields (confidence, complexity, priority,
+    // missing_information, potential_risks, internal_notes). The
+    // leak-prevention boundary is enforced by the prompt itself (which
+    // forbids ever placing these in the email/textMessage output) and by
+    // ai/emailSchema.js keeping the admin-only internalAnalysisMarkdown
+    // field structurally separate from subject/body/textMessage — see
+    // guardian/rules.js's no-internal-leak rule.
+    read: ["submission", "completed analysis (including internal-only fields, for reasoning only)"],
+    write: ["email_drafts (via services/draftEmail.js, after validation) — internal_analysis_markdown column is admin-only, never sent to or shown to a client"],
     execute: false,
     modifyCode: false,
     modifyInfrastructure: false,

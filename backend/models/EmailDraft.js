@@ -27,13 +27,13 @@ async function markProcessing(submissionId, { provider, model, promptVersion }) 
   return rows[0] ? serialize(rows[0]) : null;
 }
 
-async function markCompleted(submissionId, { subject, body, provider, model, promptVersion }) {
+async function markCompleted(submissionId, { subject, body, textMessage, internalAnalysisMarkdown, provider, model, promptVersion }) {
   const { rows } = await pool.query(
     `UPDATE email_drafts
-     SET status = 'completed', subject = $2, body = $3, provider = $4, model = $5, prompt_version = $6, error = NULL, updated_at = now()
+     SET status = 'completed', subject = $2, body = $3, text_message = $4, internal_analysis_markdown = $5, provider = $6, model = $7, prompt_version = $8, error = NULL, updated_at = now()
      WHERE submission_id = $1
      RETURNING *`,
-    [submissionId, subject, body, provider, model, promptVersion]
+    [submissionId, subject, body, textMessage || null, internalAnalysisMarkdown || null, provider, model, promptVersion]
   );
   return rows[0] ? serialize(rows[0]) : null;
 }
@@ -79,6 +79,8 @@ function serialize(row) {
     promptVersion: row.prompt_version,
     subject: row.subject,
     body: row.body,
+    textMessage: row.text_message,
+    internalAnalysisMarkdown: row.internal_analysis_markdown,
     error: row.error,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

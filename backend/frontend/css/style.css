@@ -3571,6 +3571,27 @@ a:focus-visible {
   color: var(--text-tertiary);
 }
 
+.email-draft-block-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-tertiary);
+  margin: 16px 0 8px;
+}
+
+.email-draft-text-message-body {
+  font-size: 13.5px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  padding: 10px 12px;
+  background: var(--bg);
+  border-radius: var(--radius-sm);
+  margin: 0 0 10px;
+}
+
 /* ---------- Project outcome (admin-only, manually recorded) ---------- */
 .outcome-section {
   margin-top: 16px;

@@ -32,6 +32,8 @@ async function runDraftEmailInner(submission, analysis, provider, model) {
     return await EmailDraft.markCompleted(submission.id, {
       subject: outcome.result.subject,
       body: outcome.result.body,
+      textMessage: outcome.result.textMessage,
+      internalAnalysisMarkdown: outcome.result.internalAnalysisMarkdown,
       provider: outcome.provider,
       model: outcome.model,
       promptVersion: outcome.promptVersion,

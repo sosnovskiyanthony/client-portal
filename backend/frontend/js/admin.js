@@ -1441,6 +1441,28 @@
           <button class="btn btn-ghost email-draft-btn" data-draft-email-id="${submission.id}" type="button">Regenerate</button>
           <span class="email-draft-copy-msg" aria-live="polite"></span>
         </div>
+
+        ${
+          d.textMessage
+            ? `<div class="email-draft-text-message">
+                <span class="email-draft-block-label">Accompanying Text Message</span>
+                <p class="email-draft-text-message-body">${escapeHtml(d.textMessage)}</p>
+                <div class="email-draft-actions">
+                  <button class="btn btn-ghost email-draft-copy-text-btn" data-copy-text-id="${submission.id}" type="button">Copy Text</button>
+                  <span class="email-draft-copy-msg" aria-live="polite"></span>
+                </div>
+              </div>`
+            : ""
+        }
+
+        ${
+          d.internalAnalysisMarkdown
+            ? `<details class="analysis-raw email-draft-internal-analysis">
+                <summary>Internal Analysis (admin-only — never sent to the client)</summary>
+                <pre>${escapeHtml(d.internalAnalysisMarkdown)}</pre>
+              </details>`
+            : ""
+        }
       </div>
     `;
   }
@@ -1922,6 +1944,23 @@
 
         try {
           await navigator.clipboard.writeText(`Subject: ${draft.subject}\n\n${draft.body}`);
+          msg.textContent = "Copied.";
+        } catch (err) {
+          msg.textContent = "Couldn't copy — select the text manually.";
+        }
+        return;
+      }
+
+      const copyTextBtn = e.target.closest(".email-draft-copy-text-btn[data-copy-text-id]");
+      if (copyTextBtn) {
+        const id = Number(copyTextBtn.dataset.copyTextId);
+        const submission = cachedSubmissions.find((s) => s.id === id);
+        const draft = submission && submission.emailDraft;
+        const msg = copyTextBtn.closest(".email-draft-actions").querySelector(".email-draft-copy-msg");
+        if (!draft || !draft.textMessage) return;
+
+        try {
+          await navigator.clipboard.writeText(draft.textMessage);
           msg.textContent = "Copied.";
         } catch (err) {
           msg.textContent = "Couldn't copy — select the text manually.";

@@ -153,6 +153,15 @@ async function init() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `);
+  // Added when draftEmail grew from "just an email" into a full strategic
+  // synthesis (see ai/emailPrompt.js): internal_analysis_markdown is the
+  // admin-only reasoning behind the draft, never sent anywhere; text_message
+  // is the short client-facing companion text. Both nullable so an older
+  // completed draft (from before this column existed) still reads fine —
+  // its UI simply shows nothing for these two until the draft is
+  // regenerated.
+  await pool.query(`ALTER TABLE email_drafts ADD COLUMN IF NOT EXISTS internal_analysis_markdown TEXT;`);
+  await pool.query(`ALTER TABLE email_drafts ADD COLUMN IF NOT EXISTS text_message TEXT;`);
 
   // AI chat interface — lets the admin have a multi-turn conversation about
   // a submission's analysis (see models/SubmissionChat.js, ai/chatPrompt.js).
