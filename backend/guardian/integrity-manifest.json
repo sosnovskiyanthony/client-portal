@@ -7,7 +7,7 @@
   "guardian/sentryScrub.js": "a03bbb735625b469072203148b2c045349cb9402d201c78640dd23d8417333b8",
   "ai/aiService.js": "85b75dadcd4c45e27e473da9cdd80027c4ce5ad2a8faaf19735b53342a39685b",
   "ai/providers/ollamaProvider.js": "ab7a92fb750744652bed0eb5b861e24c2de8ce75715b58e7a06ae18dcee7bd13",
-  "server.js": "e71de0961895ff9c96a91ff6d60ba76ec28c17101fd31b26961f9e30b03529e7",
+  "server.js": "862148a8b114ac96497e0ffce40ce32da49e343319e6c73a33e4af49eaed95f0",
   "instrument.js": "a0dc1f8a261c1c3ad1bb3813f1a92fcd0289b9d59d9fd9b3624cce817a2560ff",
   "middleware/auth.js": "919378dc770e2fba88ae912e4dce5de665a3e21c7a7d90b2542bb42b572269bf",
   "middleware/rateLimit.js": "a9aa07ba1d6a0480ee0e80ffd8a03e9fa63bee1cb105b536266dafbf6e50b699",

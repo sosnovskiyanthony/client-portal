@@ -185,6 +185,9 @@ const CLEAN_URL_PAGES = [
   { path: "/app-building", file: "app-building.html", priority: "0.9", lastmod: "2026-09-03" },
   { path: "/web-management", file: "web-management.html", priority: "0.9", lastmod: "2026-09-03" },
   { path: "/contact", file: "contact.html", priority: "0.7", lastmod: "2026-09-03" },
+  { path: "/terms", file: "terms-of-service.html", priority: "0.3", lastmod: "2026-09-11" },
+  { path: "/privacy", file: "privacy-policy.html", priority: "0.3", lastmod: "2026-09-11" },
+  { path: "/cookies", file: "cookie-policy.html", priority: "0.3", lastmod: "2026-09-11" },
 ];
 
 // Old .html URL -> new clean URL, one 301 hop each (never a chain). Includes

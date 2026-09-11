@@ -16,7 +16,7 @@ const path = require("node:path");
 const TEST_PORT = 8797;
 const BASE_URL = `http://localhost:${TEST_PORT}`;
 
-const PUBLIC_PAGES = ["/", "/web-design", "/seo", "/ai-integration", "/app-building", "/web-management", "/contact"];
+const PUBLIC_PAGES = ["/", "/web-design", "/seo", "/ai-integration", "/app-building", "/web-management", "/contact", "/terms", "/privacy", "/cookies"];
 const LEGACY_HTML_URLS = [
   "/index.html",
   "/web-design-services.html",

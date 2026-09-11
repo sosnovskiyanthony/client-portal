@@ -4500,3 +4500,62 @@ a:focus-visible {
 .contract-status-select:focus {
   border-color: var(--border-selected);
 }
+
+/* ---------- Legal pages (ToS / Privacy / Cookies) ---------- */
+.layout.layout-legal {
+  grid-template-columns: 1fr;
+  max-width: 720px;
+}
+
+.legal-meta {
+  font-size: 13px;
+  color: var(--text-tertiary);
+  margin-bottom: 40px;
+}
+
+.legal-page h2 {
+  font-size: 21px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 40px 0 14px;
+}
+
+.legal-page h2:first-of-type {
+  margin-top: 0;
+}
+
+.legal-page p {
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--text-secondary);
+  max-width: 68ch;
+  margin-bottom: 14px;
+}
+
+.legal-page ul {
+  margin: 0 0 14px;
+  padding-left: 22px;
+}
+
+.legal-page li {
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--text-secondary);
+  max-width: 68ch;
+  margin-bottom: 8px;
+}
+
+.legal-page strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.legal-page a {
+  color: var(--accent-1);
+  text-decoration: underline;
+  text-decoration-color: var(--border-hover);
+}
+
+.legal-page a:hover {
+  text-decoration-color: var(--accent-1);
+}
